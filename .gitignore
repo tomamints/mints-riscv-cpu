@@ -1,4 +1,5 @@
 result/
+.DS_Store
 .hex
 .txt
 .log
@@ -7,3 +8,5 @@ results/
 *.txt
 *.log
 obj_dir/
+whisper/
+boost_1_88_0/
