@@ -2,6 +2,7 @@
 src/eei.sv
 src/util.sv
 src/inst_gen_pkg.sv
+src/corectrl.sv
 
 # interface
 src/membus_if.sv
@@ -27,6 +28,5 @@ src/dma.sv
 src/ram_arbiter.sv
 src/inst_fetcher.sv
 src/inst_decoder.sv
-src/corectrl.sv
 src/core.sv
 src/top.sv

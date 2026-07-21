@@ -30,7 +30,7 @@ SIM       = $(OBJ_DIR)/sim
 SIM_NAME = sim
 
 # ラン用パラメータ
-ROM ?= src/test/sample_ecall.hex
+ROM ?= core/test/sample_ecall.hex
 RAM ?= $(ROM)
 CYCLES ?= 20
 
