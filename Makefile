@@ -65,7 +65,7 @@ OS2_MIN_NAME ?= kernel
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-trap trace-c-test trace-output trace-dma
 
 
 
@@ -188,6 +188,12 @@ test-os2-min-input: OS2_MIN_DEFS=-DOS2_MIN_ECHO
 test-os2-min-input: OS2_MIN_NAME=kernel_echo
 test-os2-min-input: $(INPUT_SIM) os2-min-build
 	printf '%s' '$(INPUT_TEXT)' | DBG_ADDR=$(DBG_ADDR) $(INPUT_SIM) $(BOOTROM) $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin.hex $(CYCLES)
+
+test-os2-min-trap: CYCLES=50000
+test-os2-min-trap: OS2_MIN_DEFS=-DOS2_MIN_TRAP
+test-os2-min-trap: OS2_MIN_NAME=kernel_trap
+test-os2-min-trap: $(SIM) os2-min-build
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin.hex $(CYCLES)
 
 trace-c-test: $(TRACE_SIM) c-test-build
 	DBG_ADDR=$(DBG_ADDR) $(TRACE_SIM) $(BOOTROM) core/test/$(C_TEST).bin.hex $(CYCLES)
