@@ -72,7 +72,7 @@ DMA は独自追加の MMIO peripheral です。目的は、CPU がメモリコ�
 
 ## DMA Register Map
 
-`Docs/DMA.md` は初期 Step1 仕様のままで、一部が現在の実装と一致していません。
+DMA の詳細仕様は `Docs/DMA.md` に整理しています。
 
 現在の実装上の register map は `src/eei.sv` にある以下です。
 
@@ -84,7 +84,7 @@ DMA は独自追加の MMIO peripheral です。目的は、CPU がメモリコ�
 | `DST` | `0x18` |
 | `LEN` | `0x20` |
 
-`Docs/DMA.md` 側では `SRC=0x04`, `DST=0x08`, `LEN=0x0C`, `STATUS=0x10` と書かれているため、現時点では古い情報です。ソフトウェアやテストを書く場合は、`src/eei.sv` の定義を正としてください。
+ソフトウェアやテストを書く場合は、`src/eei.sv` と `Docs/DMA.md` の register map を前提にしてください。
 
 ## Build
 
@@ -126,5 +126,5 @@ CYCLES=20
 ## Repository Notes
 
 - `boost_1_88_0/`, `whisper/`, `.DS_Store`, `obj_dir/` は Git 管理対象外です。
-- `Docs/DMA.md` は DMA の設計メモですが、現在の実装とは一部ズレがあります。
+- `Docs/DMA.md` は DMA の現在仕様です。
 - 現状の README は、実装の現状を説明するためのものであり、RISC-V 仕様適合性を保証するものではありません。

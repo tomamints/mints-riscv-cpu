@@ -2,169 +2,216 @@
 
 ## 目的
 
-本DMAは、RISC-Vコアがメモリ転送（コピー／初期化）に費やす命令実行を削減し、
-CPUを制御・計算に集中させることで、Edge / IoT用途における電力効率および処理レイテンシを改善することを目的とする。
+本 DMA は、RISC-V コアがメモリコピーに費やす命令実行を削減するための独自 MMIO peripheral です。
 
-本DMAは、ソフトウェアから **MMIO（Memory Mapped IO）レジスタ** を介して設定・開始・状態確認ができることを必須要件とする。
+CPU は MMIO register 経由で転送元、転送先、転送長を設定し、`CTRL.start` で DMA を開始します。DMA は RAM master として RAM へアクセスし、8 byte 単位で RAM 間コピーを行います。
 
-本DMAは、既存の `mmio_controller` が提供する
-「アドレスデコードによるデバイス選択」方式に従い、**新規のMMIOデバイス**として追加される。
+この DMA は教材「Verylで作るCPU」由来ではなく、このリポジトリで追加している実験的な機能です。
 
----
+## 現在の対応状況
 
-## Interface list
+実装済み:
 
-### MMIO Bus Interface（Membus slave）
+- MMIO slave としての register read/write
+- RAM master としての read/write 転送
+- 8 byte 単位の RAM 間コピー
+- `busy`, `done`, `err` status
+- 8 byte alignment check
+- `LEN == 0` の即時完了
+- CPU 優先の RAM arbitration
 
-**in**
-- valid
-- addr
-- wen
-- wdata
-- wmask
+未実装 / 制限:
 
-**out**
-- ready
-- rvalid
-- rdata
+- DMA interrupt 出力
+- byte / halfword / word 単位のコピー
+- RAM 範囲外アドレスの error check
+- 複数 channel
+- scatter-gather
+- DMA 専用の自動テスト
 
----
+## 接続
 
-### Interrupt（optional / 将来拡張）
+### MMIO slave
 
-**out**
-- irq
-  - STATUS.done == 1 のときアサート
-  - CTRL.clear_done によりデアサート
+CPU から DMA register へアクセスする bus です。
 
----
+入力:
+
+- `valid`
+- `addr`
+- `wen`
+- `wdata`
+- `wmask`
+
+出力:
+
+- `ready`
+- `rvalid`
+- `rdata`
+
+`mmio_controller` は `MMAP_DMA_BEGIN` から `MMAP_DMA_END` のアクセスを DMA に decode し、DMA には `addr - MMAP_DMA_BEGIN` の offset address を渡します。
+
+### RAM master
+
+DMA が RAM を read/write するための master bus です。
+
+`top.sv` では、CPU 側 RAM access と DMA 側 RAM access が `ram_arbiter_cpu_prio` に接続されています。現在の arbiter は CPU 優先です。
 
 ### Clock / Reset
 
-**in**
-- clk
-- rst
+入力:
 
-> NOTE
-> Step1では実際のメモリ転送（DMAがメモリバスの master になる処理）は必須としない。
-> 本フェーズでは **制御レジスタおよび状態遷移（FSM）** の完成を優先する。
-> 実転送は Step1.5 以降で拡張する。
+- `clk`
+- `rst`
 
----
+`rst` は active-low reset です。
 
-## Address map（MMIO registers）
+## Address Map
 
-    // DMA (MMIO registers)
-    localparam Addr MMAP_DMA_BEGIN  = Addr'('h300_0000);
-    localparam Addr MMAP_DMA_CTRL   = Addr'('h00);  // start, clear_done, irq_en
-    localparam Addr MMAP_DMA_SRC    = Addr'('h04);
-    localparam Addr MMAP_DMA_DST    = Addr'('h08);
-    localparam Addr MMAP_DMA_LEN    = Addr'('h0C);
-    localparam Addr MMAP_DMA_STATUS = Addr'('h10);  // busy, done, err(optional)
-    localparam Addr MMAP_DMA_END    = MMAP_DMA_BEGIN + Addr'('h0FFF);
+現在の実装は `src/eei.sv` の定義を正とします。
 
-- DMAのMMIOレジスタ空間は MMAP_DMA_BEGIN から MMAP_DMA_END を使用する
-- mmio_controller では DMA領域アクセス時に
-  addr - MMAP_DMA_BEGIN を DMA デバイスへ渡す
+```systemverilog
+localparam Addr MMAP_DMA_BEGIN  = Addr'('h3000_0000);
+localparam Addr MMAP_DMA_CTRL   = Addr'('h00);
+localparam Addr MMAP_DMA_STATUS = Addr'('h08);
+localparam Addr MMAP_DMA_SRC    = Addr'('h10);
+localparam Addr MMAP_DMA_DST    = Addr'('h18);
+localparam Addr MMAP_DMA_LEN    = Addr'('h20);
+localparam Addr MMAP_DMA_END    = MMAP_DMA_BEGIN + Addr'('h0FFF);
+```
 
----
+| Register | Offset | Access | Description |
+|---|---:|---|---|
+| `CTRL` | `0x00` | RW | start / clear_done / irq_en |
+| `STATUS` | `0x08` | RO | busy / done / err |
+| `SRC` | `0x10` | RW | 転送元 RAM address |
+| `DST` | `0x18` | RW | 転送先 RAM address |
+| `LEN` | `0x20` | RW | 転送 byte 数 |
 
-## Register specification
+## Register Specification
 
-### CTRL Register（offset: 0x00 / RW）
+### CTRL: offset 0x00
 
-| Bit | Name       | Access | Description |
-|----:|------------|--------|-------------|
-| 0   | start      | W      | 1を書き込むことでDMA転送を開始する |
-| 1   | clear_done | W      | STATUS.done を0にクリア（self-clear） |
-| 2   | irq_en     | RW     | done時にirqを出力（optional） |
-| 31:3 | -         | -      | 未使用（0を返す） |
+| Bit | Name | Access | Description |
+|---:|---|---|---|
+| 0 | `start` | W | `1` を書くと DMA を開始する |
+| 1 | `clear_done` | W | `done` と `err` を clear する |
+| 2 | `irq_en` | RW | 現在は保持のみ。interrupt 出力は未実装 |
+| 63:3 | reserved | RO | `0` を返す |
 
-- busy == 1 の間に start が書き込まれた場合は **無視（No-op）**
-- clear_done は書き込み後、自動的に 0 に戻る
+補足:
 
----
+- `start` は write pulse として扱う。
+- DMA 動作中の `start` は無視する。
+- `clear_done` は write pulse として扱い、read 時は `0` を返す。
+- `irq_en` は register として保持されるが、現在は DMA 外部へ `irq` output を出していない。
 
-### SRC Register（offset: 0x04 / RW）
+### STATUS: offset 0x08
 
-- 転送元アドレスを保持するレジスタ
-- Step1では値を保持できることのみを要件とする
+| Bit | Name | Access | Description |
+|---:|---|---|---|
+| 0 | `busy` | RO | 転送中は `1` |
+| 1 | `done` | RO | 転送完了で `1` |
+| 2 | `err` | RO | error 発生で `1` |
+| 63:3 | reserved | RO | `0` を返す |
 
----
+`done` と `err` は `CTRL.clear_done` により clear されます。
 
-### DST Register（offset: 0x08 / RW）
+### SRC: offset 0x10
 
-- 転送先アドレスを保持するレジスタ
-- Step1では値を保持できることのみを要件とする
+転送元 RAM address を保持します。
 
----
+- CPU は RAM の絶対 address を書く想定です。
+- DMA 開始時に `SRC - MMAP_RAM_BEGIN` を RAM offset として使用します。
+- DMA 動作中の write は無視します。
+- 8 byte aligned である必要があります。
 
-### LEN Register（offset: 0x0C / RW）
+### DST: offset 0x18
 
-- 転送サイズを指定するレジスタ
-- 単位は実装依存（例：MEMBUS_DATA_WIDTH 単位）
-- Step1では **状態遷移用カウンタとして消費できること** を要件とする
+転送先 RAM address を保持します。
 
----
+- CPU は RAM の絶対 address を書く想定です。
+- DMA 開始時に `DST - MMAP_RAM_BEGIN` を RAM offset として使用します。
+- DMA 動作中の write は無視します。
+- 8 byte aligned である必要があります。
 
-### STATUS Register（offset: 0x10 / RO）
+### LEN: offset 0x20
 
-| Bit | Name | Description |
-|----:|------|-------------|
-| 0   | busy | 転送中は1 |
-| 1   | done | 転送完了で1 |
-| 2   | err  | エラー表示（optional） |
-| 31:3 | -   | 未使用（0を返す） |
+転送 byte 数を保持します。
 
-- done は CTRL.clear_done により 0 に戻る
+- DMA 動作中の write は無視します。
+- 8 byte aligned である必要があります。
+- `LEN == 0` の場合、RAM access を行わず `done` になります。
 
----
+## 動作
 
-## Functional requirements（機能要件）
+DMA 開始時に `SRC`, `DST`, `LEN` を内部状態へ取り込みます。その後、以下の単位動作を `LEN / 8` 回繰り返します。
 
-- DMAは MMIO レジスタ書き込みにより設定できること
-- SRC / DST / LEN を保持できること
-- CTRL.start が 1 に書き込まれると転送シーケンスを開始する
-- 転送中は STATUS.busy == 1 とする
-- 転送完了時に STATUS.done == 1 とする
-- CTRL.clear_done により STATUS.done をクリアできること
-- busy == 1 の間の SRC / DST / LEN 書き換えは **無視** する
+1. `cur_src` から 8 byte read request を出す
+2. RAM の `rvalid` を待つ
+3. 読み出した 8 byte を `cur_dst` へ write request する
+4. `cur_src += 8`, `cur_dst += 8`, `rem -= 8`
 
----
+write は RAM bus の `ready` で request が受け付けられた時点で完了扱いにします。
 
-## State machine specification（状態遷移）
+## FSM
 
-### States
+現在の実装状態:
 
-- **IDLE**
-  - busy = 0
-  - done = 0
+- `IDLE`
+- `READ_REQ`
+- `READ_WAIT`
+- `WRITE_REQ`
+- `DONE`
+- `ERR`
 
-- **BUSY**
-  - busy = 1
+主な遷移:
 
-- **DONE**
-  - busy = 0
-  - done = 1
+- `IDLE -> READ_REQ`: `CTRL.start == 1` かつ alignment OK かつ `LEN != 0`
+- `IDLE -> DONE`: `CTRL.start == 1` かつ `LEN == 0`
+- `IDLE -> ERR`: `SRC`, `DST`, `LEN` のいずれかが 8 byte misaligned
+- `READ_REQ -> READ_WAIT`: RAM read request が `ready`
+- `READ_WAIT -> WRITE_REQ`: RAM read response が `rvalid`
+- `WRITE_REQ -> READ_REQ`: まだ残り byte がある
+- `WRITE_REQ -> DONE`: 最後の 8 byte write request が `ready`
+- `DONE -> IDLE`: `done` を保持したまま idle へ戻る
+- `ERR -> IDLE`: `err` を保持したまま idle へ戻る
 
----
+## Error Handling
 
-### Transitions
+現在 `err` になる条件:
 
-- IDLE → BUSY
-  - 条件：CTRL.start == 1
+- `SRC` が 8 byte aligned ではない
+- `DST` が 8 byte aligned ではない
+- `LEN` が 8 byte aligned ではない
 
-- BUSY → DONE
-  - 条件：内部カウンタ完了（Step1では LEN 消費完了）
+現在 `err` にならない条件:
 
-- DONE → IDLE
-  - 条件：CTRL.clear_done == 1
+- `SRC` / `DST` が RAM 範囲外
+- RAM access の bus error
 
----
+現状の memory bus には bus error response がないため、RAM access 失敗の検出は未実装です。
 
-## Notes（設計方針）
+## Software Sequence
 
-- Step1のゴールは **MMIO制御レジスタ＋FSMの完成**
-- 実メモリ転送、バス仲裁、複数チャネル対応は Step1.5 以降で拡張
-- 本DMAは「CPUを制御に専念させる」ための周辺IPとして設計する
+例:
 
+```text
+write DMA_SRC, source_address
+write DMA_DST, destination_address
+write DMA_LEN, byte_length
+write DMA_CTRL, start=1
+
+poll DMA_STATUS until done=1 or err=1
+write DMA_CTRL, clear_done=1
+```
+
+`source_address`, `destination_address`, `byte_length` はすべて 8 byte aligned にしてください。
+
+## 今後の候補
+
+- RAM 範囲 check
+- `irq` output と interrupt controller への接続
+- byte mask を使った非 8 byte aligned / 非 8 byte 長転送
+- DMA 専用 test program
+- `Docs/DMA.md` と実装の register map を自動検証するテスト

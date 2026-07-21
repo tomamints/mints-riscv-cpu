@@ -42,9 +42,9 @@ module dma #(
     assign mmio.rdata  = mmio_rdata_q;
 
     wire mmio_fire = mmio.valid && mmio.ready;
+    wire dma_active = (state != IDLE);
 
     logic start_pulse;
-    logic clear_done_pulse;
 
     // ----------------------------
     // DMA FSM
@@ -116,7 +116,6 @@ module dma #(
             mmio_rdata_q  <= '0;
 
             start_pulse <= 1'b0;
-            clear_done_pulse <= 1'b0;
 
             state   <= IDLE;
             cur_src <= '0;
@@ -127,7 +126,6 @@ module dma #(
             // ---- defaults ----
             mmio_rvalid_q <= 1'b0;
             start_pulse <= 1'b0;
-            clear_done_pulse <= 1'b0;
 
             // ----------------------------
             // MMIO read/write
@@ -154,18 +152,15 @@ module dma #(
                             if (mmio.wdata[CTRL_CLEAR_DONE]) begin
                                 st_done <= 1'b0;
                                 st_err  <= 1'b0;
-                                clear_done_pulse <= 1'b1;
                             end
-                            if (mmio.wdata[CTRL_IRQ_EN]) begin
-                                irq_en <= 1'b1; // 今回未使用
-                            end
-                            if (mmio.wdata[CTRL_START]) begin
+                            irq_en <= mmio.wdata[CTRL_IRQ_EN]; // 今回未使用
+                            if (mmio.wdata[CTRL_START] && !dma_active) begin
                                 start_pulse <= 1'b1;
                             end
                         end
-                        MMAP_DMA_SRC: r_src <= mmio.wdata[XLEN-1:0];
-                        MMAP_DMA_DST: r_dst <= mmio.wdata[XLEN-1:0];
-                        MMAP_DMA_LEN: r_len <= mmio.wdata[XLEN-1:0];
+                        MMAP_DMA_SRC: if (!dma_active) r_src <= mmio.wdata[XLEN-1:0];
+                        MMAP_DMA_DST: if (!dma_active) r_dst <= mmio.wdata[XLEN-1:0];
+                        MMAP_DMA_LEN: if (!dma_active) r_len <= mmio.wdata[XLEN-1:0];
                         default: ;
                     endcase
                 end
