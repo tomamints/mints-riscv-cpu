@@ -325,6 +325,7 @@ module mmio_controller (
     // outstanding リクエスト保持（1個だけ）
     MembusReg   req_saved;
     Device      last_device;
+    logic       req_issued;
 
     // ---------- ユーティリティ ----------
     function void reset_membus_master (
@@ -417,6 +418,17 @@ module mmio_controller (
         endcase
     endfunction
 
+    function logic get_device_ready (input Device device);
+        unique case (device)
+            RAM:    return ram_membus.ready;
+            ROM:    return rom_membus.ready;
+            DEBUG:  return dbg_membus.ready;
+            ACLINT: return aclint_membus.ready;
+            DMA:    return dma_membus.ready;
+            default:return 1'b0;
+        endcase
+    endfunction
+
     // デバイスの rvalid, rdata を req_core に割当
     function void assign_device_slave (
         input  Device                        device,
@@ -466,12 +478,12 @@ module mmio_controller (
     end
 
     // ============================================================
-    // デバイス master 側: outstanding を常にドライブ
+    // デバイス master 側: device が受理するまで request をドライブ
     // ============================================================
     always_comb begin
         reset_all_device_masters();
 
-        if (req_saved.valid) begin
+        if (req_saved.valid && !req_issued) begin
             assign_device_master(
                 1'b1,
                 req_saved.addr,
@@ -485,23 +497,31 @@ module mmio_controller (
     // ============================================================
     // sequential: 受付 & 完了
     //  - 受付: 空いてるときに req_core.valid を保存
-    //  - 完了: デバイスの rvalid が来たら req_saved.valid を落とす
+    //  - issue: デバイスの ready で受理されたら valid drive を止める
+    //  - 完了: issue 後にデバイスの rvalid が来たら req_saved.valid を落とす
     // ============================================================
     always_ff @(posedge clk or negedge rst) begin
         if (!rst) begin
             last_device <= UNKNOWN;
+            req_issued  <= 1'b0;
             reset_membus_master(req_saved.valid, req_saved.addr, req_saved.wen, req_saved.wdata, req_saved.wmask);
         end else begin
-            // 完了（応答が来たらクリア）
+            // issue / 完了
             if (req_saved.valid) begin
-                if (get_device_rvalid(last_device)) begin
+                if (!req_issued && get_device_ready(last_device)) begin
+                    req_issued <= 1'b1;
+                end
+
+                if (req_issued && get_device_rvalid(last_device)) begin
                     req_saved.valid <= 1'b0;
+                    req_issued      <= 1'b0;
                 end
             end
 
             // 新規受付（空いてるときだけ）
             if (!req_saved.valid && req_core.valid) begin
                 req_saved.valid <= 1'b1;
+                req_issued      <= 1'b0;
                 last_device     <= get_device(req_core.addr);
 
                 req_saved.addr  <= req_core.addr;

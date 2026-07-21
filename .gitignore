@@ -7,6 +7,9 @@ results/
 *.hex
 *.txt
 *.log
+*.vcd
 obj_dir/
+obj_dir_input/
+obj_dir_trace/
 whisper/
 boost_1_88_0/

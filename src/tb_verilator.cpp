@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <signal.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -40,6 +41,10 @@ void sighandler(int signum) {
 
 void set_nonblocking(void) {
     struct termios new_setting;
+
+    if (!isatty(STDIN_FILENO)) {
+        return;
+    }
 
     // 元の設定保存
     if (tcgetattr(STDIN_FILENO, &old_setting) == -1) {
@@ -165,10 +170,16 @@ int main(int argc, char** argv) {
         dut->eval();
         #ifdef TRACE
         tfp->dump((int)i);
+        tfp->flush();
         #endif
     }
 
     dut->final();
+
+    #ifdef TRACE
+        tfp->close();
+        delete tfp;
+    #endif
 
     #ifdef TEST_MODE
         return dut->test_success != 1;

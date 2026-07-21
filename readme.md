@@ -11,7 +11,7 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 
 現状は、CPU 本体の移植実装と、独自 DMA の試作が混在している状態です。
 
-`make build` による Verilator build は通ります。ただし、各命令や特権機能の網羅的な回帰テストが整備されている状態ではありません。
+`make build` による Verilator build は通ります。riscv-tests 由来のテスト結果は `Docs/TEST_STATUS.md` に整理しています。
 
 ## Implemented CPU Features
 
@@ -67,8 +67,8 @@ DMA は独自追加の MMIO peripheral です。目的は、CPU がメモリコ�
 - DMA interrupt 出力は未実装
 - byte/half/word 単位のコピーは未対応
 - RAM 範囲外の `SRC` / `DST` check は未実装
-- busy 中の `SRC` / `DST` / `LEN` 書き換え禁止は仕様としては未整理
-- DMA 専用テストはまだ整備されていない
+- busy 中の `SRC` / `DST` / `LEN` write と追加 start は無視する
+- `debug_dma.c` による基本的な RAM-to-RAM copy test は実行可能
 
 ## DMA Register Map
 
@@ -123,8 +123,128 @@ RAM=$(ROM)
 CYCLES=20
 ```
 
+## Tests
+
+`core/test/share` にある riscv-tests 由来の ELF / hex を、`tools/run_riscv_tests.py` 経由で実行できます。
+
+単体テスト:
+
+```sh
+make test TEST=rv32ui-p-add
+```
+
+smoke test:
+
+```sh
+make test-smoke
+```
+
+suite 実行:
+
+```sh
+make test-suite SUITE=rv32ui-p
+```
+
+よく使う suite には alias があります。
+
+```sh
+make test-rv32ui
+make test-rv32um
+make test-rv32ua
+make test-rv32uc
+make test-rv32mi
+make test-rv32si
+make test-rv64ui
+make test-rv64um
+make test-rv64ua
+make test-rv64uc
+make test-rv64mi
+make test-rv64si
+```
+
+現時点で確認した結果:
+
+```text
+make test-rv32ui TEST_TIMEOUT=20 -> PASS 42 / 42
+make test-rv64ui TEST_TIMEOUT=20 -> PASS 53 / 54
+```
+
+`rv64ui-p-ma_data` は現状 fail します。
+
+より広い suite の結果は `Docs/TEST_STATUS.md` を参照してください。注意点として、`F`, `D`, `Zb*`, `Zfh` 系は pass している rv32 suite もありますが、現状の実装から正式サポートとは扱っていません。
+
+### Custom C Tests
+
+`core/test/*.c` は、RISC-V cross compiler で ELF / binary / hex を生成して simulator で実行できます。default の compile option は compressed instruction を避けつつ CSR 命令を許可するため `-march=rv64ima_zicsr` です。
+
+debug output:
+
+```sh
+make test-output
+```
+
+`debug_output.c` は debug MMIO に `Hello,world!\n` を書き、最後に success を通知します。
+
+debug input:
+
+```sh
+make test-input INPUT_TEXT=A
+```
+
+`debug_input.c` は `ENABLE_DEBUG_INPUT` 付き simulator を `obj_dir_input/sim` に build し、stdin から受け取った文字を 1 増やして debug MMIO へ返します。`INPUT_TEXT=A` の場合は `B` が出ます。
+
+DMA test:
+
+```sh
+make test-dma
+```
+
+`debug_dma.c` は DMA register を MMIO 経由で設定し、RAM-to-RAM copy を検証します。現在は `DMA test OK` と success まで到達することを確認済みです。
+
+ACLINT interrupt tests:
+
+```sh
+make test-mswi
+make test-mtime
+```
+
+`mswi.c` は machine software interrupt、`mtime.c` は machine timer interrupt を発生させ、handler 到達時に success を通知します。どちらも現在 pass します。
+
+trace run:
+
+```sh
+make trace-output
+make trace-dma
+gtkwave sim.vcd
+```
+
+`obj_dir_trace/sim` を使って `sim.vcd` を生成します。
+
+主な C test 変数:
+
+```text
+RISCV_PREFIX=/Users/shiraitouma/riscv/bin/riscv64-unknown-elf-
+RISCV_CFLAGS=-march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany -nostdlib -nostartfiles
+DBG_ADDR=0x40000000
+C_TEST=debug_output
+INPUT_TEXT=A
+```
+
+主な変数:
+
+```text
+TEST=rv32ui-p-simple
+SUITE=rv32ui-p
+TEST_DIR=core/test/share
+BOOTROM=core/test/bootrom.hex
+TEST_OUT=results
+TEST_TIMEOUT=10
+RAM_BASE=0x80000000
+TEST_RUNNER=tools/run_riscv_tests.py
+```
+
 ## Repository Notes
 
-- `boost_1_88_0/`, `whisper/`, `.DS_Store`, `obj_dir/` は Git 管理対象外です。
+- `boost_1_88_0/`, `whisper/`, `.DS_Store`, `obj_dir/`, `obj_dir_input/` は Git 管理対象外です。
 - `Docs/DMA.md` は DMA の現在仕様です。
 - 現状の README は、実装の現状を説明するためのものであり、RISC-V 仕様適合性を保証するものではありません。
