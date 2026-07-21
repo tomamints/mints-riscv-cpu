@@ -5,6 +5,8 @@ result/
 .log
 results/
 *.hex
+*.elf
+*.bin
 *.txt
 *.log
 *.vcd
@@ -13,3 +15,11 @@ obj_dir_input/
 obj_dir_trace/
 whisper/
 boost_1_88_0/
+!core/
+!core/test/
+core/test/*
+!core/test/os2_min/
+core/test/os2_min/*
+!core/test/os2_min/*.c
+!core/test/os2_min/*.h
+!core/test/os2_min/*.ld

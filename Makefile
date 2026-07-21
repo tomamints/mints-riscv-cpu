@@ -56,12 +56,14 @@ TEST_RUNNER ?= tools/run_riscv_tests.py
 DBG_ADDR ?= 0x40000000
 C_TEST ?= debug_output
 INPUT_TEXT ?= A
+OS2_MIN_DIR ?= core/test/os2_min
+OS2_MIN_CFLAGS ?= $(RISCV_CFLAGS) -std=gnu11 -fno-builtin
 
 # =====================================================
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke c-test c-test-build test-output test-input test-dma test-mswi test-mtime trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min trace-c-test trace-output trace-dma
 
 
 
@@ -153,6 +155,11 @@ test-input: CYCLES=10000
 test-input: $(INPUT_SIM) c-test-build
 	printf '%s' '$(INPUT_TEXT)' | DBG_ADDR=$(DBG_ADDR) $(INPUT_SIM) $(BOOTROM) core/test/$(C_TEST).bin.hex $(CYCLES)
 
+test-input-interactive: C_TEST=debug_input
+test-input-interactive: CYCLES=0
+test-input-interactive: $(INPUT_SIM) c-test-build
+	DBG_ADDR=$(DBG_ADDR) $(INPUT_SIM) $(BOOTROM) core/test/$(C_TEST).bin.hex $(CYCLES) < /dev/tty
+
 test-dma: C_TEST=debug_dma
 test-dma: CYCLES=200000
 test-dma: c-test
@@ -164,6 +171,15 @@ test-mswi: c-test
 test-mtime: C_TEST=mtime
 test-mtime: CYCLES=1200000
 test-mtime: c-test
+
+os2-min-build:
+	$(RISCV_GCC) $(OS2_MIN_CFLAGS) -T $(OS2_MIN_DIR)/kernel.ld $(OS2_MIN_DIR)/kernel.c $(OS2_MIN_DIR)/common.c -o $(OS2_MIN_DIR)/kernel.elf
+	$(RISCV_OBJCOPY) -O binary $(OS2_MIN_DIR)/kernel.elf $(OS2_MIN_DIR)/kernel.bin
+	$(PYTHON) core/test/bin2hex.py 8 $(OS2_MIN_DIR)/kernel.bin > $(OS2_MIN_DIR)/kernel.bin.hex
+
+test-os2-min: CYCLES=50000
+test-os2-min: $(SIM) os2-min-build
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_DIR)/kernel.bin.hex $(CYCLES)
 
 trace-c-test: $(TRACE_SIM) c-test-build
 	DBG_ADDR=$(DBG_ADDR) $(TRACE_SIM) $(BOOTROM) core/test/$(C_TEST).bin.hex $(CYCLES)

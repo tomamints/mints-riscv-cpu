@@ -104,6 +104,7 @@ module core_top #(
                     // =========================
 
                     $write("%c", dbg_membus.wdata[7:0]);
+                    $fflush();
                 end
                 // (B) 自作終了フラグ（LSB==1） ※このケースでは 0x01010 は立っていない前提
                 else if (dbg_membus.wdata[0] == 1'b1) begin

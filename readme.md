@@ -189,9 +189,10 @@ debug input:
 
 ```sh
 make test-input INPUT_TEXT=A
+make test-input-interactive
 ```
 
-`debug_input.c` は `ENABLE_DEBUG_INPUT` 付き simulator を `obj_dir_input/sim` に build し、stdin から受け取った文字を 1 増やして debug MMIO へ返します。`INPUT_TEXT=A` の場合は `B` が出ます。
+`debug_input.c` は `ENABLE_DEBUG_INPUT` 付き simulator を `obj_dir_input/sim` に build し、stdin から受け取った文字を 1 増やして debug MMIO へ返します。`INPUT_TEXT=A` の場合は `B` が出ます。対話入力したい場合は `make test-input-interactive` を使います。この target は cycle limit なしで動くため、終了は `Ctrl-C` です。
 
 DMA test:
 
@@ -209,6 +210,14 @@ make test-mtime
 ```
 
 `mswi.c` は machine software interrupt、`mtime.c` は machine timer interrupt を発生させ、handler 到達時に success を通知します。どちらも現在 pass します。
+
+OS2 minimum port:
+
+```sh
+make test-os2-min
+```
+
+`core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` が debug MMIO `0x40000000` 経由で出力できることを確認する段階です。
 
 trace run:
 

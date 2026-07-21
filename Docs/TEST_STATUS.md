@@ -121,5 +121,6 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-dma` | `core/test/debug_dma.c` | Pass | DMA register 設定、RAM-to-RAM copy、結果検証、success まで到達 |
 | `make test-mswi` | `core/test/mswi.c` | Pass | ACLINT machine software interrupt の handler 到達を確認 |
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
+| `make test-os2-min` | `core/test/os2_min/kernel.c` | Pass | OS2由来の `printf` を debug MMIO へ接続した最小kernel。SBI / virtio-blk / paging / U-mode process は未使用 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
