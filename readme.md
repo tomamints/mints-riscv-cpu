@@ -217,13 +217,18 @@ OS2 minimum port:
 make test-os2-min
 make test-os2-min-input INPUT_TEXT=Z
 make test-os2-min-trap
+make test-os2-min-smode
 ```
 
 `core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` と `getchar` が debug MMIO `0x40000000` 経由で動くことを確認する段階です。
 
 この最小移植版は今後RVA23方向へ進める前段として、RV64 kernel前提に寄せています。`size_t` / `paddr_t` / `vaddr_t` / trap frame / CSR helper は64-bit幅に整理し、paging定義はSV32ではなくSV39を戻す前提にしています。
 
-`make test-os2-min-trap` は M-mode kernel 内で `ecall` を発行し、`mtvec` に設定した最小trap entryへ入り、`mcause` / `mepc` を表示して `mret` で復帰するテストです。S-modeへ移る前のtrap経路確認として使います。
+`make test-os2-min-trap` は M-mode kernel 内で `ecall` を発行し、`mtvec` に設定したtrap entryへ入り、`struct trap_frame` へ汎用レジスタを保存してから `SYS_PUTCHAR` を処理する最小syscallテストです。S-modeへ移る前のtrap/syscall経路確認として使います。
+
+`make test-os2-min-smode` は M-mode boot code から `mstatus.MPP=S` と `mepc=supervisor_main` を設定し、`mret` でS-modeへ遷移できることを確認します。Linux起動を目標にする場合、M-mode内の独自 `ecall` service は学習用に留め、S-mode trap、最小SBI、U-mode syscall、Sv39の順で進めます。
+
+今後の実装方針は `Docs/ROADMAP.md` に整理しています。
 
 trace run:
 
