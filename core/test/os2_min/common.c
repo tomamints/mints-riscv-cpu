@@ -9,6 +9,11 @@ void printf(const char *fmt, ...){  //printf("test %d", a);のように、, の�
     while (*fmt){
         if(*fmt == '%'){
             fmt++;
+            bool is_long = false;
+            if (*fmt == 'l') {
+                is_long = true;
+                fmt++;
+            }
             switch(*fmt){
                 case '\0':
                     putchar('%');
@@ -25,22 +30,22 @@ void printf(const char *fmt, ...){  //printf("test %d", a);のように、, の�
                     break;
                 }
                 case 'd' : { //dicimal
-                    int value = va_arg(vargs, const int); //数字
-                    unsigned magnitude;
+                    long value = is_long ? va_arg(vargs, long) : va_arg(vargs, int);
+                    unsigned long magnitude;
 
                     if (value < 0){
                         putchar('-');
-                        magnitude = (unsigned)(0u - (unsigned)value);
+                        magnitude = (unsigned long)(0UL - (unsigned long)value);
                     } else {
-                        magnitude = (unsigned)value;
+                        magnitude = (unsigned long)value;
                     }
 
-                    unsigned divisor = 1;
+                    unsigned long divisor = 1;
                     while (magnitude / divisor > 9)
                         divisor *= 10;
 
                     while (divisor > 0){
-                        unsigned digit = magnitude / divisor;
+                        unsigned long digit = magnitude / divisor;
                         putchar('0' + digit);
                         magnitude %= divisor;
                         divisor /= 10;
@@ -49,8 +54,9 @@ void printf(const char *fmt, ...){  //printf("test %d", a);のように、, の�
                     break;
                 }
                 case 'x' : {
-                    unsigned value = va_arg(vargs, unsigned);
-                    for (int i = 7; i>= 0; i--){
+                    unsigned long value = is_long ? va_arg(vargs, unsigned long) : va_arg(vargs, unsigned);
+                    int digits = is_long ? 15 : 7;
+                    for (int i = digits; i >= 0; i--){
                         int nibble = (value >> (i * 4)) & 0xf;
                         putchar("0123456789abcdef"[nibble]);
                     }
@@ -106,4 +112,3 @@ int strcmp(const char *s1, const char *s2){
 
     return *(unsigned char *)s1 - *(unsigned char*)s2;
 }
-

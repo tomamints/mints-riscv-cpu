@@ -1,4 +1,4 @@
-#include "common.h"
+#include "kernel.h"
 
 extern char __bss[], __bss_end[], __stack_top[];
 
@@ -10,14 +10,29 @@ void putchar(char ch) {
 }
 
 long getchar(void) {
-    return -1;
+    unsigned long long value = *DEBUG_REG;
+    if ((value & (0x01010ULL << 44)) == 0)
+        return -1;
+    return value & 0xff;
 }
 
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-    printf("Hello from OS2 min on my CPU\n");
+#ifdef OS2_MIN_ECHO
+    printf("OS2 min echo ready\n");
+    long ch;
+    do {
+        ch = getchar();
+    } while (ch < 0);
+
+    printf("input=");
+    putchar((char) ch);
+    putchar('\n');
+#else
+    printf("Hello from MiNTsOS min on my CPU\n");
     printf("0x%x\n", 0x1234abcd);
+    printf("kernel base=%lx\n", (uintptr_t) 0x80000000UL);
     printf("%s is coming\n", "Toma");
     printf("%d\n", -11111111);
 
@@ -25,6 +40,7 @@ void kernel_main(void) {
         printf("s1 == s2\n");
     else
         printf("s1 != s2\n");
+#endif
 
     *DEBUG_REG = 1;
     for (;;);

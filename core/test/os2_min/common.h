@@ -10,15 +10,17 @@ typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned long long uint64_t;
+typedef long long int64_t;
 typedef unsigned long size_t;
-typedef uint32_t paddr_t; //物理メモリアドレスポインタ
-typedef uint32_t vaddr_t; //仮想メモリアドレスポインタ
+typedef uint64_t uintptr_t;
+typedef uint64_t paddr_t; // physical address
+typedef uint64_t vaddr_t; // virtual address
 
 #define true  1
 #define false 0
 #define NULL  ((void *) 0)
-#define align_up(value, align)   __builtin_align_up(value, align) //valueをalignの倍数に切り上げる
-#define is_aligned(value, align) __builtin_is_aligned(value, align) //valueがalignの倍数かどうかの判定
+#define align_up(value, align)   (((value) + (align) - 1) & ~((align) - 1))
+#define is_aligned(value, align) (((value) & ((align) - 1)) == 0)
 #define offsetof(type, member)   __builtin_offsetof(type, member) //構造体のメンバのオフセットを返す
 
 void *memset(void *buf, char c, size_t n);

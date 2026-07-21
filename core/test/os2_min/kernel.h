@@ -15,37 +15,37 @@ struct sbiret{
 
 
 struct trap_frame{
-    uint32_t ra;
-    uint32_t gp;
-    uint32_t tp;
-    uint32_t t0;
-    uint32_t t1;
-    uint32_t t2;
-    uint32_t t3;
-    uint32_t t4;
-    uint32_t t5;
-    uint32_t t6;
-    uint32_t a0;
-    uint32_t a1;
-    uint32_t a2;
-    uint32_t a3;
-    uint32_t a4;
-    uint32_t a5;
-    uint32_t a6;
-    uint32_t a7;
-    uint32_t s0;
-    uint32_t s1;
-    uint32_t s2;
-    uint32_t s3;
-    uint32_t s4;
-    uint32_t s5;
-    uint32_t s6;
-    uint32_t s7;
-    uint32_t s8;
-    uint32_t s9;
-    uint32_t s10;
-    uint32_t s11;
-    uint32_t sp;
+    uint64_t ra;
+    uint64_t gp;
+    uint64_t tp;
+    uint64_t t0;
+    uint64_t t1;
+    uint64_t t2;
+    uint64_t t3;
+    uint64_t t4;
+    uint64_t t5;
+    uint64_t t6;
+    uint64_t a0;
+    uint64_t a1;
+    uint64_t a2;
+    uint64_t a3;
+    uint64_t a4;
+    uint64_t a5;
+    uint64_t a6;
+    uint64_t a7;
+    uint64_t s0;
+    uint64_t s1;
+    uint64_t s2;
+    uint64_t s3;
+    uint64_t s4;
+    uint64_t s5;
+    uint64_t s6;
+    uint64_t s7;
+    uint64_t s8;
+    uint64_t s9;
+    uint64_t s10;
+    uint64_t s11;
+    uint64_t sp;
 } __attribute__((packed));
 
 #define READ_CSR(reg)\
@@ -58,7 +58,7 @@ struct trap_frame{
 
 #define WRITE_CSR(reg, value)\
     do{\
-        uint32_t __tmp = (value);\
+        uint64_t __tmp = (uint64_t)(value);\
         __asm__ __volatile__("csrw " #reg ", %0" ::"r"(__tmp));\
     }while(0)
 
@@ -73,17 +73,20 @@ struct process
     int pid;    //processId
     int state;  //process state PROC_UNUSED or RUNNABLE
     vaddr_t sp; //stack pointer
-    uint32_t *page_table; //page table
+    uint64_t *page_table; // page table
     uint8_t stack[8192]; //kernel stack
 };
 
 //PTE
-#define SATP_SV32 (1u << 31) //SV32モード
-#define PAGE_V    (1 << 0) //有効ビット
-#define PAGE_R    (1 << 1) //Readable
-#define PAGE_W    (1 << 2) //Writable
-#define PAGE_X    (1 << 3) //Executable
-#define PAGE_U    (1 << 4) //User
+#define SATP_SV39 (8ULL << 60)
+#define PAGE_V    (1ULL << 0) // Valid
+#define PAGE_R    (1ULL << 1) // Readable
+#define PAGE_W    (1ULL << 2) // Writable
+#define PAGE_X    (1ULL << 3) // Executable
+#define PAGE_U    (1ULL << 4) // User
+#define PAGE_G    (1ULL << 5) // Global
+#define PAGE_A    (1ULL << 6) // Accessed
+#define PAGE_D    (1ULL << 7) // Dirty
 
 //USER MODE
 #define USER_BASE 0x1000000
