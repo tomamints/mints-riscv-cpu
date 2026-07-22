@@ -218,6 +218,8 @@ make test-os2-min
 make test-os2-min-input INPUT_TEXT=Z
 make test-os2-min-trap
 make test-os2-min-smode
+make test-os2-min-strap
+make test-os2-min-sbi
 ```
 
 `core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` と `getchar` が debug MMIO `0x40000000` 経由で動くことを確認する段階です。
@@ -227,6 +229,10 @@ make test-os2-min-smode
 `make test-os2-min-trap` は M-mode kernel 内で `ecall` を発行し、`mtvec` に設定したtrap entryへ入り、`struct trap_frame` へ汎用レジスタを保存してから `SYS_PUTCHAR` を処理する最小syscallテストです。S-modeへ移る前のtrap/syscall経路確認として使います。
 
 `make test-os2-min-smode` は M-mode boot code から `mstatus.MPP=S` と `mepc=supervisor_main` を設定し、`mret` でS-modeへ遷移できることを確認します。Linux起動を目標にする場合、M-mode内の独自 `ecall` service は学習用に留め、S-mode trap、最小SBI、U-mode syscall、Sv39の順で進めます。
+
+`make test-os2-min-strap` は S-mode `ecall` を `stvec` で受けるテストです。`medeleg[9]` で S-mode ecall を S-mode trap へ委譲し、handler で `sepc += 4` して `sret` で元のS-mode処理へ戻れることを確認します。
+
+`make test-os2-min-sbi` は S-mode `ecall` を M-mode `mtvec` で受ける最小SBI経路のテストです。`medeleg[9]` を立てず、S-mode側の `a7/a6/a0` を M-mode trap handler で読み、debug console putchar を実行してS-modeへ戻ります。
 
 今後の実装方針は `Docs/ROADMAP.md` に整理しています。
 

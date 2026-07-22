@@ -48,6 +48,11 @@ struct trap_frame{
     uint64_t sp;
 } __attribute__((packed));
 
+void kernel_trap_entry(void);
+void supervisor_trap_entry(void);
+void kernel_trap_handler(struct trap_frame *f);
+void supervisor_trap_handler(struct trap_frame *f);
+
 #define READ_CSR(reg)\
     ({\
         unsigned long __tmp;\
@@ -95,6 +100,12 @@ struct process
 #define SSTATUS_SPIE (1 << 5)
 
 #define SCAUSE_ECALL 8
+#define MCAUSE_ECALL_FROM_U 8
+#define MCAUSE_ECALL_FROM_S 9
+#define MCAUSE_ECALL_FROM_M 11
+
+#define SBI_EXT_DEBUG_CONSOLE 0x4442434eUL
+#define SBI_FUNC_DEBUG_CONSOLE_PUTCHAR 0
 
 #define PROC_EXITED 2
 

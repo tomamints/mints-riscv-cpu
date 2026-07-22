@@ -12,6 +12,7 @@
 - trap entry で汎用レジスタを `struct trap_frame` に保存できる
 - M-mode 内の学習用 `ecall` service として `SYS_PUTCHAR` が動く
 - M-mode から `mstatus.MPP=S` / `mepc=supervisor_main` / `mret` で S-mode へ遷移できる
+- S-mode `ecall` が `stvec` へ入り、`sepc += 4` 後に `sret` で復帰できる
 
 注意点:
 
@@ -77,6 +78,12 @@ M-mode trap
 - `mepc=supervisor_main`
 - `mret`
 - S-mode で `sstatus` を読める
+
+確認済み:
+
+- `make test-os2-min-strap` で S-mode `ecall` が `stvec` へ入る
+- handler 内で `sepc += 4` を書ける
+- `sret` 後に同じ `ecall` へ戻らず、次のS-mode処理へ復帰する
 
 次に確認すること:
 
@@ -339,9 +346,8 @@ shell
 
 直近でやる順番:
 
-1. S-mode trap test を追加する
-2. M-mode trap test に illegal instruction / timer / software interrupt を追加する
-3. 小さい M-mode firmware 風の構造へ分ける
-4. S-mode から SBI console putchar を呼ぶ
-5. U-mode へ落として U-mode `ecall` を S-mode で受ける
-
+1. M-mode trap test に illegal instruction / timer / software interrupt を追加する
+2. 小さい M-mode firmware 風の構造へ分ける
+3. S-mode から SBI console putchar を呼ぶ
+4. U-mode へ落として U-mode `ecall` を S-mode で受ける
+5. Sv39 を入れる前に、S-mode / U-mode の fault 系 trap を増やす

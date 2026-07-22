@@ -335,6 +335,7 @@ module csrunit (
 			SCOUNTEREN : wmask = SCOUNTEREN_WMASK;
 			STVEC : wmask = STVEC_WMASK;
 			SSCRATCH : wmask = SSCRATCH_WMASK;
+			SEPC : wmask = SEPC_WMASK;
 			SCAUSE : wmask = SCAUSE_WMASK;
 			STVAL : wmask = STVAL_WMASK;
 			SIE : wmask = SIE_WMASK & mideleg;

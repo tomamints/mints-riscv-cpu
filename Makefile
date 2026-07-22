@@ -60,12 +60,13 @@ OS2_MIN_DIR ?= core/test/os2_min
 OS2_MIN_CFLAGS ?= $(RISCV_CFLAGS) -std=gnu11 -fno-builtin
 OS2_MIN_DEFS ?=
 OS2_MIN_NAME ?= kernel
+OS2_MIN_SRCS := $(wildcard $(OS2_MIN_DIR)/*.c) $(wildcard $(OS2_MIN_DIR)/*.S)
 
 # =====================================================
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-trap test-os2-min-smode trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-trap test-os2-min-smode test-os2-min-strap test-os2-min-sbi trace-c-test trace-output trace-dma
 
 
 
@@ -175,7 +176,7 @@ test-mtime: CYCLES=1200000
 test-mtime: c-test
 
 os2-min-build:
-	$(RISCV_GCC) $(OS2_MIN_CFLAGS) $(OS2_MIN_DEFS) -T $(OS2_MIN_DIR)/kernel.ld $(OS2_MIN_DIR)/kernel.c $(OS2_MIN_DIR)/common.c -o $(OS2_MIN_DIR)/$(OS2_MIN_NAME).elf
+	$(RISCV_GCC) $(OS2_MIN_CFLAGS) $(OS2_MIN_DEFS) -T $(OS2_MIN_DIR)/kernel.ld $(OS2_MIN_SRCS) -o $(OS2_MIN_DIR)/$(OS2_MIN_NAME).elf
 	$(RISCV_OBJCOPY) -O binary $(OS2_MIN_DIR)/$(OS2_MIN_NAME).elf $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin
 	$(PYTHON) core/test/bin2hex.py 8 $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin > $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin.hex
 
@@ -199,6 +200,18 @@ test-os2-min-smode: CYCLES=50000
 test-os2-min-smode: OS2_MIN_DEFS=-DOS2_MIN_SMODE
 test-os2-min-smode: OS2_MIN_NAME=kernel_smode
 test-os2-min-smode: $(SIM) os2-min-build
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin.hex $(CYCLES)
+
+test-os2-min-strap: CYCLES=50000
+test-os2-min-strap: OS2_MIN_DEFS=-DOS2_MIN_STRAP
+test-os2-min-strap: OS2_MIN_NAME=kernel_strap
+test-os2-min-strap: $(SIM) os2-min-build
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin.hex $(CYCLES)
+
+test-os2-min-sbi: CYCLES=50000
+test-os2-min-sbi: OS2_MIN_DEFS=-DOS2_MIN_SBI
+test-os2-min-sbi: OS2_MIN_NAME=kernel_sbi
+test-os2-min-sbi: $(SIM) os2-min-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_DIR)/$(OS2_MIN_NAME).bin.hex $(CYCLES)
 
 trace-c-test: $(TRACE_SIM) c-test-build

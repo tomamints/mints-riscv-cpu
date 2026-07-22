@@ -125,5 +125,9 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-os2-min-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c` | Pass | OS2最小kernelの `getchar` を debug MMIO input に接続し、入力文字の echo を確認 |
 | `make test-os2-min-trap` | `core/test/os2_min/kernel.c` | Pass | M-mode kernel 内の `ecall` が `mtvec` のtrap entryへ入り、`struct trap_frame` 保存後に `SYS_PUTCHAR` を処理して `mret` で復帰 |
 | `make test-os2-min-smode` | `core/test/os2_min/kernel.c` | Pass | M-mode boot code が `mstatus.MPP=S` / `mepc=supervisor_main` を設定し、`mret` でS-modeへ遷移 |
+| `make test-os2-min-strap` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]` 設定後に S-mode `ecall` が `stvec` へ入り、handler で `sepc += 4` して `sret` で復帰することを確認 |
+| `make test-os2-min-sbi` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]=0` のまま S-mode `ecall` が M-mode `mtvec` へ入り、最小SBI dispatcher経由で debug console putchar を実行 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
+
+S-mode `sepc` 更新失敗は、CSR write mask table に `SEPC` がなく `wmask=0` になっていたことが原因でした。現在は `SEPC_WMASK` を適用し、S-mode trap handler から `sepc` を更新できます。

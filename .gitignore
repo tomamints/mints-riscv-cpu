@@ -21,5 +21,6 @@ core/test/*
 !core/test/os2_min/
 core/test/os2_min/*
 !core/test/os2_min/*.c
+!core/test/os2_min/*.S
 !core/test/os2_min/*.h
 !core/test/os2_min/*.ld

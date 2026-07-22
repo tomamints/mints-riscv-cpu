@@ -11,7 +11,6 @@ _Static_assert(sizeof(struct trap_frame) == 248, "trap_frame size");
 static volatile unsigned long long *const DEBUG_REG =
     (volatile unsigned long long *) 0x40000000ULL;
 
-void kernel_trap_entry(void);
 void supervisor_main(void);
 
 void putchar(char ch) {
@@ -38,6 +37,32 @@ static long syscall(long sysno, long arg0) {
     return a0;
 }
 
+static struct sbiret sbi_call(long eid, long fid, long arg0) {
+    register long a0 __asm__("a0") = arg0;
+    register long a1 __asm__("a1") = 0;
+    register long a6 __asm__("a6") = fid;
+    register long a7 __asm__("a7") = eid;
+
+    __asm__ __volatile__(
+        "ecall"
+        : "+r"(a0), "+r"(a1)
+        : "r"(a6), "r"(a7)
+        : "memory"
+    );
+
+    return (struct sbiret) { .error = a0, .value = a1 };
+}
+
+static void sbi_putchar(char ch) {
+    struct sbiret ret = sbi_call(
+        SBI_EXT_DEBUG_CONSOLE,
+        SBI_FUNC_DEBUG_CONSOLE_PUTCHAR,
+        (unsigned char) ch
+    );
+    if (ret.error != 0)
+        PANIC("sbi_putchar failed error=%ld", ret.error);
+}
+
 static void enter_supervisor(void (*entry)(void)) {
     uintptr_t mstatus = READ_CSR(mstatus);
 
@@ -49,104 +74,22 @@ static void enter_supervisor(void (*entry)(void)) {
     __asm__ __volatile__("mret");
 }
 
-void kernel_trap_handler(struct trap_frame *f) {
-    uintptr_t mcause = READ_CSR(mcause);
-    uintptr_t mepc = READ_CSR(mepc);
-
-    if (mcause == 11) {
-        if (f->a0 == SYS_PUTCHAR) {
-            putchar((char) f->a1);
-            f->a0 = 0;
-        } else {
-            printf("trap mcause=%lx mepc=%lx\n", mcause, mepc);
-            printf("machine ecall handled\n");
-            printf("saved a0=%lx sp=%lx\n", f->a0, f->sp);
-            f->a0 = -1;
-        }
-        WRITE_CSR(mepc, mepc + 4);
-        return;
-    }
-
-    PANIC("unexpected trap mcause=%lx", mcause);
-}
-
-__attribute__((naked))
-__attribute__((aligned(4)))
-void kernel_trap_entry(void) {
-    __asm__ __volatile__(
-        "addi sp, sp, -256\n"
-        "sd ra, 0(sp)\n"
-        "sd gp, 8(sp)\n"
-        "sd tp, 16(sp)\n"
-        "sd t0, 24(sp)\n"
-        "sd t1, 32(sp)\n"
-        "sd t2, 40(sp)\n"
-        "sd t3, 48(sp)\n"
-        "sd t4, 56(sp)\n"
-        "sd t5, 64(sp)\n"
-        "sd t6, 72(sp)\n"
-        "sd a0, 80(sp)\n"
-        "sd a1, 88(sp)\n"
-        "sd a2, 96(sp)\n"
-        "sd a3, 104(sp)\n"
-        "sd a4, 112(sp)\n"
-        "sd a5, 120(sp)\n"
-        "sd a6, 128(sp)\n"
-        "sd a7, 136(sp)\n"
-        "sd s0, 144(sp)\n"
-        "sd s1, 152(sp)\n"
-        "sd s2, 160(sp)\n"
-        "sd s3, 168(sp)\n"
-        "sd s4, 176(sp)\n"
-        "sd s5, 184(sp)\n"
-        "sd s6, 192(sp)\n"
-        "sd s7, 200(sp)\n"
-        "sd s8, 208(sp)\n"
-        "sd s9, 216(sp)\n"
-        "sd s10, 224(sp)\n"
-        "sd s11, 232(sp)\n"
-        "addi t0, sp, 256\n"
-        "sd t0, 240(sp)\n"
-        "mv a0, sp\n"
-        "call kernel_trap_handler\n"
-        "ld ra, 0(sp)\n"
-        "ld gp, 8(sp)\n"
-        "ld tp, 16(sp)\n"
-        "ld t0, 24(sp)\n"
-        "ld t1, 32(sp)\n"
-        "ld t2, 40(sp)\n"
-        "ld t3, 48(sp)\n"
-        "ld t4, 56(sp)\n"
-        "ld t5, 64(sp)\n"
-        "ld t6, 72(sp)\n"
-        "ld a0, 80(sp)\n"
-        "ld a1, 88(sp)\n"
-        "ld a2, 96(sp)\n"
-        "ld a3, 104(sp)\n"
-        "ld a4, 112(sp)\n"
-        "ld a5, 120(sp)\n"
-        "ld a6, 128(sp)\n"
-        "ld a7, 136(sp)\n"
-        "ld s0, 144(sp)\n"
-        "ld s1, 152(sp)\n"
-        "ld s2, 160(sp)\n"
-        "ld s3, 168(sp)\n"
-        "ld s4, 176(sp)\n"
-        "ld s5, 184(sp)\n"
-        "ld s6, 192(sp)\n"
-        "ld s7, 200(sp)\n"
-        "ld s8, 208(sp)\n"
-        "ld s9, 216(sp)\n"
-        "ld s10, 224(sp)\n"
-        "ld s11, 232(sp)\n"
-        "ld sp, 240(sp)\n"
-        "mret\n"
-    );
-}
-
 void supervisor_main(void) {
+#if defined(OS2_MIN_SBI)
+    printf("entered S-mode SBI test\n");
+    sbi_putchar('S');
+    sbi_putchar('\n');
+#elif defined(OS2_MIN_STRAP)
+    printf("entered S-mode trap test\n");
+    WRITE_CSR(sepc, 0x80000000UL);
+    printf("probe sepc=%lx\n", READ_CSR(sepc));
+    WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
+    __asm__ __volatile__("ecall");
+    printf("returned from S trap\n");
+#else
     printf("entered S-mode\n");
     printf("sstatus=%lx\n", READ_CSR(sstatus));
+#endif
     *DEBUG_REG = 1;
     for (;;);
 }
@@ -176,8 +119,12 @@ void kernel_main(void) {
     if (syscall(SYS_PUTCHAR, '\n') != 0)
         PANIC("SYS_PUTCHAR failed");
     printf("returned from trap\n");
-#elif defined(OS2_MIN_SMODE)
+#elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI)
     printf("OS2 min S-mode test\n");
+#ifdef OS2_MIN_STRAP
+    WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
+#endif
+    WRITE_CSR(mtvec, (uintptr_t) kernel_trap_entry);
     enter_supervisor(supervisor_main);
     PANIC("returned from enter_supervisor");
 #else
