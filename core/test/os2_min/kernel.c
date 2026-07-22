@@ -22,36 +22,17 @@ static void enter_supervisor(void (*entry)(void)) {
 }
 
 void supervisor_main(void) {
-#if defined(OS2_MIN_SBI)
-    printf("entered S-mode SBI test\n");
-    sbi_putchar('S');
-    sbi_putchar('\n');
-#elif defined(OS2_MIN_SBI_INPUT)
-    printf("entered S-mode SBI input test\n");
-    long ch;
-    do {
-        ch = sbi_getchar();
-    } while (ch < 0);
-    printf("sbi input=");
-    sbi_putchar((char) ch);
-    sbi_putchar('\n');
-#elif defined(OS2_MIN_SBI_TIMER)
-    printf("entered S-mode SBI timer test\n");
-    struct sbiret ret = sbi_set_timer(READ_CSR(time) + 10000);
-    if (ret.error != SBI_SUCCESS)
-        PANIC("sbi_set_timer failed error=%ld", ret.error);
+#if defined(OS2_MIN_INPUT)
+    test_sbi_getchar();
+#elif defined(OS2_MIN_STRAP)
+    test_smode_trap();
+    platform_test_success();
     for (;;)
         ;
-#elif defined(OS2_MIN_STRAP)
-    printf("entered S-mode trap test\n");
-    WRITE_CSR(sepc, 0x80000000UL);
-    printf("probe sepc=%lx\n", READ_CSR(sepc));
-    WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
-    __asm__ __volatile__("ecall");
-    printf("returned from S trap\n");
 #else
-    printf("entered S-mode\n");
-    printf("sstatus=%lx\n", READ_CSR(sstatus));
+    test_smode_basic();
+    test_sbi_putchar();
+    test_sbi_timer();
 #endif
     platform_test_success();
     for (;;);
@@ -60,22 +41,12 @@ void supervisor_main(void) {
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-#ifdef OS2_MIN_ECHO
-    printf("OS2 min echo ready\n");
-    long ch;
-    do {
-        ch = getchar();
-    } while (ch < 0);
-
-    printf("input=");
-    putchar((char) ch);
-    putchar('\n');
-#elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI) || defined(OS2_MIN_SBI_INPUT) || defined(OS2_MIN_SBI_TIMER)
+#if defined(OS2_MIN_INPUT) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_NO_INPUT)
     printf("OS2 min S-mode test\n");
 #ifdef OS2_MIN_STRAP
     WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
 #endif
-#ifdef OS2_MIN_SBI_TIMER
+#ifdef OS2_MIN_NO_INPUT
     platform_stop_timer();
     WRITE_CSR(mcounteren, READ_CSR(mcounteren) | MCOUNTEREN_TIME);
     WRITE_CSR(mie, READ_CSR(mie) | MIE_MTIE);

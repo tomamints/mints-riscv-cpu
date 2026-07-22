@@ -13,11 +13,13 @@
 - S-mode `ecall` が `stvec` へ入り、`sepc += 4` 後に `sret` で復帰できる
 - S-mode `ecall` が M-mode の SBI dispatcher へ入り、debug console putchar/getchar が動く
 - SBI TIME `set_timer` が M-mode firmware経由で ACLINT `mtimecmp` を設定し、machine timer interrupt を発生できる
+- 現在の timer interrupt は `MTIP -> M-mode mtvec` までで、`STIP -> S-mode stvec` への通知は未実装
 
 注意点:
 
 - 本来の syscall は U-mode から S-mode へ入る `ecall`
 - SBI は S-mode から M-mode firmware へ入る `ecall`
+- `mideleg` は既に存在するpending bitの配送先を変える機構であり、`MTIP` を `STIP` に変換する機構ではない
 - 今の debug MMIO は Linux 標準デバイスではなく、シミュレータ用の独自 console
 
 ## Target Direction
@@ -154,15 +156,43 @@ S-mode OS2_min
 目的:
 
 - S-mode OSがtimerを使えるようにする
-- SBI `set_timer` 相当の経路を作る
+- SBI `set_timer` でM-mode firmwareがtimerを設定する経路を作る
 - Supervisor timer interruptをS-mode trap handlerで受ける
+
+現在の前提:
+
+- ACLINTの比較結果は `aclint.mtip -> mip.MTIP` に接続されている
+- `mip.STIP` は現在0固定
+- そのため、`mtime >= mtimecmp` は現状では machine timer interrupt として `mtvec` へ入る
+- `mideleg` を設定しても `MTIP` が自動的に `STIP` へ変換されるわけではない
+
+採用方針:
+
+まずは方式A、つまり M-mode firmware が MTIP を受け、S-modeへ supervisor timer interrupt を注入する方式で進めます。将来的には Sstc の `stimecmp` 実装も検討します。
+
+```text
+S-mode
+  -> SBI set_timer(deadline)
+M-mode firmware
+  -> mtimecmp = deadline
+time reached
+  -> MTIP
+  -> M-mode timer handler
+  -> STIPをpendingにする
+S-mode
+  -> Supervisor Timer Interrupt
+  -> stvec
+```
 
 作業:
 
-- M-mode firmware側でACLINT/mtimecmpを操作する
+- M-mode firmware側でACLINT `mtimecmp` を操作する
 - S-mode側からSBI `set_timer` を呼ぶ
-- `mideleg` / `mie` / `sie` / `sstatus.SIE` を設定する
-- timer interrupt発生時に `stvec` へ入ることを確認する
+- MTIPをM-mode trap handlerで受ける
+- M-mode handlerで `mtimecmp` を無効化または再設定する
+- M-modeからSTIPをpendingにできるRTL経路を作る
+- `mideleg.STI` / `sie.STIE` / `sstatus.SIE` を設定する
+- supervisor timer interrupt発生時に `stvec` へ入ることを確認する
 
 完了条件:
 
@@ -180,9 +210,10 @@ S-mode OS2_min
 
 作業:
 
-- RAMをS/U-modeへ許可
-- debug MMIOまたは将来UARTを許可
-- firmware領域をS-modeから書き換え不可にする
+- step 1: RAM全体をS/U-modeへ広く許可し、まず動作確認を優先する
+- step 1: UARTまたはbring-up用MMIOを必要範囲だけ許可する
+- step 2: M-mode firmware text/dataをS/U-modeからアクセス禁止にする
+- step 3: U-modeの本格的な分離はSv39ページテーブル側へ寄せる
 - 許可/禁止アクセスのtrapを確認する
 
 完了条件:
@@ -260,6 +291,11 @@ M-mode firmware
 - NS16550A 互換 UART
 - ACLINT/CLINT compatible timer/software interrupt
 - PLIC compatible external interrupt controller
+
+最初のLinux起動へ向けた分割:
+
+- Phase 9A: NS16550A polling UART と ACLINT/SBI timer
+- Phase 9B: PLIC、UART interrupt、その他device interrupt
 
 UART:
 

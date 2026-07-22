@@ -31,12 +31,14 @@ M-mode trap
 
 `minimal SBI putchar/getchar` と `SBI set_timer` の最小経路まで到達済みです。次は timer interrupt をS-modeへ通知する経路と、PMPを固めるのが自然です。
 
+重要な前提として、現在のRTLではACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続され、`mip.STIP` は0固定です。したがって `mideleg` だけでは `MTIP` は `STIP` に変換されません。S-mode timer interruptを実現するには、M-mode timer handlerが受けたMTIPをS-mode向けSTIPとして注入する経路、または将来のSstc実装が必要です。
+
 ## 優先順位
 
 | Priority | Area | Why |
 |---:|---|---|
 | 1 | SBI timer入口 | S-mode OSからM-mode firmwareへtimer設定を依頼するLinux/OpenSBI方向の基礎 |
-| 2 | timer interrupt | OS scheduler / Linux bring-upに必要。SBI `set_timer` の最小経路は確認済み |
+| 2 | S-mode timer interrupt | OS scheduler / Linux bring-upに必要。MTIPをM-modeで受け、STIPとしてS-modeへ通知する経路が必要 |
 | 3 | PMP / access control | S-modeがRAM/MMIOへ安全にアクセスする前提。firmware保護にも必要 |
 | 4 | U-mode transition | 本来のsyscall経路を作る前提 |
 | 5 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
@@ -57,7 +59,8 @@ M-mode trap
 | S-mode ecall delegation | Pass | `make test-os2-min-strap`, `make test-os2-min-sbi` | `medeleg[9]=0/1` の自動チェックを強める |
 | Minimal SBI putchar | Pass | `make test-os2-min-sbi` | timer系SBIと同じdispatcherへ統合し続ける |
 | SBI getchar | Pass | `make test-os2-min-sbi-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
-| SBI timer | Pass / minimal | `make test-os2-min-sbi-timer` | S-mode timer interruptとして通知する経路を追加 |
+| SBI timer | Pass / minimal | `make test-os2-min` | 現在は `set_timer -> mtimecmp -> MTIP -> M-mode trap` まで |
+| S-mode timer interrupt | Not started | none | M-modeからSTIPをpendingにできるRTL経路を追加し、`mideleg.STI`でS-modeへ配送 |
 | U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Not started | none | `medeleg[8]=1`, `U-mode ecall -> S-mode trap` |
 | PMP | Not started | none | RAM/MMIO許可、firmware領域保護 |
@@ -75,13 +78,9 @@ M-mode trap
 | `make test-dma` | Pass | DMA register設定とRAM-to-RAM copy |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
-| `make test-os2-min` | Pass | OS2_min基本起動 |
-| `make test-os2-min-input INPUT_TEXT=Z` | Pass | OS2_min input path |
-| `make test-os2-min-smode` | Pass | M-modeからS-modeへ遷移 |
+| `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、machine timer interrupt |
+| `make test-os2-min-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
-| `make test-os2-min-sbi` | Pass | `medeleg[9]=0`, S-mode ecallがM-mode SBI handlerへ入る |
-| `make test-os2-min-sbi-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
-| `make test-os2-min-sbi-timer` | Pass | SBI TIME `set_timer` と machine timer interrupt |
 
 ### riscv-tests Summary
 
@@ -100,39 +99,38 @@ M-mode trap
 
 ## 次の実装候補
 
-### Option A: SBI timer入口
+### Option A: S-mode timer interrupt
 
 目的:
 
-- 今の `SBI_EXT_TIME` / `SBI_FUNC_TIME_SET_TIMER` stubを実動作にする
-- S-modeからM-mode firmwareへtimer設定を依頼できるようにする
+- SBI `set_timer` 後にS-modeの `stvec` でsupervisor timer interruptを受ける
+- MTIPとSTIPの違いをRTL/firmwareで明確にする
 
 作業:
 
-- M-mode側でACLINT/mtimecmpへ書く関数を用意する
-- `firmware.c` の `SBI_EXT_TIME` handlerを実装する
-- S-mode側から `sbi_set_timer()` を呼ぶ
-- timer interruptをM-modeまたはS-modeで確認する
+- MTIPをM-mode timer handlerで受ける
+- M-mode handlerで `mtimecmp` を無効化または次回時刻へ再設定する
+- M-modeからSTIPをpendingにできるRTL経路を追加する
+- `mideleg.STI`, `sie.STIE`, `sstatus.SIE` を設定する
+- S-mode `stvec` で timer interrupt を受け、`sret` で戻る
 
 完了条件:
 
-- `make test-os2-min-sbi` が引き続きPass
-- `make test-os2-min-sbi-input INPUT_TEXT=Z` が引き続きPass
-- `make test-os2-min-sbi-timer` を追加してPass
+- `make test-os2-min` が引き続きPass
+- 新しいS-mode timer testで `scause = interrupt | 5` を確認
+- timer handler後に元のS-mode処理へ戻れる
 
 ### Option B: timer / interrupt
 
 目的:
 
-- S-mode OSがtimerを使える前提を作る
-- SBI `set_timer` 相当の入口を作る
+- S-mode OSが周期timerを使える前提を作る
 
 作業:
 
-- M-mode側でACLINT/mtimecmpを操作する
-- S-mode側からSBI `set_timer` を呼ぶ
-- `mideleg` / `mie` / `sie` / `sstatus.SIE` の関係を確認する
-- supervisor timer interruptがS-modeへ届くことを確認する
+- S-mode timer handler内で次回timerを再設定する
+- periodic timerとして複数回割り込みを受ける
+- interrupt中の `SIE/SPIE` と `sepc` 保存を確認する
 
 完了条件:
 

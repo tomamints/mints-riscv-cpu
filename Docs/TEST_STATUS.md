@@ -120,13 +120,9 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-dma` | `core/test/debug_dma.c` | Pass | DMA register 設定、RAM-to-RAM copy、結果検証、success まで到達 |
 | `make test-mswi` | `core/test/mswi.c` | Pass | ACLINT machine software interrupt の handler 到達を確認 |
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
-| `make test-os2-min` | `core/test/os2_min/kernel.c` | Pass | OS2由来の `printf` を debug MMIO へ接続した最小kernel。SBI / virtio-blk / paging / U-mode process は未使用 |
-| `make test-os2-min-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c` | Pass | OS2最小kernelの `getchar` を debug MMIO input に接続し、入力文字の echo を確認 |
-| `make test-os2-min-smode` | `core/test/os2_min/kernel.c` | Pass | M-mode boot code が `mstatus.MPP=S` / `mepc=supervisor_main` を設定し、`mret` でS-modeへ遷移 |
+| `make test-os2-min` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | 入力不要の統合テスト。S-mode遷移、SBI debug console putchar、SBI TIME `set_timer`、machine timer interruptを確認 |
+| `make test-os2-min-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | S-modeから最小SBI dispatcher経由で debug console getchar を呼び、入力文字 `Z` を取得して出力 |
 | `make test-os2-min-strap` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]` 設定後に S-mode `ecall` が `stvec` へ入り、handler で `sepc += 4` して `sret` で復帰することを確認 |
-| `make test-os2-min-sbi` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]=0` のまま S-mode `ecall` が M-mode `mtvec` へ入り、最小SBI dispatcher経由で debug console putchar を実行 |
-| `make test-os2-min-sbi-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c` | Pass | S-modeから最小SBI dispatcher経由で debug console getchar を呼び、入力文字 `Z` を取得して出力 |
-| `make test-os2-min-sbi-timer` | `core/test/os2_min/kernel.c` | Pass | S-modeからSBI TIME `set_timer` を呼び、M-mode firmwareがACLINT `mtimecmp` を設定し、machine timer interruptをM-mode trapで受ける |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

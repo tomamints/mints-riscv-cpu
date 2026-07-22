@@ -66,6 +66,11 @@ void sbi_putchar(char ch);
 long sbi_getchar(void);
 struct sbiret sbi_set_timer(uint64_t stime_value);
 void firmware_handle_sbi(struct trap_frame *f);
+void test_smode_basic(void);
+void test_sbi_putchar(void);
+void test_sbi_getchar(void);
+void test_sbi_timer(void);
+void test_smode_trap(void);
 
 #define READ_CSR(reg)\
     ({\
