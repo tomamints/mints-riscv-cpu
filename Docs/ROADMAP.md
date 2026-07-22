@@ -32,10 +32,12 @@ M-mode trap
   -> S-mode transition
   -> S-mode trap
   -> minimal SBI
+  -> timer / interrupt
+  -> PMP
   -> U-mode transition
   -> U-mode syscall
-  -> standard-ish devices
   -> Sv39 MMU
+  -> standard-ish devices
   -> DTB
   -> Linux Image + initramfs
 ```
@@ -148,7 +150,48 @@ S-mode OS2_min
 - SBI console は bring-up 用として扱う
 - Linux の通常 console は、最終的には UART driver 経由に寄せる
 
-## Phase 5: U-mode Transition
+## Phase 5: Timer / Interrupt
+
+目的:
+
+- S-mode OSがtimerを使えるようにする
+- SBI `set_timer` 相当の経路を作る
+- Supervisor timer interruptをS-mode trap handlerで受ける
+
+作業:
+
+- M-mode firmware側でACLINT/mtimecmpを操作する
+- S-mode側からSBI `set_timer` を呼ぶ
+- `mideleg` / `mie` / `sie` / `sstatus.SIE` を設定する
+- timer interrupt発生時に `stvec` へ入ることを確認する
+
+完了条件:
+
+- S-mode handlerでtimer interruptを受ける
+- `scause` がinterrupt bit付きのtimer causeになる
+- `sepc` が割り込まれた位置を保持する
+- `sret` で元のS-mode処理へ戻る
+
+## Phase 6: PMP / Access Control
+
+目的:
+
+- S-mode / U-modeから使えるRAM/MMIOを定義する
+- M-mode firmware領域をS-modeから保護する
+
+作業:
+
+- RAMをS/U-modeへ許可
+- debug MMIOまたは将来UARTを許可
+- firmware領域をS-modeから書き換え不可にする
+- 許可/禁止アクセスのtrapを確認する
+
+完了条件:
+
+- 許可領域のread/write/executeが成功する
+- 禁止領域アクセスがfaultになる
+
+## Phase 7: U-mode Transition
 
 目的:
 
@@ -169,7 +212,7 @@ S-mode OS2_min
 
 MMU なしでも U-mode は意味があります。メモリ保護は弱いですが、privilege 分離と trap 経路の確認には使えます。
 
-## Phase 6: U-mode Syscall
+## Phase 8: U-mode Syscall
 
 目的:
 
@@ -207,7 +250,7 @@ M-mode firmware
   -> hardware
 ```
 
-## Phase 7: Linux-oriented Devices
+## Phase 9: Linux-oriented Devices
 
 目的:
 
@@ -246,7 +289,7 @@ PLIC:
 - claim/complete
 - DTB の interrupt number と RTL 実装を一致させる
 
-## Phase 8: Sv39 MMU
+## Phase 10: Sv39 MMU
 
 目的:
 
@@ -288,7 +331,7 @@ OS2_min で確認すること:
 - non-canonical VA fault
 - `stval` / `scause` / `sepc`
 
-## Phase 9: Device Tree
+## Phase 11: Device Tree
 
 目的:
 
@@ -317,7 +360,7 @@ satp = 0
 - DTB の address map と RTL の address map を一致させる
 - RAM base/size、UART base、interrupt number、timebase-frequency をズラさない
 
-## Phase 10: Linux Image + Initramfs
+## Phase 12: Linux Image + Initramfs
 
 最初の Linux 構成:
 
@@ -346,8 +389,8 @@ shell
 
 直近でやる順番:
 
-1. M-mode trap test に illegal instruction / timer / software interrupt を追加する
-2. 小さい M-mode firmware 風の構造へ分ける
-3. S-mode から SBI console putchar を呼ぶ
-4. U-mode へ落として U-mode `ecall` を S-mode で受ける
-5. Sv39 を入れる前に、S-mode / U-mode の fault 系 trap を増やす
+1. 最小SBIを `sbi.c` / `platform.c` / `firmware.c` へ整理する
+2. SBI `getchar` と `set_timer` の入口を追加する
+3. timer / interrupt をS-modeで受ける
+4. PMPでRAM/MMIOとfirmware領域のアクセス制御を確認する
+5. U-modeへ落として U-mode `ecall` をS-modeで受ける

@@ -8,21 +8,7 @@ _Static_assert(offsetof(struct trap_frame, s11) == 232, "trap_frame s11 offset")
 _Static_assert(offsetof(struct trap_frame, sp) == 240, "trap_frame sp offset");
 _Static_assert(sizeof(struct trap_frame) == 248, "trap_frame size");
 
-static volatile unsigned long long *const DEBUG_REG =
-    (volatile unsigned long long *) 0x40000000ULL;
-
 void supervisor_main(void);
-
-void putchar(char ch) {
-    *DEBUG_REG = ((unsigned long long)(unsigned char) ch) | (0x01010ULL << 44); // 0x01010ULL << 44 は、デバッグレジスタの上位ビットに特定のフラグを設定するためのものです
-}
-
-long getchar(void) {
-    unsigned long long value = *DEBUG_REG;
-    if ((value & (0x01010ULL << 44)) == 0)
-        return -1;
-    return value & 0xff;
-}
 
 static long syscall(long sysno, long arg0) {
     register long a0 __asm__("a0") = sysno;
@@ -35,32 +21,6 @@ static long syscall(long sysno, long arg0) {
         : "memory"
     );
     return a0;
-}
-
-static struct sbiret sbi_call(long eid, long fid, long arg0) {
-    register long a0 __asm__("a0") = arg0;
-    register long a1 __asm__("a1") = 0;
-    register long a6 __asm__("a6") = fid;
-    register long a7 __asm__("a7") = eid;
-
-    __asm__ __volatile__(
-        "ecall"
-        : "+r"(a0), "+r"(a1)
-        : "r"(a6), "r"(a7)
-        : "memory"
-    );
-
-    return (struct sbiret) { .error = a0, .value = a1 };
-}
-
-static void sbi_putchar(char ch) {
-    struct sbiret ret = sbi_call(
-        SBI_EXT_DEBUG_CONSOLE,
-        SBI_FUNC_DEBUG_CONSOLE_PUTCHAR,
-        (unsigned char) ch
-    );
-    if (ret.error != 0)
-        PANIC("sbi_putchar failed error=%ld", ret.error);
 }
 
 static void enter_supervisor(void (*entry)(void)) {
@@ -79,6 +39,15 @@ void supervisor_main(void) {
     printf("entered S-mode SBI test\n");
     sbi_putchar('S');
     sbi_putchar('\n');
+#elif defined(OS2_MIN_SBI_INPUT)
+    printf("entered S-mode SBI input test\n");
+    long ch;
+    do {
+        ch = sbi_getchar();
+    } while (ch < 0);
+    printf("sbi input=");
+    sbi_putchar((char) ch);
+    sbi_putchar('\n');
 #elif defined(OS2_MIN_STRAP)
     printf("entered S-mode trap test\n");
     WRITE_CSR(sepc, 0x80000000UL);
@@ -90,7 +59,7 @@ void supervisor_main(void) {
     printf("entered S-mode\n");
     printf("sstatus=%lx\n", READ_CSR(sstatus));
 #endif
-    *DEBUG_REG = 1;
+    platform_test_success();
     for (;;);
 }
 
@@ -119,7 +88,7 @@ void kernel_main(void) {
     if (syscall(SYS_PUTCHAR, '\n') != 0)
         PANIC("SYS_PUTCHAR failed");
     printf("returned from trap\n");
-#elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI)
+#elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI) || defined(OS2_MIN_SBI_INPUT)
     printf("OS2 min S-mode test\n");
 #ifdef OS2_MIN_STRAP
     WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
@@ -140,7 +109,7 @@ void kernel_main(void) {
         printf("s1 != s2\n");
 #endif
 
-    *DEBUG_REG = 1;
+    platform_test_success();
     for (;;);
 }
 

@@ -44,6 +44,7 @@ S-modeは、単に現在の特権レベルを変えるだけではありませ�
 | SBI-03 | `a0=error`, `a1=value` 形式で復帰する | PASS | `make test-os2-min-sbi` |
 | SBI-04 | `mepc += 4` 後にS-modeへ戻る | PASS | `make test-os2-min-sbi` |
 | SBI-05 | console putchar | PASS | `make test-os2-min-sbi` |
+| SBI-06 | console getchar | PASS | `make test-os2-min-sbi-input INPUT_TEXT=Z` |
 
 ## S-modeテスト一覧
 

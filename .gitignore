@@ -4,12 +4,15 @@ result/
 .txt
 .log
 results/
+build/
 *.hex
 *.elf
 *.bin
 *.txt
 *.log
 *.vcd
+__pycache__/
+*.pyc
 obj_dir/
 obj_dir_input/
 obj_dir_trace/
@@ -18,6 +21,8 @@ boost_1_88_0/
 !core/
 !core/test/
 core/test/*
+!core/test/hex/
+!core/test/hex/*.hex
 !core/test/os2_min/
 core/test/os2_min/*
 !core/test/os2_min/*.c

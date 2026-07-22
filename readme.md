@@ -118,7 +118,7 @@ make run ROM=path/to/rom.hex RAM=path/to/ram.hex CYCLES=1000
 default は以下です。
 
 ```text
-ROM=core/test/sample_ecall.hex
+ROM=core/test/hex/sample_ecall.hex
 RAM=$(ROM)
 CYCLES=20
 ```
@@ -220,9 +220,14 @@ make test-os2-min-trap
 make test-os2-min-smode
 make test-os2-min-strap
 make test-os2-min-sbi
+make test-os2-min-sbi-input INPUT_TEXT=Z
 ```
 
 `core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` と `getchar` が debug MMIO `0x40000000` 経由で動くことを確認する段階です。
+
+`os2_min` の生成物 `.elf` / `.bin` / `.bin.hex` は `build/os2_min/` に出力します。`core/test/os2_min/` にはソース、ヘッダ、リンカスクリプトだけを置く方針です。
+
+通常のCテスト生成物は `build/test/c_tests/`、bootrom生成物は `build/test/` に出力します。`core/test/` 直下にはテストソースとスクリプトだけを置く方針です。
 
 この最小移植版は今後RVA23方向へ進める前段として、RV64 kernel前提に寄せています。`size_t` / `paddr_t` / `vaddr_t` / trap frame / CSR helper は64-bit幅に整理し、paging定義はSV32ではなくSV39を戻す前提にしています。
 
@@ -232,9 +237,9 @@ make test-os2-min-sbi
 
 `make test-os2-min-strap` は S-mode `ecall` を `stvec` で受けるテストです。`medeleg[9]` で S-mode ecall を S-mode trap へ委譲し、handler で `sepc += 4` して `sret` で元のS-mode処理へ戻れることを確認します。
 
-`make test-os2-min-sbi` は S-mode `ecall` を M-mode `mtvec` で受ける最小SBI経路のテストです。`medeleg[9]` を立てず、S-mode側の `a7/a6/a0` を M-mode trap handler で読み、debug console putchar を実行してS-modeへ戻ります。
+`make test-os2-min-sbi` は S-mode `ecall` を M-mode `mtvec` で受ける最小SBI経路のテストです。`medeleg[9]` を立てず、S-mode側の `a7/a6/a0` を M-mode trap handler で読み、debug console putchar を実行してS-modeへ戻ります。`make test-os2-min-sbi-input INPUT_TEXT=Z` は同じ経路で debug console getchar を確認します。
 
-今後の実装方針は `Docs/ROADMAP.md` に整理しています。
+今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。
 
 trace run:
 
@@ -262,7 +267,7 @@ INPUT_TEXT=A
 TEST=rv32ui-p-simple
 SUITE=rv32ui-p
 TEST_DIR=core/test/share
-BOOTROM=core/test/bootrom.hex
+BOOTROM=build/test/bootrom.hex
 TEST_OUT=results
 TEST_TIMEOUT=10
 RAM_BASE=0x80000000

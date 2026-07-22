@@ -53,6 +53,18 @@ void supervisor_trap_entry(void);
 void kernel_trap_handler(struct trap_frame *f);
 void supervisor_trap_handler(struct trap_frame *f);
 
+void platform_putchar(char ch);
+long platform_getchar(void);
+void platform_test_success(void);
+void putchar(char ch);
+long getchar(void);
+
+struct sbiret sbi_call(long eid, long fid, long arg0);
+void sbi_putchar(char ch);
+long sbi_getchar(void);
+struct sbiret sbi_set_timer(uint64_t stime_value);
+void firmware_handle_sbi(struct trap_frame *f);
+
 #define READ_CSR(reg)\
     ({\
         unsigned long __tmp;\
@@ -104,8 +116,15 @@ struct process
 #define MCAUSE_ECALL_FROM_S 9
 #define MCAUSE_ECALL_FROM_M 11
 
+#define SBI_SUCCESS 0
+#define SBI_ERR_NOT_SUPPORTED -2
+
+#define SBI_EXT_TIME 0x54494d45UL
+#define SBI_FUNC_TIME_SET_TIMER 0
+
 #define SBI_EXT_DEBUG_CONSOLE 0x4442434eUL
 #define SBI_FUNC_DEBUG_CONSOLE_PUTCHAR 0
+#define SBI_FUNC_DEBUG_CONSOLE_GETCHAR 1
 
 #define PROC_EXITED 2
 

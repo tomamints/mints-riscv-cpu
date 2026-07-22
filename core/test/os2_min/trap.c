@@ -1,7 +1,5 @@
 #include "kernel.h"
 
-void putchar(char ch);
-
 void kernel_trap_handler(struct trap_frame *f) {
     uintptr_t mcause = READ_CSR(mcause);
     uintptr_t mepc = READ_CSR(mepc);
@@ -21,19 +19,13 @@ void kernel_trap_handler(struct trap_frame *f) {
     }
 
     if (mcause == MCAUSE_ECALL_FROM_S) {
-        printf("M trap from S ecall\n");
-        printf("saved a7=%lx a6=%lx a0=%lx\n", f->a7, f->a6, f->a0);
-
-        if (f->a7 == SBI_EXT_DEBUG_CONSOLE &&
-            f->a6 == SBI_FUNC_DEBUG_CONSOLE_PUTCHAR) {
-            putchar((char) f->a0);
-            f->a0 = 0;
-            f->a1 = 0;
-        } else {
-            f->a0 = -1;
-            f->a1 = 0;
+        if (!(f->a7 == SBI_EXT_DEBUG_CONSOLE &&
+              f->a6 == SBI_FUNC_DEBUG_CONSOLE_PUTCHAR &&
+              f->a0 == '\n')) {
+            printf("M trap from S ecall\n");
+            printf("saved a7=%lx a6=%lx a0=%lx\n", f->a7, f->a6, f->a0);
         }
-
+        firmware_handle_sbi(f);
         WRITE_CSR(mepc, mepc + 4);
         return;
     }

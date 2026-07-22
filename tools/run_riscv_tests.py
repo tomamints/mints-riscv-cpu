@@ -189,7 +189,7 @@ def parse_args():
     parser.add_argument("-d", "--debug_label", default=".tohost", help="debug device label")
     parser.add_argument("-o", "--output_dir", default="results", help="result output directory")
     parser.add_argument("-t", "--time_limit", type=float, default=10, help="execution time limit; 0 means no limit")
-    parser.add_argument("--rom", default="core/test/bootrom.hex", help="ROM hex file")
+    parser.add_argument("--rom", default="build/test/bootrom.hex", help="ROM hex file")
     parser.add_argument("--ram_base", type=lambda value: int(value, 0), default=0x80000000, help="RAM base address")
     return parser.parse_args()
 

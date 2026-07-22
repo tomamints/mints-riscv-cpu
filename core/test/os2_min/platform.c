@@ -1,0 +1,27 @@
+#include "kernel.h"
+
+static volatile unsigned long long *const DEBUG_REG =
+    (volatile unsigned long long *) 0x40000000ULL;
+
+void platform_putchar(char ch) {
+    *DEBUG_REG = ((unsigned long long)(unsigned char) ch) | (0x01010ULL << 44);
+}
+
+long platform_getchar(void) {
+    unsigned long long value = *DEBUG_REG;
+    if ((value & (0x01010ULL << 44)) == 0)
+        return -1;
+    return value & 0xff;
+}
+
+void platform_test_success(void) {
+    *DEBUG_REG = 1;
+}
+
+void putchar(char ch) {
+    platform_putchar(ch);
+}
+
+long getchar(void) {
+    return platform_getchar();
+}
