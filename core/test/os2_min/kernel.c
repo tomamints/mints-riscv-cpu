@@ -10,19 +10,6 @@ _Static_assert(sizeof(struct trap_frame) == 248, "trap_frame size");
 
 void supervisor_main(void);
 
-static long syscall(long sysno, long arg0) {
-    register long a0 __asm__("a0") = sysno;
-    register long a1 __asm__("a1") = arg0;
-
-    __asm__ __volatile__(
-        "ecall"
-        : "+r"(a0)
-        : "r"(a1)
-        : "memory"
-    );
-    return a0;
-}
-
 static void enter_supervisor(void (*entry)(void)) {
     uintptr_t mstatus = READ_CSR(mstatus);
 
@@ -76,18 +63,6 @@ void kernel_main(void) {
     printf("input=");
     putchar((char) ch);
     putchar('\n');
-#elif defined(OS2_MIN_TRAP)
-    printf("OS2 min trap test\n");
-    WRITE_CSR(mtvec, (uintptr_t) kernel_trap_entry);
-    if (syscall(SYS_PUTCHAR, 'S') != 0)
-        PANIC("SYS_PUTCHAR failed");
-    if (syscall(SYS_PUTCHAR, 'Y') != 0)
-        PANIC("SYS_PUTCHAR failed");
-    if (syscall(SYS_PUTCHAR, 'S') != 0)
-        PANIC("SYS_PUTCHAR failed");
-    if (syscall(SYS_PUTCHAR, '\n') != 0)
-        PANIC("SYS_PUTCHAR failed");
-    printf("returned from trap\n");
 #elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI) || defined(OS2_MIN_SBI_INPUT)
     printf("OS2 min S-mode test\n");
 #ifdef OS2_MIN_STRAP

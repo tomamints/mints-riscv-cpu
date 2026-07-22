@@ -123,7 +123,6 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
 | `make test-os2-min` | `core/test/os2_min/kernel.c` | Pass | OS2由来の `printf` を debug MMIO へ接続した最小kernel。SBI / virtio-blk / paging / U-mode process は未使用 |
 | `make test-os2-min-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c` | Pass | OS2最小kernelの `getchar` を debug MMIO input に接続し、入力文字の echo を確認 |
-| `make test-os2-min-trap` | `core/test/os2_min/kernel.c` | Pass | M-mode kernel 内の `ecall` が `mtvec` のtrap entryへ入り、`struct trap_frame` 保存後に `SYS_PUTCHAR` を処理して `mret` で復帰 |
 | `make test-os2-min-smode` | `core/test/os2_min/kernel.c` | Pass | M-mode boot code が `mstatus.MPP=S` / `mepc=supervisor_main` を設定し、`mret` でS-modeへ遷移 |
 | `make test-os2-min-strap` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]` 設定後に S-mode `ecall` が `stvec` へ入り、handler で `sepc += 4` して `sret` で復帰することを確認 |
 | `make test-os2-min-sbi` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]=0` のまま S-mode `ecall` が M-mode `mtvec` へ入り、最小SBI dispatcher経由で debug console putchar を実行 |

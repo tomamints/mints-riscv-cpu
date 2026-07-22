@@ -4,20 +4,6 @@ void kernel_trap_handler(struct trap_frame *f) {
     uintptr_t mcause = READ_CSR(mcause);
     uintptr_t mepc = READ_CSR(mepc);
 
-    if (mcause == MCAUSE_ECALL_FROM_M) {
-        if (f->a0 == SYS_PUTCHAR) {
-            putchar((char) f->a1);
-            f->a0 = 0;
-        } else {
-            printf("trap mcause=%lx mepc=%lx\n", mcause, mepc);
-            printf("machine ecall handled\n");
-            printf("saved a0=%lx sp=%lx\n", f->a0, f->sp);
-            f->a0 = -1;
-        }
-        WRITE_CSR(mepc, mepc + 4);
-        return;
-    }
-
     if (mcause == MCAUSE_ECALL_FROM_S) {
         if (!(f->a7 == SBI_EXT_DEBUG_CONSOLE &&
               f->a6 == SBI_FUNC_DEBUG_CONSOLE_PUTCHAR &&

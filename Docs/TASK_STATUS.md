@@ -50,7 +50,7 @@ M-mode trap
 | debug MMIO output | Pass | `make test-output`, `make test-os2-min` | 標準UART互換デバイスへ寄せる |
 | debug MMIO input | Pass / bring-up用 | `make test-input INPUT_TEXT=A`, `make test-os2-min-input INPUT_TEXT=Z` | 標準UART互換デバイスへ寄せる |
 | DMA | Pass / experimental | `make test-dma` | interrupt連携、仕様整理、バスプロトコル整理 |
-| M-mode trap | Pass / basic | `make test-os2-min-trap` | illegal instruction / fault / interrupt時の `mtval` とflushを確認 |
+| M-mode trap | Pass / basic | `make test-mswi`, `make test-mtime` | illegal instruction / fault時の `mtval` とflushを確認 |
 | S-mode transition | Pass | `make test-os2-min-smode` | S-modeからM CSRアクセス時のillegal instruction確認 |
 | S-mode trap | Pass / basic | `make test-os2-min-strap` | illegal instruction, ebreak, fault, `stval` を追加 |
 | S-mode ecall delegation | Pass | `make test-os2-min-strap`, `make test-os2-min-sbi` | `medeleg[9]=0/1` の自動チェックを強める |
@@ -76,7 +76,6 @@ M-mode trap
 | `make test-mtime` | Pass | machine timer interrupt |
 | `make test-os2-min` | Pass | OS2_min基本起動 |
 | `make test-os2-min-input INPUT_TEXT=Z` | Pass | OS2_min input path |
-| `make test-os2-min-trap` | Pass | M-mode ecall/trap/mret |
 | `make test-os2-min-smode` | Pass | M-modeからS-modeへ遷移 |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 | `make test-os2-min-sbi` | Pass | `medeleg[9]=0`, S-mode ecallがM-mode SBI handlerへ入る |

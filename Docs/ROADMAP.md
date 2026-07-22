@@ -8,15 +8,13 @@
 
 - RV64 kernel として `core/test/os2_min` が起動する
 - debug MMIO `0x40000000` 経由で `printf` / `getchar` が動く
-- M-mode `ecall` が `mtvec` に入り、`mret` で復帰できる
 - trap entry で汎用レジスタを `struct trap_frame` に保存できる
-- M-mode 内の学習用 `ecall` service として `SYS_PUTCHAR` が動く
 - M-mode から `mstatus.MPP=S` / `mepc=supervisor_main` / `mret` で S-mode へ遷移できる
 - S-mode `ecall` が `stvec` へ入り、`sepc += 4` 後に `sret` で復帰できる
+- S-mode `ecall` が M-mode の SBI dispatcher へ入り、debug console putchar/getchar が動く
 
 注意点:
 
-- 今の M-mode `ecall` service は本来の syscall ではない
 - 本来の syscall は U-mode から S-mode へ入る `ecall`
 - SBI は S-mode から M-mode firmware へ入る `ecall`
 - 今の debug MMIO は Linux 標準デバイスではなく、シミュレータ用の独自 console
