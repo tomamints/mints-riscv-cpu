@@ -93,9 +93,8 @@ module csrunit (
 
 	assign expt_zicntr_priv =
 		is_wsc &&
-		(mode <= S &&
-		zicntr_denied_S ||
-		zicntr_denied_U);
+		((mode == S && zicntr_denied_S) ||
+		 (mode == U && (zicntr_denied_S || zicntr_denied_U)));
 
 	logic expt_trap_return_priv;
 	assign expt_trap_return_priv = (is_mret && mode < M) || (is_sret && mode < S || (mode == S && mstatus_tsr));

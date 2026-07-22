@@ -4,6 +4,13 @@ void kernel_trap_handler(struct trap_frame *f) {
     uintptr_t mcause = READ_CSR(mcause);
     uintptr_t mepc = READ_CSR(mepc);
 
+    if (mcause == MCAUSE_MACHINE_TIMER_INTERRUPT) {
+        platform_stop_timer();
+        printf("M timer interrupt\n");
+        platform_test_success();
+        return;
+    }
+
     if (mcause == MCAUSE_ECALL_FROM_S) {
         if (!(f->a7 == SBI_EXT_DEBUG_CONSOLE &&
               f->a6 == SBI_FUNC_DEBUG_CONSOLE_PUTCHAR &&

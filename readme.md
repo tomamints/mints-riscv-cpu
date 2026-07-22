@@ -220,6 +220,7 @@ make test-os2-min-smode
 make test-os2-min-strap
 make test-os2-min-sbi
 make test-os2-min-sbi-input INPUT_TEXT=Z
+make test-os2-min-sbi-timer
 ```
 
 `core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` と `getchar` が debug MMIO `0x40000000` 経由で動くことを確認する段階です。
@@ -235,6 +236,8 @@ make test-os2-min-sbi-input INPUT_TEXT=Z
 `make test-os2-min-strap` は S-mode `ecall` を `stvec` で受けるテストです。`medeleg[9]` で S-mode ecall を S-mode trap へ委譲し、handler で `sepc += 4` して `sret` で元のS-mode処理へ戻れることを確認します。
 
 `make test-os2-min-sbi` は S-mode `ecall` を M-mode `mtvec` で受ける最小SBI経路のテストです。`medeleg[9]` を立てず、S-mode側の `a7/a6/a0` を M-mode trap handler で読み、debug console putchar を実行してS-modeへ戻ります。`make test-os2-min-sbi-input INPUT_TEXT=Z` は同じ経路で debug console getchar を確認します。
+
+`make test-os2-min-sbi-timer` は M-modeが `mcounteren.TIME` を許可したうえで、S-mode が `time` CSR から絶対時刻を読み、SBI TIME `set_timer` を呼ぶテストです。M-mode firmware が ACLINT `mtimecmp` を設定し、その後 machine timer interrupt が M-mode trap handler へ入ることを確認します。
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。
 

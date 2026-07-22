@@ -12,6 +12,7 @@
 - M-mode から `mstatus.MPP=S` / `mepc=supervisor_main` / `mret` で S-mode へ遷移できる
 - S-mode `ecall` が `stvec` へ入り、`sepc += 4` 後に `sret` で復帰できる
 - S-mode `ecall` が M-mode の SBI dispatcher へ入り、debug console putchar/getchar が動く
+- SBI TIME `set_timer` が M-mode firmware経由で ACLINT `mtimecmp` を設定し、machine timer interrupt を発生できる
 
 注意点:
 

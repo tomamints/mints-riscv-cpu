@@ -46,7 +46,7 @@ make test-rv64ui TEST_TIMEOUT=20
 | `rv64um-p` | 13 / 13 | Pass |
 | `rv64ua-p` | 19 / 19 | Pass |
 | `rv64uc-p` | 1 / 1 | Pass |
-| `rv64mi-p` | 13 / 17 | Partial |
+| `rv64mi-p` | 14 / 17 | Partial |
 | `rv64si-p` | 3 / 7 | Partial |
 | `rv64uf-p` | 0 / 11 | Fail |
 | `rv64ud-p` | 0 / 12 | Fail |
@@ -70,7 +70,6 @@ make test-rv64ui TEST_TIMEOUT=20
 - `rv64mi-p-illegal`
 - `rv64mi-p-instret_overflow`
 - `rv64mi-p-pmpaddr`
-- `rv64mi-p-zicntr`
 
 ### `rv64si-p`
 
@@ -127,6 +126,7 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-os2-min-strap` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]` 設定後に S-mode `ecall` が `stvec` へ入り、handler で `sepc += 4` して `sret` で復帰することを確認 |
 | `make test-os2-min-sbi` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]=0` のまま S-mode `ecall` が M-mode `mtvec` へ入り、最小SBI dispatcher経由で debug console putchar を実行 |
 | `make test-os2-min-sbi-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c` | Pass | S-modeから最小SBI dispatcher経由で debug console getchar を呼び、入力文字 `Z` を取得して出力 |
+| `make test-os2-min-sbi-timer` | `core/test/os2_min/kernel.c` | Pass | S-modeからSBI TIME `set_timer` を呼び、M-mode firmwareがACLINT `mtimecmp` を設定し、machine timer interruptをM-mode trapで受ける |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

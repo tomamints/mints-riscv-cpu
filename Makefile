@@ -77,7 +77,7 @@ OS2_MIN_HEX = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin.hex
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-smode test-os2-min-strap test-os2-min-sbi test-os2-min-sbi-input trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-smode test-os2-min-strap test-os2-min-sbi test-os2-min-sbi-input test-os2-min-sbi-timer trace-c-test trace-output trace-dma
 
 
 
@@ -233,6 +233,12 @@ test-os2-min-sbi-input: OS2_MIN_DEFS=-DOS2_MIN_SBI_INPUT
 test-os2-min-sbi-input: OS2_MIN_NAME=kernel_sbi_input
 test-os2-min-sbi-input: $(INPUT_SIM) bootrom-build os2-min-build
 	printf '%s' '$(INPUT_TEXT)' | DBG_ADDR=$(DBG_ADDR) $(INPUT_SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
+
+test-os2-min-sbi-timer: CYCLES=120000
+test-os2-min-sbi-timer: OS2_MIN_DEFS=-DOS2_MIN_SBI_TIMER
+test-os2-min-sbi-timer: OS2_MIN_NAME=kernel_sbi_timer
+test-os2-min-sbi-timer: $(SIM) bootrom-build os2-min-build
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
 
 trace-c-test: $(TRACE_SIM) bootrom-build c-test-build
 	DBG_ADDR=$(DBG_ADDR) $(TRACE_SIM) $(BOOTROM) $(C_TEST_HEX) $(CYCLES)

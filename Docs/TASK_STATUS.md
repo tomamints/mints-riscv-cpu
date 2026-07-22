@@ -19,7 +19,8 @@
 M-mode trap
   -> S-mode transition
   -> S-mode trap
-  -> minimal SBI putchar
+  -> minimal SBI putchar/getchar
+  -> SBI set_timer
   -> timer / interrupt
   -> PMP
   -> U-mode transition
@@ -28,14 +29,14 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar` まで到達済みです。次は `SBI set_timer` と `timer / interrupt` を固めるのが自然です。
+`minimal SBI putchar/getchar` と `SBI set_timer` の最小経路まで到達済みです。次は timer interrupt をS-modeへ通知する経路と、PMPを固めるのが自然です。
 
 ## 優先順位
 
 | Priority | Area | Why |
 |---:|---|---|
 | 1 | SBI timer入口 | S-mode OSからM-mode firmwareへtimer設定を依頼するLinux/OpenSBI方向の基礎 |
-| 2 | timer interrupt | OS scheduler / Linux bring-upに必要。SBI `set_timer` と結びつく |
+| 2 | timer interrupt | OS scheduler / Linux bring-upに必要。SBI `set_timer` の最小経路は確認済み |
 | 3 | PMP / access control | S-modeがRAM/MMIOへ安全にアクセスする前提。firmware保護にも必要 |
 | 4 | U-mode transition | 本来のsyscall経路を作る前提 |
 | 5 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
@@ -56,7 +57,7 @@ M-mode trap
 | S-mode ecall delegation | Pass | `make test-os2-min-strap`, `make test-os2-min-sbi` | `medeleg[9]=0/1` の自動チェックを強める |
 | Minimal SBI putchar | Pass | `make test-os2-min-sbi` | timer系SBIと同じdispatcherへ統合し続ける |
 | SBI getchar | Pass | `make test-os2-min-sbi-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
-| SBI timer | Stub only | none | `set_timer` 相当を実装してテストする |
+| SBI timer | Pass / minimal | `make test-os2-min-sbi-timer` | S-mode timer interruptとして通知する経路を追加 |
 | U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Not started | none | `medeleg[8]=1`, `U-mode ecall -> S-mode trap` |
 | PMP | Not started | none | RAM/MMIO許可、firmware領域保護 |
@@ -80,6 +81,7 @@ M-mode trap
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 | `make test-os2-min-sbi` | Pass | `medeleg[9]=0`, S-mode ecallがM-mode SBI handlerへ入る |
 | `make test-os2-min-sbi-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
+| `make test-os2-min-sbi-timer` | Pass | SBI TIME `set_timer` と machine timer interrupt |
 
 ### riscv-tests Summary
 
@@ -92,7 +94,7 @@ M-mode trap
 | `rv32ua-p` / `rv64ua-p` | Pass |
 | `rv32uc-p` / `rv64uc-p` | Pass |
 | `rv64ui-p` | Partial |
-| `rv64mi-p` | Partial |
+| `rv64mi-p` | Partial, 14 / 17 |
 | `rv64si-p` | Partial |
 | F/D/Zb/Zfh系 | Not claimed |
 

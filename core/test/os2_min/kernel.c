@@ -35,6 +35,13 @@ void supervisor_main(void) {
     printf("sbi input=");
     sbi_putchar((char) ch);
     sbi_putchar('\n');
+#elif defined(OS2_MIN_SBI_TIMER)
+    printf("entered S-mode SBI timer test\n");
+    struct sbiret ret = sbi_set_timer(READ_CSR(time) + 10000);
+    if (ret.error != SBI_SUCCESS)
+        PANIC("sbi_set_timer failed error=%ld", ret.error);
+    for (;;)
+        ;
 #elif defined(OS2_MIN_STRAP)
     printf("entered S-mode trap test\n");
     WRITE_CSR(sepc, 0x80000000UL);
@@ -63,10 +70,15 @@ void kernel_main(void) {
     printf("input=");
     putchar((char) ch);
     putchar('\n');
-#elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI) || defined(OS2_MIN_SBI_INPUT)
+#elif defined(OS2_MIN_SMODE) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_SBI) || defined(OS2_MIN_SBI_INPUT) || defined(OS2_MIN_SBI_TIMER)
     printf("OS2 min S-mode test\n");
 #ifdef OS2_MIN_STRAP
     WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
+#endif
+#ifdef OS2_MIN_SBI_TIMER
+    platform_stop_timer();
+    WRITE_CSR(mcounteren, READ_CSR(mcounteren) | MCOUNTEREN_TIME);
+    WRITE_CSR(mie, READ_CSR(mie) | MIE_MTIE);
 #endif
     WRITE_CSR(mtvec, (uintptr_t) kernel_trap_entry);
     enter_supervisor(supervisor_main);
