@@ -32,19 +32,20 @@ S-modeは、単に現在の特権レベルを変えるだけではありませ�
 
 | ID | Target | Status | 確認方法 |
 |---|---|---|---|
-| M2S-01 | `mstatus.MPP=S` でS-modeへ入る | PASS | `make test-os2-min-smode` |
-| M2S-02 | `mepc=supervisor_main` へ遷移する | PASS | `make test-os2-min-smode` |
-| M2S-03 | `mret` 後にS-mode codeが動く | PASS | `make test-os2-min-smode` |
+| M2S-01 | `mstatus.MPP=S` でS-modeへ入る | PASS | `make test-os2-min` |
+| M2S-02 | `mepc=supervisor_main` へ遷移する | PASS | `make test-os2-min` |
+| M2S-03 | `mret` 後にS-mode codeが動く | PASS | `make test-os2-min` |
 | SCSR-04 | S-modeから `sepc` をread/writeできる | PASS | `make test-os2-min-strap` |
-| STRAP-ECALL-S-01 | `medeleg[9]=0` でS-mode `ecall` が `mtvec` へ入る | PASS | `make test-os2-min-sbi` |
+| STRAP-ECALL-S-01 | `medeleg[9]=0` でS-mode `ecall` が `mtvec` へ入る | PASS | `make test-os2-min` |
 | STRAP-ECALL-S-02 | `medeleg[9]=1` でS-mode `ecall` が `stvec` へ入る | PASS | `make test-os2-min-strap` |
 | STRAP-10 | `sepc += 4` 後に `sret` で復帰する | PASS | `make test-os2-min-strap` |
-| SBI-01 | S-mode `ecall` がM-mode SBI dispatcherへ到達する | PASS | `make test-os2-min-sbi` |
-| SBI-02 | `a7/a6/a0` の受け渡し | PASS | `make test-os2-min-sbi` |
-| SBI-03 | `a0=error`, `a1=value` 形式で復帰する | PASS | `make test-os2-min-sbi` |
-| SBI-04 | `mepc += 4` 後にS-modeへ戻る | PASS | `make test-os2-min-sbi` |
-| SBI-05 | console putchar | PASS | `make test-os2-min-sbi` |
-| SBI-06 | console getchar | PASS | `make test-os2-min-sbi-input INPUT_TEXT=Z` |
+| SBI-01 | S-mode `ecall` がM-mode SBI dispatcherへ到達する | PASS | `make test-os2-min` |
+| SBI-02 | `a7/a6/a0` の受け渡し | PASS | `make test-os2-min` |
+| SBI-03 | `a0=error`, `a1=value` 形式で復帰する | PASS | `make test-os2-min` |
+| SBI-04 | `mepc += 4` 後にS-modeへ戻る | PASS | `make test-os2-min` |
+| SBI-05 | console putchar | PASS | `make test-os2-min` |
+| SBI-06 | console getchar | PASS | `make test-os2-min-input INPUT_TEXT=Z` |
+| SBI-07 | TIME `set_timer` がACLINT `mtimecmp` を設定する | PASS | `make test-os2-min` |
 
 ## S-modeテスト一覧
 
@@ -200,30 +201,52 @@ S-mode trap → "S"
 
 最初はタイマー割り込み1種類だけで十分です。
 
+現在のRTLでは、ACLINTの比較結果は `aclint.mtip -> mip.MTIP` に接続されています。一方で `mip.STIP` は0固定です。したがって、`mtime >= mtimecmp` は現状では machine timer interrupt になり、M-modeの `mtvec` へ入ります。
+
+`mideleg` は既にpendingになっている割り込み原因をS-modeへ配送する仕組みであり、`MTIP` を `STIP` に変換する仕組みではありません。そのため、S-mode timer interruptを確認するには、方式Aとして M-mode firmware がMTIPを受けてSTIPをpendingにするRTL経路を追加するか、方式BとしてSstcを実装して `stimecmp` からSTIPを発生させる必要があります。
+
+当面は方式Aで進めます。
+
+```text
+S-mode
+  -> SBI set_timer(deadline)
+M-mode firmware
+  -> mtimecmp = deadline
+time reached
+  -> MTIP
+  -> M-mode timer handler
+  -> STIPをpendingにする
+S-mode
+  -> Supervisor Timer Interrupt
+  -> stvec
+```
+
 ID	テスト	期待結果
-SINT-01	mideleg.STI=1	Supervisor timer interruptがS-modeへ委譲される
-SINT-02	sie.STIE=1	Supervisor timer interruptを個別許可
-SINT-03	sstatus.SIE=1	S-mode割り込みを全体許可
-SINT-04	タイマー発火	scauseがinterrupt + cause 5
-SINT-05	sepc保存	割り込まれた命令位置を保持
-SINT-06	interrupt中のSIE/SPIE	自動更新が正しい
-SINT-07	sret	元の処理へ復帰
-SINT-08	再設定	次のタイマー割り込みが発生
-SINT-09	SIE=0	割り込みを保留し、handlerへ入らない
-SINT-10	外部割り込み	後でPLICと接続して確認
+SINT-00	SBI set_timer	`mtimecmp` が設定され、MTIPでM-mode trapへ入る
+SINT-01	MTIP handler	M-mode handlerで `mtimecmp` を無効化または再設定する
+SINT-02	STIP注入	M-modeからS-mode向けtimer pendingを立てられる
+SINT-03	mideleg.STI=1	STIPがS-modeへ配送される
+SINT-04	sie.STIE=1	Supervisor timer interruptを個別許可
+SINT-05	sstatus.SIE=1	S-mode割り込みを全体許可
+SINT-06	タイマー発火	scauseがinterrupt + cause 5
+SINT-07	sepc保存	割り込まれた命令位置を保持
+SINT-08	interrupt中のSIE/SPIE	自動更新が正しい
+SINT-09	sret	元の処理へ復帰
+SINT-10	再設定	次のタイマー割り込みが発生
+SINT-11	SIE=0	割り込みを保留し、handlerへ入らない
+SINT-12	外部割り込み	後でPLICと接続して確認
 
 Privileged Architectureでは、Supervisor software、timer、external interruptはそれぞれcause 1、5、9として扱われます。
 
 タイマー周りは、あなたの構成では次のどちらかになります。
 
 方式A:
-ACLINT/CLINTのmtimecmpをM-mode firmwareが操作
-S-mode → SBI set_timer → M-mode
+ACLINT/CLINTのmtimecmpをM-mode firmwareが操作し、MTIPをM-modeで受けてSTIPをS-modeへ注入する
 
 方式B:
 Sstcを実装してstimecmpをS-modeから操作
 
-まずは方式Aでよいです。
+まずは方式Aでよいです。現在は `SBI set_timer -> mtimecmp -> MTIP -> M-mode trap` まで確認済みで、`STIP -> S-mode stvec` は未実装です。
 
 ### Phase 5：PMPとS-modeアクセス制御
 

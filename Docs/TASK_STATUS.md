@@ -54,11 +54,11 @@ M-mode trap
 | debug MMIO input | Pass / bring-up用 | `make test-input INPUT_TEXT=A`, `make test-os2-min-input INPUT_TEXT=Z` | 標準UART互換デバイスへ寄せる |
 | DMA | Pass / experimental | `make test-dma` | interrupt連携、仕様整理、バスプロトコル整理 |
 | M-mode trap | Pass / basic | `make test-mswi`, `make test-mtime` | illegal instruction / fault時の `mtval` とflushを確認 |
-| S-mode transition | Pass | `make test-os2-min-smode` | S-modeからM CSRアクセス時のillegal instruction確認 |
+| S-mode transition | Pass | `make test-os2-min` | S-modeからM CSRアクセス時のillegal instruction確認 |
 | S-mode trap | Pass / basic | `make test-os2-min-strap` | illegal instruction, ebreak, fault, `stval` を追加 |
-| S-mode ecall delegation | Pass | `make test-os2-min-strap`, `make test-os2-min-sbi` | `medeleg[9]=0/1` の自動チェックを強める |
-| Minimal SBI putchar | Pass | `make test-os2-min-sbi` | timer系SBIと同じdispatcherへ統合し続ける |
-| SBI getchar | Pass | `make test-os2-min-sbi-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
+| S-mode ecall delegation | Pass | `make test-os2-min-strap`, `make test-os2-min` | `medeleg[9]=0/1` の自動チェックを強める |
+| Minimal SBI putchar | Pass | `make test-os2-min` | timer系SBIと同じdispatcherへ統合し続ける |
+| SBI getchar | Pass | `make test-os2-min-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
 | SBI timer | Pass / minimal | `make test-os2-min` | 現在は `set_timer -> mtimecmp -> MTIP -> M-mode trap` まで |
 | S-mode timer interrupt | Not started | none | M-modeからSTIPをpendingにできるRTL経路を追加し、`mideleg.STI`でS-modeへ配送 |
 | U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
