@@ -13,13 +13,13 @@
 - S-mode `ecall` が `stvec` へ入り、`sepc += 4` 後に `sret` で復帰できる
 - S-mode `ecall` が M-mode の SBI dispatcher へ入り、debug console putchar/getchar が動く
 - SBI TIME `set_timer` が M-mode firmware経由で ACLINT `mtimecmp` を設定し、machine timer interrupt を発生できる
-- 現在の timer interrupt は `MTIP -> M-mode mtvec` までで、`STIP -> S-mode stvec` への通知は未実装
+- M-mode timer handlerがSTIPを注入し、S-mode `stvec` で supervisor timer interrupt を受けられる
 
 注意点:
 
 - 本来の syscall は U-mode から S-mode へ入る `ecall`
 - SBI は S-mode から M-mode firmware へ入る `ecall`
-- `mideleg` は既に存在するpending bitの配送先を変える機構であり、`MTIP` を `STIP` に変換する機構ではない
+- `mideleg` は既に存在するpending bitの配送先を変える機構であり、`MTIP` を `STIP` に変換する機構ではない。現在はM-mode firmwareが明示的にSTIPを注入する
 - 今の debug MMIO は Linux 標準デバイスではなく、シミュレータ用の独自 console
 
 ## Target Direction
@@ -162,13 +162,12 @@ S-mode OS2_min
 現在の前提:
 
 - ACLINTの比較結果は `aclint.mtip -> mip.MTIP` に接続されている
-- `mip.STIP` は現在0固定
-- そのため、`mtime >= mtimecmp` は現状では machine timer interrupt として `mtvec` へ入る
 - `mideleg` を設定しても `MTIP` が自動的に `STIP` へ変換されるわけではない
+- M-mode firmwareがACLINT MMIO経由で `mip.STIP` をpendingにできる経路を追加済み
 
 採用方針:
 
-まずは方式A、つまり M-mode firmware が MTIP を受け、S-modeへ supervisor timer interrupt を注入する方式で進めます。将来的には Sstc の `stimecmp` 実装も検討します。
+まずは方式A、つまり M-mode firmware が MTIP を受け、S-modeへ supervisor timer interrupt を注入する方式で進めます。この最小経路は `make test-os2-min` で確認済みです。将来的には Sstc の `stimecmp` 実装も検討します。
 
 ```text
 S-mode
@@ -184,7 +183,7 @@ S-mode
   -> stvec
 ```
 
-作業:
+確認済み:
 
 - M-mode firmware側でACLINT `mtimecmp` を操作する
 - S-mode側からSBI `set_timer` を呼ぶ
@@ -193,6 +192,13 @@ S-mode
 - M-modeからSTIPをpendingにできるRTL経路を作る
 - `mideleg.STI` / `sie.STIE` / `sstatus.SIE` を設定する
 - supervisor timer interrupt発生時に `stvec` へ入ることを確認する
+
+次に追加すること:
+
+- S-mode timer handlerから元の処理へ戻って継続実行する
+- timerを複数回再設定し、periodic timerとして確認する
+- interrupt中の `sstatus.SIE/SPIE` の保存復元を確認する
+- STIP pendingのclear方針を整理する
 
 完了条件:
 

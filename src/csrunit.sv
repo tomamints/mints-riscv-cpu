@@ -125,7 +125,7 @@ module csrunit (
 		1'b0, // 0
 		aclint.mtip, // MTIP
 		1'b0, // 0
-		1'b0, // STIP
+		1'b0, // STIP is held in mip_reg
 		1'b0, // 0
 		aclint.msip, //MSIP
 		1'b0, // 0
@@ -363,6 +363,10 @@ module csrunit (
 
 	UIntX setssip;
 	assign setssip = {{(XLEN - 2){1'b0}}, aclint.setssip, 1'b0 };
+	UIntX setstip;
+	assign setstip = {{(XLEN - 6){1'b0}}, aclint.setstip, 5'b0 };
+	UIntX set_s_interrupt_pending;
+	assign set_s_interrupt_pending = setssip | setstip;
 
 	Addr xepc;
 
@@ -390,7 +394,7 @@ module csrunit (
 			sie <= '0;
 		end else begin
 			mcycle += 1;
-			mip_reg |= setssip;
+			mip_reg |= set_s_interrupt_pending;
 			if (valid) begin
 				if (raise_trap) begin
 					if (raise_expt || raise_interrupt) begin
@@ -451,7 +455,7 @@ module csrunit (
 							MTVEC    : mtvec    <= wdata;
 							MEDELEG    : medeleg    <= wdata;
 							MIDELEG   : mideleg    <= wdata;
-							MIP      : mip_reg    <= (wdata & MIP_WMASK) | setssip;
+							MIP      : mip_reg    <= (wdata & MIP_WMASK) | set_s_interrupt_pending;
 							MIE      : mie      <= wdata & MIE_WMASK;
 							MCOUNTEREN : mcounteren <= wdata[31:0];
 							MSCRATCH : mscratch <= wdata;

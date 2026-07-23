@@ -20,8 +20,12 @@ module aclint_memory (
 
     always_comb begin
         aclint.setssip = 0;
+        aclint.setstip = 0;
         if (membus.valid && membus.wen && membus.addr == MMAP_ACLINT_SETSSIP) begin
             aclint.setssip = membus.wdata[0];
+        end
+        if (membus.valid && membus.wen && membus.addr == MMAP_ACLINT_SETSTIP) begin
+            aclint.setstip = membus.wdata[0];
         end
     end
 

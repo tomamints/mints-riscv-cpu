@@ -47,6 +47,7 @@ void kernel_main(void) {
     WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
 #endif
 #ifdef OS2_MIN_NO_INPUT
+    WRITE_CSR(mideleg, READ_CSR(mideleg) | MIDELEG_STI);
     platform_stop_timer();
     WRITE_CSR(mcounteren, READ_CSR(mcounteren) | MCOUNTEREN_TIME);
     WRITE_CSR(mie, READ_CSR(mie) | MIE_MTIE);

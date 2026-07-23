@@ -39,6 +39,7 @@ package eei;
 	localparam Addr MMAP_ACLINT_MTIMECMP = Addr'('h4000);
 	localparam Addr MMAP_ACLINT_MTIME = Addr'('h7ff8);
 	localparam Addr MMAP_ACLINT_SETSSIP = Addr'('h8000);
+	localparam Addr MMAP_ACLINT_SETSTIP = Addr'('h8008);
 	localparam Addr MMAP_ACLINT_END = MMAP_ACLINT_BEGIN + Addr'('hbfff);
 
 	//DMA

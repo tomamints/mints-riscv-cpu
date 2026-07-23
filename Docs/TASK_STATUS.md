@@ -29,21 +29,20 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar` と `SBI set_timer` の最小経路まで到達済みです。次は timer interrupt をS-modeへ通知する経路と、PMPを固めるのが自然です。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec` の最小経路まで到達済みです。次は periodic timer と、PMPを固めるのが自然です。
 
-重要な前提として、現在のRTLではACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続され、`mip.STIP` は0固定です。したがって `mideleg` だけでは `MTIP` は `STIP` に変換されません。S-mode timer interruptを実現するには、M-mode timer handlerが受けたMTIPをS-mode向けSTIPとして注入する経路、または将来のSstc実装が必要です。
+重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
 ## 優先順位
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | SBI timer入口 | S-mode OSからM-mode firmwareへtimer設定を依頼するLinux/OpenSBI方向の基礎 |
-| 2 | S-mode timer interrupt | OS scheduler / Linux bring-upに必要。MTIPをM-modeで受け、STIPとしてS-modeへ通知する経路が必要 |
-| 3 | PMP / access control | S-modeがRAM/MMIOへ安全にアクセスする前提。firmware保護にも必要 |
-| 4 | U-mode transition | 本来のsyscall経路を作る前提 |
-| 5 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
-| 6 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
-| 7 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
+| 1 | Periodic timer | 1回だけではなく、OS scheduler向けに再設定して複数回受ける |
+| 2 | PMP / access control | S-modeがRAM/MMIOへ安全にアクセスする前提。firmware保護にも必要 |
+| 3 | U-mode transition | 本来のsyscall経路を作る前提 |
+| 4 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
+| 5 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
+| 6 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 
 ## 機能別ステータス
 
@@ -59,8 +58,8 @@ M-mode trap
 | S-mode ecall delegation | Pass | `make test-os2-min-strap`, `make test-os2-min` | `medeleg[9]=0/1` の自動チェックを強める |
 | Minimal SBI putchar | Pass | `make test-os2-min` | timer系SBIと同じdispatcherへ統合し続ける |
 | SBI getchar | Pass | `make test-os2-min-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
-| SBI timer | Pass / minimal | `make test-os2-min` | 現在は `set_timer -> mtimecmp -> MTIP -> M-mode trap` まで |
-| S-mode timer interrupt | Not started | none | M-modeからSTIPをpendingにできるRTL経路を追加し、`mideleg.STI`でS-modeへ配送 |
+| SBI timer | Pass / minimal | `make test-os2-min` | periodic timerとして複数回再設定する |
+| S-mode timer interrupt | Pass / minimal | `make test-os2-min` | `sret` 復帰後の継続実行、SIE/SPIE、pending clearを追加確認 |
 | U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Not started | none | `medeleg[8]=1`, `U-mode ecall -> S-mode trap` |
 | PMP | Not started | none | RAM/MMIO許可、firmware領域保護 |
@@ -78,7 +77,7 @@ M-mode trap
 | `make test-dma` | Pass | DMA register設定とRAM-to-RAM copy |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
-| `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、machine timer interrupt |
+| `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、MTIPからSTIP注入、S-mode timer interrupt |
 | `make test-os2-min-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 
@@ -99,25 +98,23 @@ M-mode trap
 
 ## 次の実装候補
 
-### Option A: S-mode timer interrupt
+### Option A: Periodic timer
 
 目的:
 
-- SBI `set_timer` 後にS-modeの `stvec` でsupervisor timer interruptを受ける
-- MTIPとSTIPの違いをRTL/firmwareで明確にする
+- S-mode OSが周期timerを使える前提を作る
 
 作業:
 
-- MTIPをM-mode timer handlerで受ける
-- M-mode handlerで `mtimecmp` を無効化または次回時刻へ再設定する
-- M-modeからSTIPをpendingにできるRTL経路を追加する
-- `mideleg.STI`, `sie.STIE`, `sstatus.SIE` を設定する
-- S-mode `stvec` で timer interrupt を受け、`sret` で戻る
+- S-mode handler内でSTIP pendingをclearできる経路を整理する
+- S-mode handler内で次回timerを `sbi_set_timer` で再設定する
+- timer interruptを複数回受ける
+- `sret` 後に元のS-mode処理へ戻ることを確認する
 
 完了条件:
 
 - `make test-os2-min` が引き続きPass
-- 新しいS-mode timer testで `scause = interrupt | 5` を確認
+- 複数回 `scause = interrupt | 5` を確認
 - timer handler後に元のS-mode処理へ戻れる
 
 ### Option B: timer / interrupt

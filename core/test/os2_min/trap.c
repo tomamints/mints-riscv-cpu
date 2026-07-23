@@ -7,7 +7,7 @@ void kernel_trap_handler(struct trap_frame *f) {
     if (mcause == MCAUSE_MACHINE_TIMER_INTERRUPT) {
         platform_stop_timer();
         printf("M timer interrupt\n");
-        platform_test_success();
+        platform_set_stip();
         return;
     }
 
@@ -48,6 +48,12 @@ void supervisor_trap_handler(struct trap_frame *f) {
             "csrw sepc, t0\n"
             ::: "t0", "memory"
         );
+        return;
+    }
+
+    if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {
+        printf("S timer interrupt\n");
+        platform_test_success();
         return;
     }
 

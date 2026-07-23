@@ -24,6 +24,9 @@ void test_sbi_getchar(void) {
 
 void test_sbi_timer(void) {
     printf("SBI timer test\n");
+    WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
+    WRITE_CSR(sie, READ_CSR(sie) | SIE_STIE);
+    WRITE_CSR(sstatus, READ_CSR(sstatus) | SSTATUS_SIE);
     struct sbiret ret = sbi_set_timer(READ_CSR(time) + 10000);
     if (ret.error != SBI_SUCCESS)
         PANIC("sbi_set_timer failed error=%ld", ret.error);

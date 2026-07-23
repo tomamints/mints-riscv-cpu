@@ -58,6 +58,7 @@ long platform_getchar(void);
 void platform_test_success(void);
 void platform_set_timer(uint64_t stime_value);
 void platform_stop_timer(void);
+void platform_set_stip(void);
 void putchar(char ch);
 long getchar(void);
 
@@ -122,8 +123,12 @@ struct process
 #define MSTATUS_MIE (1UL << 3)
 #define MIE_MTIE (1UL << 7)
 #define MCOUNTEREN_TIME (1UL << 1)
+#define MIDELEG_STI (1UL << 5)
+#define SSTATUS_SIE (1UL << 1)
+#define SIE_STIE (1UL << 5)
 #define MCAUSE_INTERRUPT_BIT (1ULL << 63)
 #define MCAUSE_MACHINE_TIMER_INTERRUPT (MCAUSE_INTERRUPT_BIT | 7ULL)
+#define SCAUSE_SUPERVISOR_TIMER_INTERRUPT (MCAUSE_INTERRUPT_BIT | 5ULL)
 #define MCAUSE_ECALL_FROM_U 8
 #define MCAUSE_ECALL_FROM_S 9
 #define MCAUSE_ECALL_FROM_M 11
