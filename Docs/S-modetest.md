@@ -53,6 +53,9 @@ S-modeは、単に現在の特権レベルを変えるだけではありませ�
 | SINT-04 | `sie.STIE=1` でSupervisor timer interruptを許可する | PASS | `make test-os2-min` |
 | SINT-05 | `sstatus.SIE=1` でS-mode割り込みを全体許可する | PASS | `make test-os2-min` |
 | SINT-06 | S-mode timer interruptの `scause` がinterrupt + cause 5になる | PASS | `make test-os2-min` |
+| SINT-07 | `sip.STIP` をclearできる | PASS | `make test-os2-min` |
+| SINT-08 | timer handlerから `sret` で元のS-mode処理へ戻る | PASS | `make test-os2-min` |
+| SINT-09 | timerを複数回再設定できる | PASS | `make test-os2-min` |
 
 ## S-modeテスト一覧
 
@@ -238,9 +241,9 @@ S-mode
 | SINT-05 | `sstatus.SIE=1` | PASS | S-mode割り込みを全体許可 |
 | SINT-06 | タイマー発火 | PASS | `scause` がinterrupt + cause 5 |
 | SINT-07 | `sepc`保存 | PASS / basic | 割り込まれた命令位置を保持 |
-| SINT-08 | interrupt中のSIE/SPIE | TODO | 自動更新が正しい |
-| SINT-09 | `sret` | TODO | 元の処理へ復帰 |
-| SINT-10 | 再設定 | TODO | 次のタイマー割り込みが発生 |
+| SINT-08 | STIP clear | PASS | S-mode handlerから `sip.STIP` をclearできる |
+| SINT-09 | `sret` | PASS | 元の処理へ復帰 |
+| SINT-10 | 再設定 | PASS | 次のタイマー割り込みが発生 |
 | SINT-11 | `SIE=0` | TODO | 割り込みを保留し、handlerへ入らない |
 | SINT-12 | 外部割り込み | TODO | 後でPLICと接続して確認 |
 
@@ -254,7 +257,7 @@ ACLINT/CLINTのmtimecmpをM-mode firmwareが操作し、MTIPをM-modeで受け�
 方式B:
 Sstcを実装してstimecmpをS-modeから操作
 
-まずは方式Aでよいです。現在は `SBI set_timer -> mtimecmp -> MTIP -> M-mode trap -> STIP注入 -> S-mode stvec` まで確認済みです。次はperiodic timerとして複数回割り込みを受けることと、STIP pendingのclear方針を確認します。
+まずは方式Aでよいです。現在は `SBI set_timer -> mtimecmp -> MTIP -> M-mode trap -> STIP注入 -> S-mode stvec -> sip.STIP clear -> sretで復帰 -> 再設定` まで確認済みです。`make test-os2-min` ではperiodic timerとして3回割り込みを受けます。
 
 ### Phase 5：PMPとS-modeアクセス制御
 

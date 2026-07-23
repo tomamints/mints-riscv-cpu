@@ -227,7 +227,7 @@ make test-os2-min-strap
 
 この最小移植版は今後RVA23方向へ進める前段として、RV64 kernel前提に寄せています。`size_t` / `paddr_t` / `vaddr_t` / trap frame / CSR helper は64-bit幅に整理し、paging定義はSV32ではなくSV39を戻す前提にしています。
 
-`make test-os2-min` は入力不要の統合テストです。M-mode boot code から `mstatus.MPP=S` と `mepc=supervisor_main` を設定してS-modeへ入り、S-modeからSBI debug console putchar、SBI TIME `set_timer` を順に確認します。timer testでは M-modeが `mcounteren.TIME` を許可したうえで、S-mode が `time` CSR から絶対時刻を読み、M-mode firmware が ACLINT `mtimecmp` を設定します。その後 `MTIP -> M-mode trap handler -> STIP注入 -> S-mode stvec` の順に進み、S-mode timer interruptとして受けられることを確認します。
+`make test-os2-min` は入力不要の統合テストです。M-mode boot code から `mstatus.MPP=S` と `mepc=supervisor_main` を設定してS-modeへ入り、S-modeからSBI debug console putchar、SBI TIME `set_timer` を順に確認します。timer testでは M-modeが `mcounteren.TIME` を許可したうえで、S-mode が `time` CSR から絶対時刻を読み、M-mode firmware が ACLINT `mtimecmp` を設定します。その後 `MTIP -> M-mode trap handler -> STIP注入 -> S-mode stvec` の順に進み、S-mode timer interruptとして3回受け、`sip.STIP` clear、`sret` 復帰、次回timer再設定を確認します。
 
 `make test-os2-min-input INPUT_TEXT=Z` は入力ありのSBIテストです。S-modeからSBI debug console getcharを呼び、入力文字を取得してdebug console putcharで出力します。
 

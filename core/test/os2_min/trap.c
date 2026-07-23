@@ -53,7 +53,7 @@ void supervisor_trap_handler(struct trap_frame *f) {
 
     if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {
         printf("S timer interrupt\n");
-        platform_test_success();
+        WRITE_CSR(sip, READ_CSR(sip) & ~SIP_STIP);
         return;
     }
 

@@ -167,7 +167,7 @@ S-mode OS2_min
 
 採用方針:
 
-まずは方式A、つまり M-mode firmware が MTIP を受け、S-modeへ supervisor timer interrupt を注入する方式で進めます。この最小経路は `make test-os2-min` で確認済みです。将来的には Sstc の `stimecmp` 実装も検討します。
+まずは方式A、つまり M-mode firmware が MTIP を受け、S-modeへ supervisor timer interrupt を注入する方式で進めます。この経路は `make test-os2-min` で、3回のperiodic timer再設定まで確認済みです。将来的には Sstc の `stimecmp` 実装も検討します。
 
 ```text
 S-mode
@@ -192,13 +192,14 @@ S-mode
 - M-modeからSTIPをpendingにできるRTL経路を作る
 - `mideleg.STI` / `sie.STIE` / `sstatus.SIE` を設定する
 - supervisor timer interrupt発生時に `stvec` へ入ることを確認する
+- S-mode timer handlerから元の処理へ戻って継続実行する
+- timerを複数回再設定し、periodic timerとして確認する
+- `sip.STIP` をS-mode handlerからclearする
 
 次に追加すること:
 
-- S-mode timer handlerから元の処理へ戻って継続実行する
-- timerを複数回再設定し、periodic timerとして確認する
-- interrupt中の `sstatus.SIE/SPIE` の保存復元を確認する
-- STIP pendingのclear方針を整理する
+- interrupt中の `sstatus.SIE/SPIE` の保存復元を明示確認する
+- timer間隔やdeadline再設定方針を整理する
 
 完了条件:
 
@@ -206,6 +207,7 @@ S-mode
 - `scause` がinterrupt bit付きのtimer causeになる
 - `sepc` が割り込まれた位置を保持する
 - `sret` で元のS-mode処理へ戻る
+- timerを複数回再設定して受けられる
 
 ## Phase 6: PMP / Access Control
 

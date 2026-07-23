@@ -13,15 +13,18 @@ void supervisor_main(void);
 static void enter_supervisor(void (*entry)(void)) {
     uintptr_t mstatus = READ_CSR(mstatus);
 
-    mstatus &= ~(3UL << 11);
+    //S-modeに移行するための設定
+    mstatus &= ~(3UL << 11); // MPPだけを00にリセット
     mstatus |=  (1UL << 11); // MPP=S
 
-    WRITE_CSR(mstatus, mstatus);
+    //Mstatusの設定を反映して、S-modeに移行する
+    WRITE_CSR(mstatus, mstatus); // mstatusに設定を書き込み
     WRITE_CSR(mepc, (uintptr_t) entry);
     __asm__ __volatile__("mret");
 }
 
 void supervisor_main(void) {
+    printf("Supervisor_main start\n");
 #if defined(OS2_MIN_INPUT)
     test_sbi_getchar();
 #elif defined(OS2_MIN_STRAP)
@@ -53,7 +56,7 @@ void kernel_main(void) {
     WRITE_CSR(mie, READ_CSR(mie) | MIE_MTIE);
 #endif
     WRITE_CSR(mtvec, (uintptr_t) kernel_trap_entry);
-    enter_supervisor(supervisor_main);
+    enter_supervisor(supervisor_main); // M-modeでmepc=supervisor_main, MPP=Sを設定し、mretでS-modeへ降りてsupervisor_mainから実行する
     PANIC("returned from enter_supervisor");
 #else
     printf("Hello from MiNTsOS min on my CPU\n");

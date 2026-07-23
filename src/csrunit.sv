@@ -37,6 +37,7 @@ module csrunit (
 	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_02aa);
 
 	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_0000_0122);
+	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
 	localparam UIntX STVEC_WMASK  = 'hffff_ffff_ffff_fffd;
@@ -337,6 +338,7 @@ module csrunit (
 			SEPC : wmask = SEPC_WMASK;
 			SCAUSE : wmask = SCAUSE_WMASK;
 			STVAL : wmask = STVAL_WMASK;
+			SIP : wmask = SIP_WMASK & mideleg;
 			SIE : wmask = SIE_WMASK & mideleg;
 			default       : wmask = '0;
 		endcase
@@ -469,6 +471,7 @@ module csrunit (
 							SEPC : sepc <= wdata;
 							SCAUSE : scause <= wdata;
 							STVAL : stval <= wdata;
+							SIP : mip_reg <= (mip_reg & ~(SIP_WMASK & mideleg)) | (wdata & (SIP_WMASK & mideleg)) | set_s_interrupt_pending;
 							SIE : sie <= wdata;
 							default  : /* do nothing */ ;
 						endcase

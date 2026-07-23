@@ -7,7 +7,10 @@ void test_smode_basic(void) {
 
 void test_sbi_putchar(void) {
     printf("SBI putchar test\n");
-    sbi_putchar('S');
+    sbi_putchar('T');
+    sbi_putchar('o');
+    sbi_putchar('m');
+    sbi_putchar('a');
     sbi_putchar('\n');
 }
 
@@ -25,13 +28,16 @@ void test_sbi_getchar(void) {
 void test_sbi_timer(void) {
     printf("SBI timer test\n");
     WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
-    WRITE_CSR(sie, READ_CSR(sie) | SIE_STIE);
-    WRITE_CSR(sstatus, READ_CSR(sstatus) | SSTATUS_SIE);
-    struct sbiret ret = sbi_set_timer(READ_CSR(time) + 10000);
-    if (ret.error != SBI_SUCCESS)
-        PANIC("sbi_set_timer failed error=%ld", ret.error);
-    for (;;)
-        ;
+    WRITE_CSR(sie, READ_CSR(sie) | SIE_STIE); // SIE.STIEをセットして、S-modeでのタイマー割り込みを有効化
+    WRITE_CSR(sstatus, READ_CSR(sstatus) | SSTATUS_SIE); // SSTATUS.SIEをセットして、S-modeでの割り込みを有効化
+    for (int i = 0; i < 3; i++) {
+        printf("timer wait %d\n", i);
+        struct sbiret ret = sbi_set_timer(READ_CSR(time) + 10000);
+        if (ret.error != SBI_SUCCESS)
+            PANIC("sbi_set_timer failed error=%ld", ret.error);
+        __asm__ __volatile__("wfi"); //wait for interruptで、割り込みが来るまで待機する
+        printf("timer woke %d\n", i);
+    }
 }
 
 void test_smode_trap(void) {
