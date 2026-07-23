@@ -19,6 +19,11 @@ module csrunit (
 	output logic raise_trap,
 	output Addr  trap_vector,
 	output logic trap_return,
+	output UIntX pmpcfg0_value,
+	output UIntX pmpaddr0_value,
+	output UIntX pmpaddr1_value,
+	output UIntX pmpaddr2_value,
+	output UIntX pmpaddr3_value,
 	input  UInt64  minstret,
 	aclint_if.slave aclint
 );
@@ -35,6 +40,8 @@ module csrunit (
 	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_02aa);
+	localparam UIntX PMPCFG0_WMASK = UIntX'('h0000_0000_1f1f_1f1f);
+	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
 
 	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_0000_0122);
 	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0222);
@@ -115,8 +122,15 @@ module csrunit (
 
 	UIntX mhartid = 0;
 	UIntX mstatus, mtvec, mideleg, mie, mip, mip_reg, mscratch, mepc, mcause, mtval;
+	UIntX pmpcfg0, pmpaddr0, pmpaddr1, pmpaddr2, pmpaddr3;
 	UInt32 mcounteren;
 	UInt64 mcycle, medeleg;
+
+	assign pmpcfg0_value = pmpcfg0;
+	assign pmpaddr0_value = pmpaddr0;
+	assign pmpaddr1_value = pmpaddr1;
+	assign pmpaddr2_value = pmpaddr2;
+	assign pmpaddr3_value = pmpaddr3;
 
 	assign mip = mip_reg | {
 		{(XLEN - 12){1'b0}},
@@ -298,6 +312,11 @@ module csrunit (
 			MIP   : rdata = mip;
 			MIE   : rdata = mie;
 			MCOUNTEREN   : rdata = {{(XLEN-32){1'b0}},mcounteren};
+			PMPCFG0 : rdata = pmpcfg0;
+			PMPADDR0 : rdata = pmpaddr0;
+			PMPADDR1 : rdata = pmpaddr1;
+			PMPADDR2 : rdata = pmpaddr2;
+			PMPADDR3 : rdata = pmpaddr3;
 			MCYCLE  : rdata = mcycle;
 			MINSTRET: rdata = minstret;
 			MSCRATCH: rdata = mscratch;
@@ -327,6 +346,11 @@ module csrunit (
 			MIP      : wmask = MIP_WMASK;
 			MIE      : wmask = MIE_WMASK;
 			MCOUNTEREN : wmask = MCOUNTEREN_WMASK;
+			PMPCFG0 : wmask = PMPCFG0_WMASK;
+			PMPADDR0 : wmask = PMPADDR_WMASK;
+			PMPADDR1 : wmask = PMPADDR_WMASK;
+			PMPADDR2 : wmask = PMPADDR_WMASK;
+			PMPADDR3 : wmask = PMPADDR_WMASK;
 			MSCRATCH : wmask = MSCRATCH_WMASK;
 			MEPC     : wmask = MEPC_WMASK;
 			MCAUSE   : wmask = MCAUSE_WMASK;
@@ -381,6 +405,11 @@ module csrunit (
 			mideleg    <= '0;
 			mie      <= '0;
 			mip_reg  <= '0;
+			pmpcfg0  <= '0;
+			pmpaddr0 <= '0;
+			pmpaddr1 <= '0;
+			pmpaddr2 <= '0;
+			pmpaddr3 <= '0;
 			mcounteren <= '0;
 			mscratch <= '0;
 			mcycle   <= '0;
@@ -460,6 +489,11 @@ module csrunit (
 							MIP      : mip_reg    <= (wdata & MIP_WMASK) | set_s_interrupt_pending;
 							MIE      : mie      <= wdata & MIE_WMASK;
 							MCOUNTEREN : mcounteren <= wdata[31:0];
+							PMPCFG0 : pmpcfg0 <= wdata & PMPCFG0_WMASK;
+							PMPADDR0 : pmpaddr0 <= wdata & PMPADDR_WMASK;
+							PMPADDR1 : pmpaddr1 <= wdata & PMPADDR_WMASK;
+							PMPADDR2 : pmpaddr2 <= wdata & PMPADDR_WMASK;
+							PMPADDR3 : pmpaddr3 <= wdata & PMPADDR_WMASK;
 							MSCRATCH : mscratch <= wdata;
 							MEPC     : mepc     <= wdata;
 							MCAUSE   : mcause   <= wdata;

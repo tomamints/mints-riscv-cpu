@@ -291,11 +291,114 @@ module core (
 	logic exs_stall;
 	assign exs_stall = exs_data_hazard || exs_muldiv_stall;
 
-	logic instruction_address_misaligned;
-	Addr memaddr;
-	logic loadstore_address_misaligned;
+		logic instruction_address_misaligned;
+		Addr memaddr;
+		logic loadstore_address_misaligned;
+		logic loadstore_pmp_fault;
+		UIntX loadstore_access_size;
 
-	always_comb begin
+		UIntX pmpcfg0_value;
+		UIntX pmpaddr0_value;
+		UIntX pmpaddr1_value;
+		UIntX pmpaddr2_value;
+		UIntX pmpaddr3_value;
+
+		function automatic logic pmp_tor_match(
+			input Addr access_start,
+			input UIntX access_size,
+			input Addr region_start,
+			input Addr region_end
+		);
+			return access_start >= region_start &&
+			       access_start < region_end &&
+			       access_size <= region_end - access_start;
+		endfunction
+
+		function automatic logic pmp_napot_match(
+			input Addr access_start,
+			input UIntX access_size,
+			input Addr pmpaddr
+		);
+			Addr region_start;
+			Addr region_end;
+			Addr mask;
+			mask = ~Addr'(0);
+			for (int bit_index = 0; bit_index < XLEN; bit_index++) begin
+				if (!pmpaddr[bit_index]) begin
+					mask = (Addr'(1) << (bit_index + 3)) - 1;
+					break;
+				end
+			end
+			region_start = (pmpaddr << 2) & ~mask;
+			region_end = region_start + mask + 1;
+			return access_start >= region_start &&
+			       access_start < region_end &&
+			       access_size <= region_end - access_start;
+		endfunction
+
+		function automatic logic pmp_data_allow(
+			input PrivMode priv_mode,
+			input Addr access_start,
+			input UIntX access_size,
+			input logic is_write,
+			input UIntX pmpcfg0,
+			input UIntX pmpaddr0,
+			input UIntX pmpaddr1,
+			input UIntX pmpaddr2,
+			input UIntX pmpaddr3
+		);
+			logic matched;
+			logic allow;
+			logic entry_match;
+			logic permission_ok;
+			logic [7:0] cfg [0:3];
+			Addr addr [0:3];
+			Addr tor_start;
+			Addr tor_end;
+
+			if (priv_mode == M) begin
+				return 1'b1;
+			end
+
+			cfg[0] = pmpcfg0[7:0];
+			cfg[1] = pmpcfg0[15:8];
+			cfg[2] = pmpcfg0[23:16];
+			cfg[3] = pmpcfg0[31:24];
+			addr[0] = pmpaddr0;
+			addr[1] = pmpaddr1;
+			addr[2] = pmpaddr2;
+			addr[3] = pmpaddr3;
+
+			matched = 1'b0;
+			allow = 1'b0;
+			for (int pmp_index = 0; pmp_index < 4; pmp_index++) begin
+				entry_match = 1'b0;
+				permission_ok = is_write ? cfg[pmp_index][1] : cfg[pmp_index][0];
+
+				unique case (cfg[pmp_index][4:3])
+					2'b01: begin
+						tor_start = (pmp_index == 0) ? Addr'(0) : (addr[pmp_index - 1] << 2);
+						tor_end = addr[pmp_index] << 2;
+						entry_match = pmp_tor_match(access_start, access_size, tor_start, tor_end);
+					end
+					2'b11: begin
+						entry_match = pmp_napot_match(access_start, access_size, addr[pmp_index]);
+					end
+					default: begin
+						entry_match = 1'b0;
+					end
+				endcase
+
+				if (!matched && entry_match) begin
+					matched = 1'b1;
+					allow = permission_ok;
+				end
+			end
+
+			return matched && allow;
+		endfunction
+
+		always_comb begin
 		//EX-> MEM
 		exq_rready  = memq_wready && !exs_stall;
 		memq_wvalid = exq_rvalid && !exs_stall;
@@ -312,30 +415,55 @@ module core (
 		// exception
 		instruction_address_misaligned = (IALIGN == 32 && memq_wdata.br_taken && memq_wdata.jump_addr[1:0] != 2'b00);
 		memaddr = exs_ctrl.is_amo ? exs_rs1_data : exs_alu_result;
-		if (inst_is_memop(exs_ctrl)) begin
-			unique case (exs_ctrl.funct3[1:0])
-				2'b00 : loadstore_address_misaligned = 1'b0;
+			if (inst_is_memop(exs_ctrl)) begin
+				unique case (exs_ctrl.funct3[1:0])
+					2'b00 : loadstore_address_misaligned = 1'b0;
 				2'b01 : loadstore_address_misaligned = (memaddr[0]   != 1'b0); //H
 				2'b10 : loadstore_address_misaligned = (memaddr[1:0] != 2'b00); //W
 				2'b11 : loadstore_address_misaligned = (memaddr[2:0] != 3'b000); //D
 				default : loadstore_address_misaligned = 1'b0;
 			endcase
-		end else begin
-			loadstore_address_misaligned = 1'b0;
-		end
-		memq_wdata.expt = exq_rdata.expt;
-		if (!memq_rdata.expt.valid)begin
-			if ( instruction_address_misaligned)begin
-				memq_wdata.expt.valid = 1;
-				memq_wdata.expt.cause = INSTRUCTION_ADDRESS_MISALIGNED;
-				memq_wdata.expt.value = memq_wdata.jump_addr;
-			end else if (loadstore_address_misaligned) begin
-				memq_wdata.expt.valid = 1;
-				memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ADDRESS_MISALIGNED : STORE_AMO_ADDRESS_MISALIGNED;
-				memq_wdata.expt.value = exs_alu_result;
+			end else begin
+				loadstore_address_misaligned = 1'b0;
+			end
+			unique case (exs_ctrl.funct3[1:0])
+				2'b00 : loadstore_access_size = 1;
+				2'b01 : loadstore_access_size = 2;
+				2'b10 : loadstore_access_size = 4;
+				2'b11 : loadstore_access_size = 8;
+				default : loadstore_access_size = 1;
+			endcase
+			loadstore_pmp_fault =
+				inst_is_memop(exs_ctrl) &&
+				!loadstore_address_misaligned &&
+				!pmp_data_allow(
+					csru_priv_mode,
+					memaddr,
+					loadstore_access_size,
+					inst_is_store(exs_ctrl),
+					pmpcfg0_value,
+					pmpaddr0_value,
+					pmpaddr1_value,
+					pmpaddr2_value,
+					pmpaddr3_value
+				);
+			memq_wdata.expt = exq_rdata.expt;
+			if (!memq_wdata.expt.valid)begin
+				if ( instruction_address_misaligned)begin
+					memq_wdata.expt.valid = 1;
+					memq_wdata.expt.cause = INSTRUCTION_ADDRESS_MISALIGNED;
+					memq_wdata.expt.value = memq_wdata.jump_addr;
+				end else if (loadstore_address_misaligned) begin
+					memq_wdata.expt.valid = 1;
+					memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ADDRESS_MISALIGNED : STORE_AMO_ADDRESS_MISALIGNED;
+					memq_wdata.expt.value = exs_alu_result;
+				end else if (loadstore_pmp_fault) begin
+					memq_wdata.expt.valid = 1;
+					memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ACCESS_FAULT : STORE_AMO_ACCESS_FAULT;
+					memq_wdata.expt.value = memaddr;
+				end
 			end
 		end
-	end
 
 	////////////MEM Stage ////////////////
 
@@ -404,10 +532,15 @@ module core (
 		.rdata    (csru_rdata),
 		.mode     (csru_priv_mode),
 		.raise_trap  (csru_raise_trap),
-		.trap_vector (csru_trap_vector),
-		.trap_return (csru_trap_return),
-		.minstret (minstret),
-		.aclint(aclint)
+			.trap_vector (csru_trap_vector),
+			.trap_return (csru_trap_return),
+			.pmpcfg0_value(pmpcfg0_value),
+			.pmpaddr0_value(pmpaddr0_value),
+			.pmpaddr1_value(pmpaddr1_value),
+			.pmpaddr2_value(pmpaddr2_value),
+			.pmpaddr3_value(pmpaddr3_value),
+			.minstret (minstret),
+			.aclint(aclint)
 	);
 
 

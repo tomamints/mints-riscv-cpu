@@ -29,7 +29,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timerの最小経路まで到達済みです。次は PMP を固めるのが自然です。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-allの最小経路まで到達済みです。次はPMPの禁止領域faultテストを追加するのが自然です。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -37,11 +37,12 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | PMP / access control | S-modeがRAM/MMIOへ安全にアクセスする前提。firmware保護にも必要 |
-| 2 | U-mode transition | 本来のsyscall経路を作る前提 |
-| 3 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
-| 4 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
-| 5 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
+| 1 | PMP fault test | S-modeから禁止領域へdata accessしたときにload/store access faultになることを確認 |
+| 2 | PMP / access control | firmware領域保護とRAM/MMIO許可を整理 |
+| 3 | U-mode transition | 本来のsyscall経路を作る前提 |
+| 4 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
+| 5 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
+| 6 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 
 ## 機能別ステータス
 
@@ -61,7 +62,7 @@ M-mode trap
 | S-mode timer interrupt | Pass / periodic basic | `make test-os2-min` | interrupt中のSIE/SPIEを追加確認 |
 | U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Not started | none | `medeleg[8]=1`, `U-mode ecall -> S-mode trap` |
-| PMP | Not started | none | RAM/MMIO許可、firmware領域保護 |
+| PMP | Pass / data allow-all basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap` | 禁止領域のload/store access faultを追加 |
 | Sv39 | Not started | none | Bareからidentity mappingへ |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 

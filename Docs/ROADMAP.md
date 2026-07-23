@@ -218,11 +218,23 @@ S-mode
 
 作業:
 
+- step 1: data load/storeに対するPMP checkを追加する
+- step 1: M-modeはL=0相当としてPMP checkをバイパスする
+- step 1: PMP NAPOT allow-allをM-mode bootで設定し、既存S-modeテストを維持する
 - step 1: RAM全体をS/U-modeへ広く許可し、まず動作確認を優先する
-- step 1: UARTまたはbring-up用MMIOを必要範囲だけ許可する
+- step 1: debug MMIOまたは将来UARTを必要範囲だけ許可する
 - step 2: M-mode firmware text/dataをS/U-modeからアクセス禁止にする
 - step 3: U-modeの本格的な分離はSv39ページテーブル側へ寄せる
 - 許可/禁止アクセスのtrapを確認する
+
+確認済み:
+
+- `pmpcfg0`, `pmpaddr0`〜`pmpaddr3` のCSR read/write
+- `pmpcfg0` は4エントリ分だけ保持し、Lビットは0相当
+- data load/storeでPMP matchとR/W permissionを確認する
+- access size全体がPMP範囲内に入ることを確認する
+- 複数entryがmatchする場合、番号の小さいentryを優先する
+- `pmpaddr0=~0UL`, `pmpcfg0=NAPOT|R|W|X` のallow-allで既存S-modeテストがPass
 
 完了条件:
 

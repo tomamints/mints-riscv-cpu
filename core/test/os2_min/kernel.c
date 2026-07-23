@@ -46,6 +46,8 @@ void kernel_main(void) {
 
 #if defined(OS2_MIN_INPUT) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_NO_INPUT)
     printf("OS2 min S-mode test\n");
+    WRITE_CSR(pmpaddr0, ~0UL); // pmpaddr0をNAPOT all-onesにして、全物理アドレスを1つのPMP領域にする
+    WRITE_CSR(pmpcfg0, PMP_R | PMP_W | PMP_X | PMP_A_NAPOT); // PMP entry0をR/W/X許可にして、S-modeのdata accessを通す
 #ifdef OS2_MIN_STRAP
     WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
 #endif
