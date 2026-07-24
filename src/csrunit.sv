@@ -40,9 +40,6 @@ module csrunit (
 	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_02aa);
-	localparam UIntX PMPCFG0_WMASK = UIntX'('h0000_0000_1f1f_1f1f);
-	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
-
 	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_0000_0122);
 	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);

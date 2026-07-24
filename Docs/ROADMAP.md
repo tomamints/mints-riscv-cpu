@@ -219,6 +219,7 @@ S-mode
 作業:
 
 - step 1: data load/storeに対するPMP checkを追加する
+- step 1: PMP判定を `src/pmp_checker.sv` に分離し、core本体はallow/fault判定結果だけを見る
 - step 1: M-modeはL=0相当としてPMP checkをバイパスする
 - step 1: PMP NAPOT allow-allをM-mode bootで設定し、既存S-modeテストを維持する
 - step 1: RAM全体をS/U-modeへ広く許可し、まず動作確認を優先する
@@ -232,8 +233,9 @@ S-mode
 - `pmpcfg0`, `pmpaddr0`〜`pmpaddr3` のCSR read/write
 - `pmpcfg0` は4エントリ分だけ保持し、Lビットは0相当
 - data load/storeでPMP matchとR/W permissionを確認する
-- access size全体がPMP範囲内に入ることを確認する
-- 複数entryがmatchする場合、番号の小さいentryを優先する
+- `memunit.valid` は既存exceptionが無い命令だけdata bus accessを出す
+- PMP entryはaccessの一部でも重なればmatch候補になり、番号の小さいentryを優先する
+- 優先されたentryがaccess size全体を含まない場合はaccess faultにする
 - `pmpaddr0=~0UL`, `pmpcfg0=NAPOT|R|W|X` のallow-allで既存S-modeテストがPass
 
 完了条件:

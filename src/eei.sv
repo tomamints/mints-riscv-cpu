@@ -15,6 +15,8 @@ package eei;
 	typedef logic signed [63:0] SInt64;
 
 	localparam UIntX MACHINE_IMPLEMENTATION_ID = 1;
+	localparam UIntX PMPCFG0_WMASK = UIntX'('h0000_0000_1f1f_1f1f);
+	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
 
 	localparam UInt64 MSTATUS_UXL = 2 << 32;
 	localparam UInt64 MSTATUS_SXL = 2 << 34;

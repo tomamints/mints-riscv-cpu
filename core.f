@@ -20,6 +20,7 @@ src/aclint_memory.sv
 src/alu.sv
 src/brunit.sv
 src/csrunit.sv
+src/pmp_checker.sv
 src/muldivunit.sv
 src/memunit.sv
 src/amounit.sv

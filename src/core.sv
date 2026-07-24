@@ -302,101 +302,39 @@ module core (
 		UIntX pmpaddr1_value;
 		UIntX pmpaddr2_value;
 		UIntX pmpaddr3_value;
+		logic pmp_data_allow;
+		PrivMode csru_priv_mode;
+		UIntX csru_rdata;
+		logic csru_raise_trap;
+		Addr csru_trap_vector;
+		logic csru_trap_return;
+		UInt64 minstret;
 
-		function automatic logic pmp_tor_match(
-			input Addr access_start,
-			input UIntX access_size,
-			input Addr region_start,
-			input Addr region_end
-		);
-			return access_start >= region_start &&
-			       access_start < region_end &&
-			       access_size <= region_end - access_start;
+		function automatic UIntX mem_access_size(input logic [2:0] funct3);
+			unique case (funct3[1:0])
+				2'b00 : return UIntX'(1);
+				2'b01 : return UIntX'(2);
+				2'b10 : return UIntX'(4);
+				2'b11 : return UIntX'(8);
+				default : return UIntX'(1);
+			endcase
 		endfunction
 
-		function automatic logic pmp_napot_match(
-			input Addr access_start,
-			input UIntX access_size,
-			input Addr pmpaddr
+		assign memaddr = exs_ctrl.is_amo ? exs_rs1_data : exs_alu_result;
+		assign loadstore_access_size = mem_access_size(exs_ctrl.funct3);
+
+		pmp_checker pmp_data_checker (
+			.priv_mode(csru_priv_mode),
+			.access_start(memaddr),
+			.access_size(loadstore_access_size),
+			.is_write(inst_is_store(exs_ctrl)),
+			.pmpcfg0(pmpcfg0_value),
+			.pmpaddr0(pmpaddr0_value),
+			.pmpaddr1(pmpaddr1_value),
+			.pmpaddr2(pmpaddr2_value),
+			.pmpaddr3(pmpaddr3_value),
+			.allow(pmp_data_allow)
 		);
-			Addr region_start;
-			Addr region_end;
-			Addr mask;
-			mask = ~Addr'(0);
-			for (int bit_index = 0; bit_index < XLEN; bit_index++) begin
-				if (!pmpaddr[bit_index]) begin
-					mask = (Addr'(1) << (bit_index + 3)) - 1;
-					break;
-				end
-			end
-			region_start = (pmpaddr << 2) & ~mask;
-			region_end = region_start + mask + 1;
-			return access_start >= region_start &&
-			       access_start < region_end &&
-			       access_size <= region_end - access_start;
-		endfunction
-
-		function automatic logic pmp_data_allow(
-			input PrivMode priv_mode,
-			input Addr access_start,
-			input UIntX access_size,
-			input logic is_write,
-			input UIntX pmpcfg0,
-			input UIntX pmpaddr0,
-			input UIntX pmpaddr1,
-			input UIntX pmpaddr2,
-			input UIntX pmpaddr3
-		);
-			logic matched;
-			logic allow;
-			logic entry_match;
-			logic permission_ok;
-			logic [7:0] cfg [0:3];
-			Addr addr [0:3];
-			Addr tor_start;
-			Addr tor_end;
-
-			if (priv_mode == M) begin
-				return 1'b1;
-			end
-
-			cfg[0] = pmpcfg0[7:0];
-			cfg[1] = pmpcfg0[15:8];
-			cfg[2] = pmpcfg0[23:16];
-			cfg[3] = pmpcfg0[31:24];
-			addr[0] = pmpaddr0;
-			addr[1] = pmpaddr1;
-			addr[2] = pmpaddr2;
-			addr[3] = pmpaddr3;
-
-			matched = 1'b0;
-			allow = 1'b0;
-			for (int pmp_index = 0; pmp_index < 4; pmp_index++) begin
-				entry_match = 1'b0;
-				permission_ok = is_write ? cfg[pmp_index][1] : cfg[pmp_index][0];
-
-				unique case (cfg[pmp_index][4:3])
-					2'b01: begin
-						tor_start = (pmp_index == 0) ? Addr'(0) : (addr[pmp_index - 1] << 2);
-						tor_end = addr[pmp_index] << 2;
-						entry_match = pmp_tor_match(access_start, access_size, tor_start, tor_end);
-					end
-					2'b11: begin
-						entry_match = pmp_napot_match(access_start, access_size, addr[pmp_index]);
-					end
-					default: begin
-						entry_match = 1'b0;
-					end
-				endcase
-
-				if (!matched && entry_match) begin
-					matched = 1'b1;
-					allow = permission_ok;
-				end
-			end
-
-			return matched && allow;
-		endfunction
 
 		always_comb begin
 		//EX-> MEM
@@ -412,9 +350,8 @@ module core (
 		memq_wdata.alu_result = (exs_ctrl.is_muldiv) ? exs_muldiv_result : exs_alu_result;
 		memq_wdata.br_taken = exs_ctrl.is_jump || inst_is_br(exs_ctrl) && exs_brunit_take;
 		memq_wdata.jump_addr = (inst_is_br(exs_ctrl)) ? exs_pc + exs_imm : exs_alu_result & ~1;
-		// exception
-		instruction_address_misaligned = (IALIGN == 32 && memq_wdata.br_taken && memq_wdata.jump_addr[1:0] != 2'b00);
-		memaddr = exs_ctrl.is_amo ? exs_rs1_data : exs_alu_result;
+			// exception
+			instruction_address_misaligned = (IALIGN == 32 && memq_wdata.br_taken && memq_wdata.jump_addr[1:0] != 2'b00);
 			if (inst_is_memop(exs_ctrl)) begin
 				unique case (exs_ctrl.funct3[1:0])
 					2'b00 : loadstore_address_misaligned = 1'b0;
@@ -426,27 +363,10 @@ module core (
 			end else begin
 				loadstore_address_misaligned = 1'b0;
 			end
-			unique case (exs_ctrl.funct3[1:0])
-				2'b00 : loadstore_access_size = 1;
-				2'b01 : loadstore_access_size = 2;
-				2'b10 : loadstore_access_size = 4;
-				2'b11 : loadstore_access_size = 8;
-				default : loadstore_access_size = 1;
-			endcase
 			loadstore_pmp_fault =
 				inst_is_memop(exs_ctrl) &&
 				!loadstore_address_misaligned &&
-				!pmp_data_allow(
-					csru_priv_mode,
-					memaddr,
-					loadstore_access_size,
-					inst_is_store(exs_ctrl),
-					pmpcfg0_value,
-					pmpaddr0_value,
-					pmpaddr1_value,
-					pmpaddr2_value,
-					pmpaddr3_value
-				);
+				!pmp_data_allow;
 			memq_wdata.expt = exq_rdata.expt;
 			if (!memq_wdata.expt.valid)begin
 				if ( instruction_address_misaligned)begin
@@ -491,16 +411,16 @@ module core (
 		end
 	end
 
-	UIntX memu_rdata;
-	logic memu_stall;
-	Addr memu_addr;
-	assign memu_addr = mems_ctrl.is_amo ? memq_rdata.rs1_data : memq_rdata.alu_result;
+		UIntX memu_rdata;
+		logic memu_stall;
+		Addr memu_addr;
+		assign memu_addr = mems_ctrl.is_amo ? memq_rdata.rs1_data : memq_rdata.alu_result;
 
-	memunit memu (
-		.clk    (clk),
-		.rst    (rst),
-		.valid  (mems_valid && !csru_raise_trap),
-		.is_new (mems_is_new),
+		memunit memu (
+			.clk    (clk),
+			.rst    (rst),
+			.valid  (mems_valid && !csru_raise_trap && !mems_expt.valid),
+			.is_new (mems_is_new),
 		.ctrl   (mems_ctrl),
 		.addr   (memu_addr),
 		.rs2    (memq_rdata.rs2_data),
@@ -509,14 +429,7 @@ module core (
 		.membus (d_membus)
 	);
 
-	PrivMode csru_priv_mode;
-	UIntX csru_rdata;
-	logic csru_raise_trap;
-	Addr csru_trap_vector;
-	logic csru_trap_return;
-	UInt64 minstret;
-
-	csrunit csru(
+		csrunit csru(
 		.clk      (clk),
 		.rst      (rst),
 		.valid    (mems_valid),
@@ -528,10 +441,10 @@ module core (
 		.csr_addr (mems_inst_bits[31:20]),
 		.rs1_addr (memq_rdata.rs1_addr),
 		.rs1_data (memq_rdata.rs1_data),
-		.can_intr (mems_is_new),
-		.rdata    (csru_rdata),
-		.mode     (csru_priv_mode),
-		.raise_trap  (csru_raise_trap),
+			.can_intr (mems_is_new),
+			.rdata    (csru_rdata),
+			.mode     (csru_priv_mode),
+			.raise_trap  (csru_raise_trap),
 			.trap_vector (csru_trap_vector),
 			.trap_return (csru_trap_return),
 			.pmpcfg0_value(pmpcfg0_value),
@@ -541,7 +454,7 @@ module core (
 			.pmpaddr3_value(pmpaddr3_value),
 			.minstret (minstret),
 			.aclint(aclint)
-	);
+		);
 
 
 	always_comb begin
