@@ -41,7 +41,7 @@ module aclint_memory (
             membus.rdata  <= 0;
             msip0         <= 0;
             mtime         <= 0;
-            mtimecmp0     <= 0;
+            mtimecmp0     <= '1;
         end else begin
             //count up mtime
             mtime += 1;
@@ -53,14 +53,16 @@ module aclint_memory (
                     D = membus.wdata & M;
                     case(addr)
                         MMAP_ACLINT_MSIP : msip0 <= D[0] | (msip0 & ~M[0]);
-                        MMAP_ACLINT_MTIME : mtime <= D | mtime & ~M;
+                        MMAP_ACLINT_MTIME,
+                        MMAP_CLINT_MTIME : mtime <= D | mtime & ~M;
                         MMAP_ACLINT_MTIMECMP : mtimecmp0 <= D | mtimecmp0 & ~M;
                         default: ;
                     endcase
                 end else begin
                     case(addr)
                         MMAP_ACLINT_MSIP : membus.rdata <= {63'b0, msip0};
-                        MMAP_ACLINT_MTIME : membus.rdata <= mtime;
+                        MMAP_ACLINT_MTIME,
+                        MMAP_CLINT_MTIME : membus.rdata <= mtime;
                         MMAP_ACLINT_MTIMECMP : membus.rdata <= mtimecmp0;
                         default          : membus.rdata <= '0;
                     endcase

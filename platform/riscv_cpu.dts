@@ -57,5 +57,12 @@
 			reg-io-width = <1>;
 			status = "okay";
 		};
+
+		clint: clint@2000000 {
+			compatible = "riscv,clint0";
+			reg = <0x0 0x02000000 0x0 0x0000c000>;
+			interrupts-extended = <&cpu0_intc 3>,
+			                      <&cpu0_intc 7>;
+		};
 	};
 };

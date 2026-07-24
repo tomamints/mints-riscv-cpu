@@ -93,7 +93,7 @@ These suites are outside the currently claimed implementation scope and were not
 | Cache block / address translation extensions | Not claimed |
 | DMA | Implemented experimentally, basic C test passes |
 | UART | WIP: NS16550A compatible minimal polling TX, LSR, basic register hold, and DLAB pass |
-| PMP | WIP: allow-all, S-mode load/store/fetch access fault, and blocked store side-effect tests pass |
+| PMP | WIP: 8 entries, allow-all, S-mode load/store/fetch access fault, blocked store side-effect, and OpenSBI PMP domain payload fetch tests pass |
 | Sv39 | WIP: data/fetch 3-level 4KiB identity mapping, satp.PPN switch, L1/L2 superpage, load/store/instruction page fault, SUM, MXR, A/D fault pass |
 
 ## Custom C Tests
@@ -122,7 +122,8 @@ These suites are outside the currently claimed implementation scope and were not
 |---|---|---:|---|
 | `make dtb` | `platform/riscv_cpu.dts` | Pass | 最小DTBを生成。RAM `0x80000000/0x08000000`、UART `serial@10000000`、`reg-shift=0`、`reg-io-width=1`、earlycon bootargsを記述 |
 | `make test-linux-bootargs` | `platform/bootrom_linux.S`, `platform/bootargs_check.S`, `platform/riscv_cpu.dts` | Pass | bootromが `a0=0`, `a1=0x87f00000` を設定して `0x80000000` へジャンプし、payloadが受け取れることを確認 |
-| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | external OpenSBI binary | Pass / banner | OpenSBI v1.3.1 `FW_JUMP` を `0x80000000`、DTBを `0x87f00000` に配置して起動。`uart8250` console認識、banner、`Next Address=0x80200000`、`Next Arg1=0x87f00000`、`Next Mode=S-mode` を確認。timer deviceは未認識 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | external OpenSBI binary | Pass / platform info | OpenSBI v1.3.1 `FW_JUMP` を `0x80000000`、DTBを `0x87f00000` に配置して起動。`uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timer、`Next Address=0x80200000`、`Next Arg1=0x87f00000`、`Next Mode=S-mode` を確認 |
+| `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | `platform/opensbi_payload_entry.S`, `platform/opensbi_payload.c` | Pass | OpenSBIから `0x80200000` のS-mode payloadへhandoffし、payload側で `hartid=0`, `dtb=0x87f00000`, SBI Base spec `0x01000000`, SBI legacy console putcharを確認。最後にdebug MMIOへsuccessを書いて終了 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

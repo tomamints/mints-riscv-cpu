@@ -29,7 +29,7 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 | Exceptions | WIP | illegal instruction, ECALL, EBREAK, misaligned access など |
 | Interrupts | WIP | ACLINT の software/timer interrupt を CSR unit に接続 |
 | Privilege modes | WIP | M/S/U mode、trap delegation、`MRET`/`SRET` を部分実装 |
-| PMP | WIP | 4 entries、TOR/NAPOT、data/fetch check。S-mode allow-all、禁止load/store/fetch faultを確認 |
+| PMP | WIP | 8 entries、TOR/NAPOT、data/fetch check。S-mode allow-all、禁止load/store/fetch fault、OpenSBI PMP domain経由のS-mode payload fetchを確認 |
 | Sv39 | WIP | `satp.MODE=8`、3-level PTW、data/fetch translation、basic page faultを確認 |
 | UART | WIP | `0x10000000` にNS16550A互換の最小TX/LSRを追加。polling byte writeを確認 |
 
@@ -204,7 +204,15 @@ OpenSBIを試す場合は、repo外で用意した `fw_jump.bin` を指定しま
 make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin
 ```
 
-現在はOpenSBI v1.3.1 `FW_JUMP` でUART banner表示まで確認済みです。OpenSBIからは `uart8250` console、`Next Address = 0x80200000`、`Next Arg1 = 0x87f00000`、`Next Mode = S-mode` まで見えています。一方、timer nodeはまだDTBに不足しているため、OpenSBI上では `Platform Timer Device : --- @ 0Hz` です。
+現在はOpenSBI v1.3.1 `FW_JUMP` でplatform情報表示と、`0x80200000` に置いた小さいS-mode payloadへのhandoffまで確認済みです。OpenSBIからは `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timer、`PMP Count = 8`、`Next Address = 0x80200000`、`Next Arg1 = 0x87f00000`、`Next Mode = S-mode` まで見えています。
+
+OpenSBI handoff確認用の最小payloadは以下で実行できます。
+
+```sh
+make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin
+```
+
+OpenSBI起動までに修正した内容と調査メモは `Docs/OPENSBI_BRINGUP.md` にまとめています。
 
 Linux Imageも同時に置く場合は、`0x80200000` に配置します。
 
@@ -272,7 +280,7 @@ make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=12
 make test-os2-min-sv39
 ```
 
-`core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、PMP、timer、最小U-mode entry/ecall、Sv39 data-side identity mapping、fetch-side identity mapping、SUM/MXRの基本permissionを小さく確認しています。virtio-blk、本格的なU-mode process管理はまだ戻していません。
+`core/test/os2_min/` は `/Users/shiraitouma/OS2` を参考に、このCPUで最初に動かすために最小化したCPU検証用環境です。過去のOS2はRV32/QEMU virt/OpenSBI前提の練習用実装なので、今後のOSはRV64/Sv39/独自SoC前提で新規に育てます。現時点では SBI、PMP、timer、最小U-mode entry/ecall、Sv39 data-side identity mapping、fetch-side identity mapping、SUM/MXRの基本permissionを小さく確認しています。virtio-blk、本格的なU-mode process管理はまだ戻していません。
 
 `os2_min` の生成物 `.elf` / `.bin` / `.bin.hex` は `build/os2_min/` に出力します。`core/test/os2_min/` にはソース、ヘッダ、リンカスクリプトだけを置く方針です。
 
@@ -296,7 +304,7 @@ make test-os2-min-sv39
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはOpenSBIが認識できるACLINT timer DT binding、Linux Image投入、Linux earlycon確認です。補助タスクとして、PTWメモリエラー発生源、`sfence.vma` / TLB方針、`rv64mi-p-breakpoint` のfail調査も残っています。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはLinux Image投入、Linux earlycon確認、必要に応じた不足CSR/ISA/deviceの追加です。補助タスクとして、PTWメモリエラー発生源、`sfence.vma` / TLB方針、PLIC、UART RX/interruptが残っています。
 
 trace run:
 

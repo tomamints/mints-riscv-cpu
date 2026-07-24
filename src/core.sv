@@ -13,6 +13,10 @@ module core (
 	output UIntX pmpaddr1_fetch_value,
 	output UIntX pmpaddr2_fetch_value,
 	output UIntX pmpaddr3_fetch_value,
+	output UIntX pmpaddr4_fetch_value,
+	output UIntX pmpaddr5_fetch_value,
+	output UIntX pmpaddr6_fetch_value,
+	output UIntX pmpaddr7_fetch_value,
 	output UIntX satp_fetch_value,
 	output logic sstatus_sum_fetch_value,
 	output logic sstatus_mxr_fetch_value,
@@ -311,6 +315,10 @@ module core (
 		UIntX pmpaddr1_value;
 		UIntX pmpaddr2_value;
 		UIntX pmpaddr3_value;
+		UIntX pmpaddr4_value;
+		UIntX pmpaddr5_value;
+		UIntX pmpaddr6_value;
+		UIntX pmpaddr7_value;
 		UIntX satp_value;
 		logic sstatus_sum;
 		logic sstatus_mxr;
@@ -343,6 +351,10 @@ module core (
 		assign pmpaddr1_fetch_value = pmpaddr1_value;
 		assign pmpaddr2_fetch_value = pmpaddr2_value;
 		assign pmpaddr3_fetch_value = pmpaddr3_value;
+		assign pmpaddr4_fetch_value = pmpaddr4_value;
+		assign pmpaddr5_fetch_value = pmpaddr5_value;
+		assign pmpaddr6_fetch_value = pmpaddr6_value;
+		assign pmpaddr7_fetch_value = pmpaddr7_value;
 		assign satp_fetch_value = satp_value;
 		assign sstatus_sum_fetch_value = sstatus_sum;
 		assign sstatus_mxr_fetch_value = sstatus_mxr;
@@ -357,6 +369,10 @@ module core (
 			.pmpaddr1(pmpaddr1_value),
 			.pmpaddr2(pmpaddr2_value),
 			.pmpaddr3(pmpaddr3_value),
+			.pmpaddr4(pmpaddr4_value),
+			.pmpaddr5(pmpaddr5_value),
+			.pmpaddr6(pmpaddr6_value),
+			.pmpaddr7(pmpaddr7_value),
 			.allow(pmp_data_allow)
 		);
 
@@ -487,6 +503,10 @@ module core (
 			.pmpaddr1_value(pmpaddr1_value),
 			.pmpaddr2_value(pmpaddr2_value),
 			.pmpaddr3_value(pmpaddr3_value),
+			.pmpaddr4_value(pmpaddr4_value),
+			.pmpaddr5_value(pmpaddr5_value),
+			.pmpaddr6_value(pmpaddr6_value),
+			.pmpaddr7_value(pmpaddr7_value),
 			.satp_value(satp_value),
 			.sstatus_sum(sstatus_sum),
 			.sstatus_mxr(sstatus_mxr),
@@ -557,6 +577,21 @@ module core (
 	always_comb begin
 		//WB->END
 		wbq_rready = 1;
+	end
+
+	always_ff @(posedge clk) begin
+		if ($test$plusargs("TRACE_COMMIT") && wbs_valid) begin
+			$display("[COMMIT] pc=%h inst=%h trap=%b", wbs_pc, wbs_inst_bits, wbq_rdata.raise_trap);
+		end
+		if ($test$plusargs("TRACE_PAYLOAD") && wbs_valid && wbs_pc >= Addr'('h8020_0000)) begin
+			$display("[PAYLOAD] pc=%h inst=%h trap=%b expt=%b cause=%0d value=%h",
+				wbs_pc,
+				wbs_inst_bits,
+				wbq_rdata.raise_trap,
+				mems_expt.valid,
+				mems_expt.cause,
+				mems_expt.value);
+		end
 	end
 
 

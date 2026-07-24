@@ -10,6 +10,10 @@ module pmp_checker (
     input UIntX pmpaddr1,
     input UIntX pmpaddr2,
     input UIntX pmpaddr3,
+    input UIntX pmpaddr4,
+    input UIntX pmpaddr5,
+    input UIntX pmpaddr6,
+    input UIntX pmpaddr7,
     output logic allow
 );
 
@@ -96,8 +100,8 @@ module pmp_checker (
         logic entry_overlaps;
         logic entry_contains;
         logic permission_ok;
-        logic [7:0] cfg [0:3];
-        Addr addr [0:3];
+        logic [7:0] cfg [0:7];
+        Addr addr [0:7];
         Addr tor_start;
         Addr tor_end;
 
@@ -108,14 +112,22 @@ module pmp_checker (
             cfg[1] = pmpcfg0[15:8];
             cfg[2] = pmpcfg0[23:16];
             cfg[3] = pmpcfg0[31:24];
+            cfg[4] = pmpcfg0[39:32];
+            cfg[5] = pmpcfg0[47:40];
+            cfg[6] = pmpcfg0[55:48];
+            cfg[7] = pmpcfg0[63:56];
             addr[0] = pmpaddr0;
             addr[1] = pmpaddr1;
             addr[2] = pmpaddr2;
             addr[3] = pmpaddr3;
+            addr[4] = pmpaddr4;
+            addr[5] = pmpaddr5;
+            addr[6] = pmpaddr6;
+            addr[7] = pmpaddr7;
 
             matched = 1'b0;
             allow = 1'b0;
-            for (int pmp_index = 0; pmp_index < 4; pmp_index++) begin
+            for (int pmp_index = 0; pmp_index < 8; pmp_index++) begin
                 entry_overlaps = 1'b0;
                 entry_contains = 1'b0;
                 unique case (access_type)

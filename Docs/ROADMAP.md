@@ -528,12 +528,15 @@ satp = 0
 - OpenSBI v1.3.1 `FW_JUMP` を `0x80000000` に配置し、UART banner表示まで到達
 - OpenSBI generic platformは現在のDTBから `uart8250` consoleを認識する
 - OpenSBIから見た次段は `Next Address = 0x80200000`, `Next Arg1 = 0x87f00000`, `Next Mode = S-mode`
-- 現在のDTBではtimer nodeが不足しているため、`Platform Timer Device : --- @ 0Hz`
+- 現在のDTBではCLINT互換nodeを追加し、OpenSBIから `Platform IPI Device : aclint-mswi`、`Platform Timer Device : aclint-mtimer @ 1000000Hz` として認識済み
+- PMPを8 entriesへ拡張し、OpenSBIから `Boot HART PMP Count : 8` として認識済み
+- `make test-opensbi-payload OPENSBI_BIN=...` で、OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=DTB address`, SBI Base call、SBI legacy console putcharを確認済み
 
 次:
 
-- OpenSBI generic platformが認識できるtimer DT bindingを追加し、ACLINT `mtime/mtimecmp` のMMIO配置と一致させる
 - Linux Imageを `0x80200000` に配置し、OpenSBIからLinux entryへ渡す
+- Linux earlyconで `Linux version ...` が出るか確認する
+- 止まった場合、不足CSR/ISA/deviceをログから埋める
 - PLIC実装後にUART interrupt numberとDTBを一致させる
 
 注意:
@@ -570,10 +573,10 @@ shell
 
 直近でやる順番:
 
-1. OpenSBI generic platformが必要とするtimer DT bindingを確認し、ACLINT DTB/RTLを合わせる
-2. `rv64mi-p-breakpoint` のfailを調査し、例外/`mtval`/復帰PCを整理する
+1. Linux Imageを `0x80200000` へ置き、OpenSBI経由でLinux earlycon出力を狙う
+2. 止まった地点から、不足CSR/ISA/deviceを追加する
 3. PTWメモリエラー発生源とaccess fault経路を整理する
 4. `fence.i` / `zifencei` の正式確認を行い、DTB ISA文字列へ反映する
-5. Linux Imageを `0x80200000` へ置き、OpenSBI経由でLinux earlycon出力を狙う
+5. PLIC / UART interruptを追加し、通常consoleへ進める
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

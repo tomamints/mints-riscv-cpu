@@ -87,9 +87,13 @@ BOOTARGS_CHECK_SRC ?= platform/bootargs_check.S
 BOOTARGS_CHECK_ELF = build/platform/bootargs_check.elf
 BOOTARGS_CHECK_BIN = build/platform/bootargs_check.bin
 BOOTARGS_CHECK_RAM_HEX = build/platform/bootargs_check_ram.hex
+OPENSBI_PAYLOAD_SRCS = platform/opensbi_payload_entry.S platform/opensbi_payload.c
+OPENSBI_PAYLOAD_LD ?= platform/opensbi_payload.ld
+OPENSBI_PAYLOAD_ELF = build/platform/opensbi_payload.elf
+OPENSBI_PAYLOAD_BIN = build/platform/opensbi_payload.bin
 OPENSBI_BIN ?=
 OPENSBI_RAM_HEX = build/platform/opensbi_ram.hex
-OPENSBI_CYCLES ?= 2000000
+OPENSBI_CYCLES ?= 200000000
 LINUX_IMAGE_BIN ?=
 LINUX_IMAGE_OFFSET ?= 0x200000
 
@@ -97,7 +101,7 @@ LINUX_IMAGE_OFFSET ?= 0x200000
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs opensbi-ram-image run-opensbi test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs opensbi-payload-build test-opensbi-payload opensbi-ram-image run-opensbi test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
 
 
 
@@ -216,6 +220,16 @@ test-linux-bootargs: CYCLES=20000
 test-linux-bootargs: $(SIM) linux-bootrom-build linux-ram-image
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(LINUX_BOOTROM_HEX) $(BOOTARGS_CHECK_RAM_HEX) $(CYCLES)
 
+opensbi-payload-build: $(OPENSBI_PAYLOAD_BIN)
+
+$(OPENSBI_PAYLOAD_BIN): $(OPENSBI_PAYLOAD_SRCS) $(OPENSBI_PAYLOAD_LD)
+	mkdir -p $(dir $@)
+	$(RISCV_GCC) -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany -nostdlib -nostartfiles -ffreestanding -fno-builtin -T $(OPENSBI_PAYLOAD_LD) $(OPENSBI_PAYLOAD_SRCS) -o $(OPENSBI_PAYLOAD_ELF)
+	$(RISCV_OBJCOPY) -O binary $(OPENSBI_PAYLOAD_ELF) $@
+
+test-opensbi-payload: LINUX_IMAGE_BIN=$(OPENSBI_PAYLOAD_BIN)
+test-opensbi-payload: opensbi-payload-build run-opensbi
+
 opensbi-ram-image: $(DTB)
 	test -n "$(OPENSBI_BIN)" || (echo "Set OPENSBI_BIN=/path/to/fw_jump.bin"; exit 1)
 	if test -n "$(LINUX_IMAGE_BIN)"; then \
@@ -225,7 +239,7 @@ opensbi-ram-image: $(DTB)
 	fi
 
 run-opensbi: $(SIM) linux-bootrom-build opensbi-ram-image
-	DBG_ADDR=$(DBG_ADDR) $(SIM) $(LINUX_BOOTROM_HEX) $(OPENSBI_RAM_HEX) $(OPENSBI_CYCLES)
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(LINUX_BOOTROM_HEX) $(OPENSBI_RAM_HEX) $(OPENSBI_CYCLES) $(SIM_EXTRA_ARGS)
 
 test-output: C_TEST=debug_output
 test-output: CYCLES=10000

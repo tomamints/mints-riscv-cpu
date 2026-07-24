@@ -27,6 +27,10 @@ module csrunit (
 	output UIntX pmpaddr1_value,
 	output UIntX pmpaddr2_value,
 	output UIntX pmpaddr3_value,
+	output UIntX pmpaddr4_value,
+	output UIntX pmpaddr5_value,
+	output UIntX pmpaddr6_value,
+	output UIntX pmpaddr7_value,
 	output UIntX satp_value,
 	output logic sstatus_sum,
 	output logic sstatus_mxr,
@@ -148,7 +152,7 @@ module csrunit (
 
 	UIntX mhartid = 0;
 	UIntX mstatus, mtvec, mideleg, mie, mip, mip_reg, mscratch, mepc, mcause, mtval;
-	UIntX pmpcfg0, pmpaddr0, pmpaddr1, pmpaddr2, pmpaddr3;
+	UIntX pmpcfg0, pmpaddr0, pmpaddr1, pmpaddr2, pmpaddr3, pmpaddr4, pmpaddr5, pmpaddr6, pmpaddr7;
 	UIntX satp;
 	UInt32 mcounteren;
 	UInt64 mcycle, medeleg;
@@ -158,6 +162,10 @@ module csrunit (
 	assign pmpaddr1_value = pmpaddr1;
 	assign pmpaddr2_value = pmpaddr2;
 	assign pmpaddr3_value = pmpaddr3;
+	assign pmpaddr4_value = pmpaddr4;
+	assign pmpaddr5_value = pmpaddr5;
+	assign pmpaddr6_value = pmpaddr6;
+	assign pmpaddr7_value = pmpaddr7;
 	assign satp_value = satp;
 	assign sstatus_sum = mstatus[18];
 	assign sstatus_mxr = mstatus[19];
@@ -361,6 +369,10 @@ module csrunit (
 			PMPADDR1 : rdata = pmpaddr1;
 			PMPADDR2 : rdata = pmpaddr2;
 			PMPADDR3 : rdata = pmpaddr3;
+			PMPADDR4 : rdata = pmpaddr4;
+			PMPADDR5 : rdata = pmpaddr5;
+			PMPADDR6 : rdata = pmpaddr6;
+			PMPADDR7 : rdata = pmpaddr7;
 			MCYCLE  : rdata = mcycle;
 			MINSTRET: rdata = minstret;
 			MSCRATCH: rdata = mscratch;
@@ -399,6 +411,10 @@ module csrunit (
 			PMPADDR1 : wmask = PMPADDR_WMASK;
 			PMPADDR2 : wmask = PMPADDR_WMASK;
 			PMPADDR3 : wmask = PMPADDR_WMASK;
+			PMPADDR4 : wmask = PMPADDR_WMASK;
+			PMPADDR5 : wmask = PMPADDR_WMASK;
+			PMPADDR6 : wmask = PMPADDR_WMASK;
+			PMPADDR7 : wmask = PMPADDR_WMASK;
 			MSCRATCH : wmask = MSCRATCH_WMASK;
 			MEPC     : wmask = MEPC_WMASK;
 			MCAUSE   : wmask = MCAUSE_WMASK;
@@ -463,6 +479,10 @@ module csrunit (
 			pmpaddr1 <= '0;
 			pmpaddr2 <= '0;
 			pmpaddr3 <= '0;
+			pmpaddr4 <= '0;
+			pmpaddr5 <= '0;
+			pmpaddr6 <= '0;
+			pmpaddr7 <= '0;
 			satp <= '0;
 			mcounteren <= '0;
 			mscratch <= '0;
@@ -549,6 +569,10 @@ module csrunit (
 							PMPADDR1 : pmpaddr1 <= wdata & PMPADDR_WMASK;
 							PMPADDR2 : pmpaddr2 <= wdata & PMPADDR_WMASK;
 							PMPADDR3 : pmpaddr3 <= wdata & PMPADDR_WMASK;
+							PMPADDR4 : pmpaddr4 <= wdata & PMPADDR_WMASK;
+							PMPADDR5 : pmpaddr5 <= wdata & PMPADDR_WMASK;
+							PMPADDR6 : pmpaddr6 <= wdata & PMPADDR_WMASK;
+							PMPADDR7 : pmpaddr7 <= wdata & PMPADDR_WMASK;
 							MSCRATCH : mscratch <= wdata;
 							MEPC     : mepc     <= wdata;
 							MCAUSE   : mcause   <= wdata;
@@ -606,6 +630,10 @@ module csrunit (
 			PMPADDR1,
 			PMPADDR2,
 			PMPADDR3,
+			PMPADDR4,
+			PMPADDR5,
+			PMPADDR6,
+			PMPADDR7,
 			MSCRATCH,
 			MEPC,
 			MCAUSE,

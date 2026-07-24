@@ -39,7 +39,7 @@ package eei;
 	} Sv39Fault;
 
 	localparam UIntX MACHINE_IMPLEMENTATION_ID = 1;
-	localparam UIntX PMPCFG0_WMASK = UIntX'('h0000_0000_1f1f_1f1f);
+	localparam UIntX PMPCFG0_WMASK = UIntX'('h1f1f_1f1f_1f1f_1f1f);
 	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
 
 	localparam UInt64 MSTATUS_UXL = 2 << 32;
@@ -64,6 +64,7 @@ package eei;
 	localparam Addr MMAP_ACLINT_MSIP = 0;
 	localparam Addr MMAP_ACLINT_MTIMECMP = Addr'('h4000);
 	localparam Addr MMAP_ACLINT_MTIME = Addr'('h7ff8);
+	localparam Addr MMAP_CLINT_MTIME = Addr'('hbff8);
 	localparam Addr MMAP_ACLINT_SETSSIP = Addr'('h8000);
 	localparam Addr MMAP_ACLINT_SETSTIP = Addr'('h8008);
 	localparam Addr MMAP_ACLINT_END = MMAP_ACLINT_BEGIN + Addr'('hbfff);
@@ -161,6 +162,10 @@ package eei;
 		PMPADDR1 = 12'h3b1,
 		PMPADDR2 = 12'h3b2,
 		PMPADDR3 = 12'h3b3,
+		PMPADDR4 = 12'h3b4,
+		PMPADDR5 = 12'h3b5,
+		PMPADDR6 = 12'h3b6,
+		PMPADDR7 = 12'h3b7,
 		//Machine Trap Handling
 		MSCRATCH = 12'h340,
 		MEPC   = 12'h341,

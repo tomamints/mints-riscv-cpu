@@ -10,6 +10,10 @@ module inst_fetcher (
     input  UIntX             pmpaddr1,
     input  UIntX             pmpaddr2,
     input  UIntX             pmpaddr3,
+    input  UIntX             pmpaddr4,
+    input  UIntX             pmpaddr5,
+    input  UIntX             pmpaddr6,
+    input  UIntX             pmpaddr7,
     input  UIntX             satp,
     input  logic             sstatus_sum,
     input  logic             sstatus_mxr,
@@ -124,6 +128,10 @@ module inst_fetcher (
         .pmpaddr1(pmpaddr1),
         .pmpaddr2(pmpaddr2),
         .pmpaddr3(pmpaddr3),
+        .pmpaddr4(pmpaddr4),
+        .pmpaddr5(pmpaddr5),
+        .pmpaddr6(pmpaddr6),
+        .pmpaddr7(pmpaddr7),
         .allow(issue_pmp_allow_raw)
     );
 
@@ -327,6 +335,10 @@ module inst_fetcher (
         .pmpaddr1(pmpaddr1),
         .pmpaddr2(pmpaddr2),
         .pmpaddr3(pmpaddr3),
+        .pmpaddr4(pmpaddr4),
+        .pmpaddr5(pmpaddr5),
+        .pmpaddr6(pmpaddr6),
+        .pmpaddr7(pmpaddr7),
         .allow(fetch_pmp_allow)
     );
 

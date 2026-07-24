@@ -9,6 +9,7 @@
 - `Docs/S-modetest.md`: Supervisor-mode 検証チェックリスト
 - `Docs/DMA.md`: DMA 実装メモ
 - `Docs/RVA23_CHECKLIST.md`: RVA23方向の棚卸し
+- `Docs/OPENSBI_BRINGUP.md`: OpenSBI banner / S-mode payload到達までの修正履歴
 
 ## 現在地
 
@@ -30,7 +31,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page fault、NS16550A互換UARTの最小polling TX、OpenSBI UART banner表示まで到達済みです。Linux起動を優先するため、次はOpenSBIが認識できるtimer DT bindingとLinux Image投入へ進みます。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page fault、NS16550A互換UARTの最小polling TX、OpenSBI UART banner表示、OpenSBIからS-mode payloadへのhandoffまで到達済みです。Linux起動を優先するため、次はLinux Image投入とearlycon確認へ進みます。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -63,11 +64,11 @@ M-mode trap
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
 | Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、TLB |
-| Linux platform | WIP / OpenSBI UART banner reached | `make test-uart`, `make test-uart-regs`, `make dtb`, `make test-linux-bootargs`, `make run-opensbi OPENSBI_BIN=...` | timer DT binding、Linux earlycon、RX/interrupt/PLIC |
+| Linux platform | WIP / OpenSBI S-mode payload reached | `make test-uart`, `make test-uart-regs`, `make dtb`, `make test-linux-bootargs`, `make run-opensbi OPENSBI_BIN=...`, `make test-opensbi-payload OPENSBI_BIN=...` | Linux Image投入、Linux earlycon、RX/interrupt/PLIC |
 
 ## テスト一覧
 
-Linux起動を大目標にするため、U-mode syscallは最小確認済みで一旦区切ります。Sv39はdata-sideとinstruction fetchの最小identity mapping、2MiB L1 / 1GiB L2 superpage、SUM/MXR、A/D fault、X=0 fetch faultまで確認済みで、PTWは `sv39_ptw.sv` に分離済みです。OpenSBIはUART consoleを認識し、banner表示まで到達しました。次の主作業はOpenSBI用timer DT bindingとLinux Image投入です。
+Linux起動を大目標にするため、U-mode syscallは最小確認済みで一旦区切ります。Sv39はdata-sideとinstruction fetchの最小identity mapping、2MiB L1 / 1GiB L2 superpage、SUM/MXR、A/D fault、X=0 fetch faultまで確認済みで、PTWは `sv39_ptw.sv` に分離済みです。OpenSBIはUART console / ACLINT MSWI / ACLINT MTIMERを認識し、S-mode payloadへhandoffできるところまで到達しました。次の主作業はLinux Image投入とearlycon確認です。
 
 ### Custom Tests
 
@@ -80,7 +81,8 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-uart-regs` | Pass | `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替え、`LSR/IIR/MSR`の最小固定値 |
 | `make dtb` | Pass | `platform/riscv_cpu.dts` から `build/platform/riscv_cpu.dtb` を生成。RAMは128MiB、UART nodeは `serial@10000000`, `reg-shift=0`, `reg-io-width=1` |
 | `make test-linux-bootargs` | Pass | Linux boot ABIの `a0=hartid=0`, `a1=0x87f00000` をpayloadへ渡し、RAM image内にDTBを配置 |
-| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | Pass / OpenSBI banner | OpenSBI `fw_jump.bin` を `0x80000000`、DTBを `0x87f00000`、任意Linux Imageを `0x80200000` に配置して起動するtarget。v1.3.1 `FW_JUMP` で `uart8250` console認識とbanner表示を確認。timer deviceは未認識 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | Pass / OpenSBI platform info | OpenSBI `fw_jump.bin` を `0x80000000`、DTBを `0x87f00000`、任意Linux Imageを `0x80200000` に配置して起動するtarget。v1.3.1 `FW_JUMP` で `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timerを確認 |
+| `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | Pass | OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=0x87f00000`, SBI Base call、SBI legacy console putcharを確認。PMPは8 entriesとしてOpenSBIに認識される |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
 | `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回 |
@@ -88,7 +90,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` | Pass | PMP禁止TOR領域へのS-mode load/store/fetchで `scause=5/7/1`, `stval=fault address`。禁止storeでRAM値が変化しないこと、fetchがRではなくXを見ること、32-bit命令後半2byteのX禁止も確認 |
 | `make test-os2-min-sv39` | Pass | S-modeで`satp.MODE=8`を設定し、4KiB PTEの3-level page walkでdata load/store/fetchをidentity mapping。2MiB L1 / 1GiB L2 superpage、未map load、SUM=0/1、MXR=0/1、A=0 load、D=0 store、W=0 store、satp.PPN切り替え、X=0 fetch page faultを確認 |
-| `make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full` | Mostly pass / current known fail | `rv64mi-p-breakpoint` が現在fail。`rv64mi-p-illegal`, `rv64mi-p-instret_overflow`, `rv64si-p-csr`, `rv64si-p-dirty` は修正済み |
+| `make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full` | Pass / current claimed suites | `rv64mi-p-illegal`, `rv64mi-p-instret_overflow`, `rv64si-p-csr`, `rv64si-p-dirty` などの既知failは修正済み。F/D/Zb/Zfh系は未claim |
 
 ### riscv-tests Summary
 
