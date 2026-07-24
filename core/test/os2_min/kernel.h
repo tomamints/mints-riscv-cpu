@@ -67,6 +67,8 @@ void sbi_putchar(char ch);
 long sbi_getchar(void);
 struct sbiret sbi_set_timer(uint64_t stime_value);
 struct sbiret sbi_test_read_pmp_word(void);
+struct sbiret sbi_test_allow_exec_only_target(void);
+struct sbiret sbi_test_protect_exec_target(void);
 void firmware_handle_sbi(struct trap_frame *f);
 void test_smode_basic(void);
 void test_sbi_putchar(void);
@@ -74,10 +76,15 @@ void test_sbi_getchar(void);
 void test_sbi_timer(void);
 void test_smode_trap(void);
 void test_pmp_data_fault(void);
+void test_umode_transition(void);
 
 extern volatile uint64_t pmp_protected_word;
 extern volatile int pmp_load_fault_seen;
 extern volatile int pmp_store_fault_seen;
+extern volatile int pmp_exec_fault_seen;
+void pmp_protected_exec_target(void);
+extern volatile int umode_step;
+extern volatile int umode_ecall_seen;
 
 #define READ_CSR(reg)\
     ({\
@@ -124,6 +131,7 @@ struct process
 
 //S MODE
 #define SSTATUS_SPIE (1 << 5)
+#define SSTATUS_SPP (1UL << 8)
 
 #define SCAUSE_ECALL 8
 #define MSTATUS_MIE (1UL << 3)
@@ -144,6 +152,7 @@ struct process
 #define MCAUSE_ECALL_FROM_U 8
 #define MCAUSE_ECALL_FROM_S 9
 #define MCAUSE_ECALL_FROM_M 11
+#define INSTRUCTION_ACCESS_FAULT 1
 #define LOAD_ACCESS_FAULT 5
 #define STORE_AMO_ACCESS_FAULT 7
 
@@ -159,6 +168,8 @@ struct process
 
 #define SBI_EXT_TEST 0x54534554UL
 #define SBI_FUNC_TEST_READ_PMP_WORD 0
+#define SBI_FUNC_TEST_ALLOW_EXEC_ONLY_TARGET 1
+#define SBI_FUNC_TEST_PROTECT_EXEC_TARGET 2
 
 #define PROC_EXITED 2
 

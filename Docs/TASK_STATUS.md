@@ -30,7 +30,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store access fault、禁止storeのRAM副作用抑止確認まで到達済みです。次はPMPのfetch/X checkか、U-mode transitionへ進むのが自然です。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止確認まで到達済みです。次はU-mode transitionへ進むのが自然です。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -38,9 +38,9 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | PMP X check | instruction fetch側のPMP X permissionを確認 |
-| 2 | U-mode transition | 本来のsyscall経路を作る前提 |
-| 3 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
+| 1 | U-mode syscall cleanup | syscall番号、trap frame、exit/putcharを整理 |
+| 2 | U-mode CSR/fault tests | U-modeからS/M CSRアクセス時のillegal instructionなどを確認 |
+| 3 | PMP detail tests | MMIO副作用、部分重複、firmware領域保護を確認 |
 | 4 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
 | 5 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 
@@ -60,9 +60,9 @@ M-mode trap
 | SBI getchar | Pass | `make test-os2-min-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
 | SBI timer | Pass / periodic basic | `make test-os2-min` | timer間隔やdeadline再設定方針を整理 |
 | S-mode timer interrupt | Pass / periodic basic | `make test-os2-min` | interrupt中のSIE/SPIEを追加確認 |
-| U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
-| U-mode syscall | Not started | none | `medeleg[8]=1`, `U-mode ecall -> S-mode trap` |
-| PMP | Pass / data load/store fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | fetch/X enforcement、MMIO副作用抑止確認、部分重複テスト |
+| U-mode transition | Pass / minimal | `OS2_MIN_USER` | U-mode stack分離、U-modeからS/M CSRアクセス時のillegal instruction確認 |
+| U-mode syscall | Pass / minimal | `OS2_MIN_USER` | syscall番号、exit/putchar、trap frame整理 |
+| PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
 | Sv39 | Not started | none | Bareからidentity mappingへ |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
@@ -80,7 +80,7 @@ M-mode trap
 | `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回 |
 | `make test-os2-min-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
-| `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=170000` | Pass | PMP禁止TOR領域へのS-mode load/storeで `scause=5/7`, `stval=fault address`。禁止storeでRAM値が変化しないことも確認 |
+| `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000` | Pass | PMP禁止TOR領域へのS-mode load/store/fetchで `scause=5/7/1`, `stval=fault address`。禁止storeでRAM値が変化しないこと、fetchがRではなくXを見ることも確認 |
 
 ### riscv-tests Summary
 
@@ -124,6 +124,7 @@ M-mode trap
 - 許可したRAM/MMIO accessが通る
 - 禁止したfirmware領域accessがfaultになる
 - 禁止fetchがinstruction access faultになる
+- fetchがR permissionではなくX permissionを見ることを確認する
 
 ### Option B: timer / interrupt
 

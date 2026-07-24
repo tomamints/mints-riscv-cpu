@@ -8,7 +8,7 @@
 
 現時点ではRVA23準拠を主張しません。
 
-現在主張しやすい範囲は、RV64IMAC、CSR/trap/interruptの一部、ACLINT、最小SBI、PMP data access checkのbring-upです。
+現在主張しやすい範囲は、RV64IMAC、CSR/trap/interruptの一部、ACLINT、最小SBI、PMP data/fetch access checkのbring-upです。
 
 ## ISA / Extension
 
@@ -29,10 +29,10 @@
 |---|---|---|
 | M-mode trap | Basic pass | mswi/mtime、SBI dispatcher |
 | S-mode transition | Pass | `mstatus.MPP=S`, `mepc`, `mret` |
-| S-mode trap | Basic pass | S-mode ecall、timer、PMP load/store fault |
-| U-mode transition | TODO | 次フェーズ |
-| U-mode syscall | TODO | `medeleg[8]`, U-mode `ecall -> stvec` |
-| PMP | Data basic pass | load/store R/W、禁止storeのRAM副作用抑止を確認。fetch/Xは未実装 |
+| S-mode trap | Basic pass | S-mode ecall、timer、PMP load/store/fetch fault |
+| U-mode transition | Basic pass | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
+| U-mode syscall | Basic pass | `medeleg[8]`, U-mode `ecall -> stvec`、戻り値とexitの最小確認 |
+| PMP | Basic pass | load/store R/W、fetch X、禁止storeのRAM副作用抑止を確認。MMIO副作用と部分重複の専用テストは未実装 |
 | Sv39 | TODO | Bareのみ |
 | Counters | Partial | `mcounteren/scounteren` の追加確認が必要 |
 | WFI | Partial | timer waitで使用。詳細仕様は未確認 |
@@ -50,7 +50,7 @@
 ## 次に確認したい項目
 
 - PMP fault時にMMIO requestが出ないこと
-- PMP instruction fetch / X permission
+- PMP部分重複accessの優先順位テスト
 - U-modeへ `sret` で遷移できること
 - U-mode `ecall` をS-mode syscall handlerで受けること
 - `fence.i`, `wfi`, counter CSRの仕様差分

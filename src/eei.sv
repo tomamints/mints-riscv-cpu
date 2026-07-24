@@ -14,6 +14,12 @@ package eei;
 	typedef logic signed [31:0] SInt32;
 	typedef logic signed [63:0] SInt64;
 
+	typedef enum logic [1:0] {
+		PMP_ACCESS_READ  = 2'b00,
+		PMP_ACCESS_WRITE = 2'b01,
+		PMP_ACCESS_EXEC  = 2'b10
+	} PmpAccessType;
+
 	localparam UIntX MACHINE_IMPLEMENTATION_ID = 1;
 	localparam UIntX PMPCFG0_WMASK = UIntX'('h0000_0000_1f1f_1f1f);
 	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
@@ -142,6 +148,7 @@ package eei;
 
 	typedef enum UIntX{
 		INSTRUCTION_ADDRESS_MISALIGNED = 0,
+		INSTRUCTION_ACCESS_FAULT = 1,
 		ILLEGAL_INSTRUCTION = 2,
 		BREAKPOINT = 3,
 		LOAD_ADDRESS_MISALIGNED = 4,

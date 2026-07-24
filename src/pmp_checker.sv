@@ -4,7 +4,7 @@ module pmp_checker (
     input PrivMode priv_mode,
     input Addr access_start,
     input UIntX access_size,
-    input logic is_write,
+    input PmpAccessType access_type,
     input UIntX pmpcfg0,
     input UIntX pmpaddr0,
     input UIntX pmpaddr1,
@@ -118,7 +118,12 @@ module pmp_checker (
             for (int pmp_index = 0; pmp_index < 4; pmp_index++) begin
                 entry_overlaps = 1'b0;
                 entry_contains = 1'b0;
-                permission_ok = is_write ? cfg[pmp_index][1] : cfg[pmp_index][0];
+                unique case (access_type)
+                    PMP_ACCESS_READ:  permission_ok = cfg[pmp_index][0];
+                    PMP_ACCESS_WRITE: permission_ok = cfg[pmp_index][1];
+                    PMP_ACCESS_EXEC:  permission_ok = cfg[pmp_index][2];
+                    default:          permission_ok = 1'b0;
+                endcase
 
                 unique case (cfg[pmp_index][4:3])
                     2'b01: begin

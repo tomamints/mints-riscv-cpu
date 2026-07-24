@@ -29,7 +29,7 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 | Exceptions | WIP | illegal instruction, ECALL, EBREAK, misaligned access など |
 | Interrupts | WIP | ACLINT の software/timer interrupt を CSR unit に接続 |
 | Privilege modes | WIP | M/S/U mode、trap delegation、`MRET`/`SRET` を部分実装 |
-| PMP | WIP | 4 entries、TOR/NAPOT、data access check。S-mode allow-all と禁止load/store faultを確認 |
+| PMP | WIP | 4 entries、TOR/NAPOT、data/fetch check。S-mode allow-all、禁止load/store/fetch faultを確認 |
 
 ## U-mode / CSR Support
 
@@ -218,10 +218,11 @@ OS2 minimum port:
 make test-os2-min
 make test-os2-min-input INPUT_TEXT=Z
 make test-os2-min-strap
-make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=170000
+make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000
+make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=120000
 ```
 
-`core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` と `getchar` が debug MMIO `0x40000000` 経由で動くことを確認する段階です。
+`core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、PMP、timer、最小U-mode entry/ecallを小さく確認しています。virtio-blk、paging、本格的なU-mode process管理はまだ戻していません。
 
 `os2_min` の生成物 `.elf` / `.bin` / `.bin.hex` は `build/os2_min/` に出力します。`core/test/os2_min/` にはソース、ヘッダ、リンカスクリプトだけを置く方針です。
 
@@ -235,7 +236,9 @@ make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=1700
 
 `make test-os2-min-strap` は S-mode `ecall` を `stvec` で受けるテストです。`medeleg[9]` で S-mode ecall を S-mode trap へ委譲し、handler で `sepc += 4` して `sret` で元のS-mode処理へ戻れることを確認します。
 
-`OS2_MIN_PMP` は PMP data access fault のテストです。M-modeでPMP entry1に `pmp_protected_word` の8byteだけTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=fault address` でS-mode trapへ入り、handlerで `sepc += 4` して復帰できることを確認します。さらにM-mode SBIで保護wordを読み直し、禁止storeがRAMを書き換えていないことも確認します。
+`OS2_MIN_PMP` は PMP access fault のテストです。M-modeでPMP entry1に `pmp_protected_word` の8byteだけTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=fault address` でS-mode trapへ入り、handlerで `sepc += 4` して復帰できることを確認します。さらにM-mode SBIで保護wordを読み直し、禁止storeがRAMを書き換えていないことも確認します。fetch側は、`pmp_protected_exec_target` を `X=1/R=0/W=0` にした場合は実行でき、`R=1/W=1/X=0` にした場合は `scause=1`、`stval=fetch address` でS-mode trapへ入ることを確認します。
+
+`OS2_MIN_USER` は最小U-modeテストです。S-modeで `stvec`、`medeleg[8]`、`sstatus.SPP=U`、`sepc=user_entry` を設定して `sret` し、U-modeへ入ります。U-mode側は1回目の `ecall` でS-mode trapへ入り、handlerが `a0=0x5678` と `sepc += 4` を設定してU-modeへ戻します。2回目の `ecall` はexit syscallとして扱い、S-mode handler側で `test success` を出します。
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 

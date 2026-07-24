@@ -74,6 +74,13 @@ module core_top #(
     core_data_if #(
     ) d_membus_core();
 
+    PrivMode pmp_priv_mode;
+    UIntX pmpcfg0_fetch_value;
+    UIntX pmpaddr0_fetch_value;
+    UIntX pmpaddr1_fetch_value;
+    UIntX pmpaddr2_fetch_value;
+    UIntX pmpaddr3_fetch_value;
+
     logic memarb_last_i;
 
     always_ff @(posedge clk) begin
@@ -307,10 +314,16 @@ module core_top #(
 
 
     inst_fetcher fethcer (
-        .clk     (clk),
-        .rst     (rst),
-        .core_if (i_membus_core),
-        .mem_if  (i_membus)
+        .clk       (clk),
+        .rst       (rst),
+        .priv_mode (pmp_priv_mode),
+        .pmpcfg0   (pmpcfg0_fetch_value),
+        .pmpaddr0  (pmpaddr0_fetch_value),
+        .pmpaddr1  (pmpaddr1_fetch_value),
+        .pmpaddr2  (pmpaddr2_fetch_value),
+        .pmpaddr3  (pmpaddr3_fetch_value),
+        .core_if   (i_membus_core),
+        .mem_if    (i_membus)
     );
 
     // コア接続（Veryl命名に完全一致）
@@ -320,6 +333,12 @@ module core_top #(
         .i_membus (i_membus_core),
         .d_membus (d_membus_core),
         .led      (led),
+        .pmp_priv_mode(pmp_priv_mode),
+        .pmpcfg0_fetch_value(pmpcfg0_fetch_value),
+        .pmpaddr0_fetch_value(pmpaddr0_fetch_value),
+        .pmpaddr1_fetch_value(pmpaddr1_fetch_value),
+        .pmpaddr2_fetch_value(pmpaddr2_fetch_value),
+        .pmpaddr3_fetch_value(pmpaddr3_fetch_value),
         .aclint   (aclint_core_bus)
     );
 

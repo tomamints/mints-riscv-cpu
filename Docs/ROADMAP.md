@@ -239,6 +239,7 @@ S-mode
 - `pmpaddr0=~0UL`, `pmpcfg0=NAPOT|R|W|X` のallow-allで既存S-modeテストがPass
 - `OS2_MIN_PMP` で、entry1のTOR禁止領域にS-mode load/storeすると `scause=5/7`, `stval=fault address` でS-mode trapへ入る
 - 禁止store後にM-mode SBIで保護wordを読み直し、RAM値が変化していないことを確認する
+- instruction fetchにもPMP X permissionを適用し、`X=1/R=0/W=0`で実行成功、`R=1/W=1/X=0`で `scause=1`, `stval=fetch address` を確認する
 
 完了条件:
 
@@ -247,13 +248,14 @@ Step 1完了条件:
 - 許可領域のload/storeが成功する
 - 禁止領域のload/storeがaccess faultになる
 - 禁止storeでRAM値が変化しない
-- fault時にMMIO requestが発行されない
+- 禁止領域からのfetchがinstruction access faultになる
 
 Phase 6全体の完了条件:
 
 - RAM/MMIO/firmware領域のPMP方針を分ける
-- instruction fetchにもPMP X permissionを適用する
-- 禁止領域からのfetchがinstruction access faultになる
+- fault時にMMIO requestが発行されないことを波形または専用MMIOテストで確認する
+- 部分重複accessの優先順位を専用テストで確認する
+- 32-bit命令の後半2byteがPMP境界をまたぐ場合のfetch/X checkを追加する
 
 ## Phase 7: U-mode Transition
 
@@ -273,6 +275,13 @@ Phase 6全体の完了条件:
 - U-mode で通常命令が実行できる
 - U-mode から S/M-mode CSR に触ると trap になる
 - U-mode `ecall` が S-mode trap へ届く
+
+現在:
+
+- `OS2_MIN_USER` で `sstatus.SPP=U`, `sepc=user_entry`, `sret` によりU-mode entryへ入る
+- U-mode `ecall` が `medeleg[8]` によりS-mode trapへ入り、`scause=8` になる
+- 1回目のU-mode `ecall` は `a0=0x5678`, `sepc += 4`, `sret` でU-modeへ復帰する
+- 2回目のU-mode `ecall` はexit syscallとしてS-mode handler内で成功終了する
 
 MMU なしでも U-mode は意味があります。メモリ保護は弱いですが、privilege 分離と trap 経路の確認には使えます。
 
@@ -459,8 +468,8 @@ shell
 直近でやる順番:
 
 1. SBI / firmwareコードを `sbi.c` / `platform.c` / `firmware.c` の境界で維持・整理する
-2. PMP fault時にMMIO副作用が起きないことを確認する
-3. PMPのinstruction fetch / X permission enforcementを追加する
-4. U-modeへ遷移する
-5. U-mode `ecall` をS-mode syscall handlerで受ける
+2. U-modeへ遷移する
+3. U-mode `ecall` をS-mode syscall handlerで受ける
+4. PMP fault時にMMIO副作用が起きないことを確認する
+5. PMP部分重複accessの専用テストを追加する
 6. Sv39の最小identity mappingへ進む

@@ -7,6 +7,12 @@ module core (
 	core_inst_if.master i_membus,
 	core_data_if.master d_membus,
 	output UIntX led,
+	output PrivMode pmp_priv_mode,
+	output UIntX pmpcfg0_fetch_value,
+	output UIntX pmpaddr0_fetch_value,
+	output UIntX pmpaddr1_fetch_value,
+	output UIntX pmpaddr2_fetch_value,
+	output UIntX pmpaddr3_fetch_value,
 	aclint_if.slave aclint
 );
 
@@ -120,19 +126,19 @@ module core (
 		exq_wdata.ctrl = ids_ctrl;
 		exq_wdata.imm  = ids_imm;
 		// exception
-		exq_wdata.expt = '0;
-		if (!ids_inst_valid) begin
+		exq_wdata.expt = i_membus.expt;
+		if (!exq_wdata.expt.valid && !ids_inst_valid) begin
 			//illegal instruction
 			exq_wdata.expt.valid = 1;
 			exq_wdata.expt.cause = ILLEGAL_INSTRUCTION;
 			exq_wdata.expt.value = {{(XLEN-ILEN){1'b0}},ids_inst_bits};
-		end else if (ids_inst_bits == 32'h00000073) begin
+		end else if (!exq_wdata.expt.valid && ids_inst_bits == 32'h00000073) begin
 			//ECALL
 			exq_wdata.expt.valid = 1;
 			exq_wdata.expt.cause = ENVIRONMENT_CALL_FROM_U_MODE;
 			exq_wdata.expt.cause[1:0] = csru_priv_mode; //adjust mode
 			exq_wdata.expt.value = 0;
-		end else if (ids_inst_bits == 32'h00100073) begin
+		end else if (!exq_wdata.expt.valid && ids_inst_bits == 32'h00100073) begin
 			//EBREAK
 			exq_wdata.expt.valid = 1;
 			exq_wdata.expt.cause = BREAKPOINT;
@@ -322,12 +328,18 @@ module core (
 
 		assign memaddr = exs_ctrl.is_amo ? exs_rs1_data : exs_alu_result;
 		assign loadstore_access_size = mem_access_size(exs_ctrl.funct3);
+		assign pmp_priv_mode = csru_priv_mode;
+		assign pmpcfg0_fetch_value = pmpcfg0_value;
+		assign pmpaddr0_fetch_value = pmpaddr0_value;
+		assign pmpaddr1_fetch_value = pmpaddr1_value;
+		assign pmpaddr2_fetch_value = pmpaddr2_value;
+		assign pmpaddr3_fetch_value = pmpaddr3_value;
 
 		pmp_checker pmp_data_checker (
 			.priv_mode(csru_priv_mode),
 			.access_start(memaddr),
 			.access_size(loadstore_access_size),
-			.is_write(inst_is_store(exs_ctrl) || exs_ctrl.is_amo),
+			.access_type((inst_is_store(exs_ctrl) || exs_ctrl.is_amo) ? PMP_ACCESS_WRITE : PMP_ACCESS_READ),
 			.pmpcfg0(pmpcfg0_value),
 			.pmpaddr0(pmpaddr0_value),
 			.pmpaddr1(pmpaddr1_value),

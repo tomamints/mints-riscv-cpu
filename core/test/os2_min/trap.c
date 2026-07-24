@@ -52,6 +52,21 @@ void supervisor_trap_handler(struct trap_frame *f) {
         return;
     }
 
+    if (scause == MCAUSE_ECALL_FROM_U) {
+        umode_ecall_seen++;
+        if (umode_ecall_seen == 1) {
+            f->a0 = 0x5678;
+            WRITE_CSR(sepc, sepc + 4);
+            return;
+        }
+        if (umode_ecall_seen == 2 && umode_step == 2) {
+            printf("U-mode ecall OK\n");
+            platform_test_success();
+            for (;;)
+                ;
+        }
+    }
+
 #ifdef OS2_MIN_PMP
     if (scause == LOAD_ACCESS_FAULT && stval == (uintptr_t) &pmp_protected_word) {
         printf("PMP load access fault stval=%lx\n", stval);
@@ -63,6 +78,13 @@ void supervisor_trap_handler(struct trap_frame *f) {
         printf("PMP store access fault stval=%lx\n", stval);
         pmp_store_fault_seen = 1;
         WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
+    uintptr_t exec_target = (uintptr_t) pmp_protected_exec_target;
+    if (scause == INSTRUCTION_ACCESS_FAULT && stval >= exec_target && stval < exec_target + 8) {
+        printf("PMP instruction access fault stval=%lx\n", stval);
+        pmp_exec_fault_seen = 1;
+        WRITE_CSR(sepc, f->ra);
         return;
     }
 #endif
