@@ -23,6 +23,14 @@ void firmware_handle_sbi(struct trap_frame *f) {
         return;
     }
 
+#ifdef OS2_MIN_PMP
+    if (f->a7 == SBI_EXT_TEST && f->a6 == SBI_FUNC_TEST_READ_PMP_WORD) {
+        f->a0 = SBI_SUCCESS;
+        f->a1 = (long) pmp_protected_word;
+        return;
+    }
+#endif
+
     f->a0 = SBI_ERR_NOT_SUPPORTED;
     f->a1 = 0;
 }

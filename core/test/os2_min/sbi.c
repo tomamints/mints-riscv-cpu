@@ -40,3 +40,7 @@ long sbi_getchar(void) {
 struct sbiret sbi_set_timer(uint64_t stime_value) {
     return sbi_call(SBI_EXT_TIME, SBI_FUNC_TIME_SET_TIMER, (long) stime_value);
 }
+
+struct sbiret sbi_test_read_pmp_word(void) {
+    return sbi_call(SBI_EXT_TEST, SBI_FUNC_TEST_READ_PMP_WORD, 0);
+}

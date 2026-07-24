@@ -32,7 +32,7 @@
 | S-mode trap | Basic pass | S-mode ecall、timer、PMP load/store fault |
 | U-mode transition | TODO | 次フェーズ |
 | U-mode syscall | TODO | `medeleg[8]`, U-mode `ecall -> stvec` |
-| PMP | Data basic pass | load/store R/W。fetch/Xは未実装 |
+| PMP | Data basic pass | load/store R/W、禁止storeのRAM副作用抑止を確認。fetch/Xは未実装 |
 | Sv39 | TODO | Bareのみ |
 | Counters | Partial | `mcounteren/scounteren` の追加確認が必要 |
 | WFI | Partial | timer waitで使用。詳細仕様は未確認 |
@@ -49,7 +49,7 @@
 
 ## 次に確認したい項目
 
-- PMP fault時にmemory/MMIO requestが出ないこと
+- PMP fault時にMMIO requestが出ないこと
 - PMP instruction fetch / X permission
 - U-modeへ `sret` で遷移できること
 - U-mode `ecall` をS-mode syscall handlerで受けること

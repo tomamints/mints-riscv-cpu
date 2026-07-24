@@ -108,7 +108,7 @@ These suites currently fail on RV64 and are not claimed as supported:
 | Bitmanip / Zb* | Not claimed |
 | Cache block / address translation extensions | Not claimed |
 | DMA | Implemented experimentally, basic C test passes |
-| PMP | WIP: allow-all and S-mode load/store access fault tests pass |
+| PMP | WIP: allow-all, S-mode load/store access fault, and blocked store side-effect tests pass |
 
 ## Custom C Tests
 
@@ -124,7 +124,7 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-os2-min` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | 入力不要の統合テスト。PMP NAPOT allow-all設定後、S-mode遷移、SBI debug console putchar、SBI TIME `set_timer`、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回を確認 |
 | `make test-os2-min-input INPUT_TEXT=Z` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | S-modeから最小SBI dispatcher経由で debug console getchar を呼び、入力文字 `Z` を取得して出力 |
 | `make test-os2-min-strap` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]` 設定後に S-mode `ecall` が `stvec` へ入り、handler で `sepc += 4` して `sret` で復帰することを確認 |
-| `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=140000` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c` | Pass | PMP entry1のTOR禁止領域へS-modeからload/storeし、loadは`scause=5`、storeは`scause=7`、どちらも`stval=fault address` でS-mode trapへ入ることを確認 |
+| `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=170000` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c`, `firmware.c`, `sbi.c` | Pass | PMP entry1のTOR禁止領域へS-modeからload/storeし、loadは`scause=5`、storeは`scause=7`、どちらも`stval=fault address` でS-mode trapへ入ること、禁止storeで保護wordが変化しないことを確認 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

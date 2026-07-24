@@ -238,6 +238,7 @@ S-mode
 - 優先されたentryがaccess size全体を含まない場合はaccess faultにする
 - `pmpaddr0=~0UL`, `pmpcfg0=NAPOT|R|W|X` のallow-allで既存S-modeテストがPass
 - `OS2_MIN_PMP` で、entry1のTOR禁止領域にS-mode load/storeすると `scause=5/7`, `stval=fault address` でS-mode trapへ入る
+- 禁止store後にM-mode SBIで保護wordを読み直し、RAM値が変化していないことを確認する
 
 完了条件:
 
@@ -245,7 +246,8 @@ Step 1完了条件:
 
 - 許可領域のload/storeが成功する
 - 禁止領域のload/storeがaccess faultになる
-- fault時にmemory/MMIO requestが発行されない
+- 禁止storeでRAM値が変化しない
+- fault時にMMIO requestが発行されない
 
 Phase 6全体の完了条件:
 
@@ -457,7 +459,7 @@ shell
 直近でやる順番:
 
 1. SBI / firmwareコードを `sbi.c` / `platform.c` / `firmware.c` の境界で維持・整理する
-2. PMP fault時にmemory/MMIO副作用が起きないことを確認する
+2. PMP fault時にMMIO副作用が起きないことを確認する
 3. PMPのinstruction fetch / X permission enforcementを追加する
 4. U-modeへ遷移する
 5. U-mode `ecall` をS-mode syscall handlerで受ける

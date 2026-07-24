@@ -66,6 +66,7 @@ struct sbiret sbi_call(long eid, long fid, long arg0);
 void sbi_putchar(char ch);
 long sbi_getchar(void);
 struct sbiret sbi_set_timer(uint64_t stime_value);
+struct sbiret sbi_test_read_pmp_word(void);
 void firmware_handle_sbi(struct trap_frame *f);
 void test_smode_basic(void);
 void test_sbi_putchar(void);
@@ -155,6 +156,9 @@ struct process
 #define SBI_EXT_DEBUG_CONSOLE 0x4442434eUL
 #define SBI_FUNC_DEBUG_CONSOLE_PUTCHAR 0
 #define SBI_FUNC_DEBUG_CONSOLE_GETCHAR 1
+
+#define SBI_EXT_TEST 0x54534554UL
+#define SBI_FUNC_TEST_READ_PMP_WORD 0
 
 #define PROC_EXITED 2
 

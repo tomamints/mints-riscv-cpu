@@ -4,6 +4,8 @@ volatile uint64_t pmp_protected_word __attribute__((aligned(8))) = 0x11223344556
 volatile int pmp_load_fault_seen = -1;
 volatile int pmp_store_fault_seen = -1;
 
+#define PMP_PROTECTED_WORD_INITIAL 0x1122334455667788ULL
+
 void test_smode_basic(void) {
     printf("entered S-mode\n");
     printf("sstatus=%lx\n", READ_CSR(sstatus));
@@ -67,4 +69,11 @@ void test_pmp_data_fault(void) {
     if (!pmp_store_fault_seen)
         PANIC("PMP store fault was not raised");
     printf("PMP store fault OK\n");
+
+    struct sbiret ret = sbi_test_read_pmp_word();
+    if (ret.error != SBI_SUCCESS)
+        PANIC("sbi_test_read_pmp_word failed error=%ld", ret.error);
+    if ((uint64_t) ret.value != PMP_PROTECTED_WORD_INITIAL)
+        PANIC("PMP store changed protected word value=%lx", ret.value);
+    printf("PMP store side effect blocked\n");
 }
