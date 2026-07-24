@@ -24,13 +24,14 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 | RV64A | Implemented | LR/SC, AMO 系 |
 | RVC | Implemented | `rvc_converter.sv` で 16-bit 命令を 32-bit 命令へ展開 |
 | Pipeline | Implemented | IF/ID/EX/MEM/WB 相当、FIFO と stall/flush 制御 |
-| MMIO | Implemented | RAM, ROM, debug I/O, ACLINT, DMA へ decode |
+| MMIO | Implemented | RAM, ROM, debug I/O, ACLINT, DMA, NS16550A最小UARTへ decode |
 | CSR | Implemented | Machine/Supervisor/User 関連 CSR を部分実装 |
 | Exceptions | WIP | illegal instruction, ECALL, EBREAK, misaligned access など |
 | Interrupts | WIP | ACLINT の software/timer interrupt を CSR unit に接続 |
 | Privilege modes | WIP | M/S/U mode、trap delegation、`MRET`/`SRET` を部分実装 |
 | PMP | WIP | 4 entries、TOR/NAPOT、data/fetch check。S-mode allow-all、禁止load/store/fetch faultを確認 |
 | Sv39 | WIP | `satp.MODE=8`、3-level PTW、data/fetch translation、basic page faultを確認 |
+| UART | WIP | `0x10000000` にNS16550A互換の最小TX/LSRを追加。polling byte writeを確認 |
 
 ## U-mode / CSR Support
 
@@ -213,6 +214,14 @@ make test-dma
 
 `debug_dma.c` は DMA register を MMIO 経由で設定し、RAM-to-RAM copy を検証します。現在は `DMA test OK` と success まで到達することを確認済みです。
 
+UART polling output:
+
+```sh
+make test-uart
+```
+
+`uart_output.c` は NS16550A 互換UARTの `LSR` をpollingし、`THR` へbyte writeします。現在のUART baseは `0x10000000`、byte-spaced registerで、`LSR[5]=THRE` と `LSR[6]=TEMT` を常に1として返します。このテストで `A` と success まで到達することを確認済みです。
+
 ACLINT interrupt tests:
 
 ```sh
@@ -257,7 +266,7 @@ make test-os2-min-sv39
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはSv39の補完、PTWメモリエラー発生源、`sfence.vma` / TLB方針、NS16550A UARTです。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはSv39の補完、PTWメモリエラー発生源、`sfence.vma` / TLB方針、NS16550A UARTのLinux向けレジスタ補完、DTBです。
 
 trace run:
 

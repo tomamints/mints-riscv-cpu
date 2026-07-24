@@ -36,6 +36,7 @@ module core_top #(
     Membus mmio_dma_membus();
     Membus dbg_membus();
     Membus aclint_membus();
+    Membus uart_membus();
     Membus dma_ram_membus();
 
     aclint_if aclint_core_bus();
@@ -289,7 +290,8 @@ module core_top #(
         .rom_membus  (mmio_rom_membus),
         .dbg_membus  (dbg_membus),
         .aclint_membus  (aclint_membus),
-        .dma_membus  (mmio_dma_membus)
+        .dma_membus  (mmio_dma_membus),
+        .uart_membus (uart_membus)
     );
 
     amounit amou (
@@ -304,6 +306,12 @@ module core_top #(
         .rst (rst),
         .mmio(mmio_dma_membus),
         .ram(dma_ram_membus)
+    );
+
+    uart_ns16550 uart0 (
+        .clk    (clk),
+        .rst    (rst),
+        .membus (uart_membus)
     );
 
     ram_arbiter_cpu_prio ram_arb (

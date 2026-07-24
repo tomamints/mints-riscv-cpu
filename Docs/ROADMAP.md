@@ -15,6 +15,7 @@
 - SBI TIME `set_timer` が M-mode firmware経由で ACLINT `mtimecmp` を設定し、machine timer interrupt を発生できる
 - M-mode timer handlerがSTIPを注入し、S-mode `stvec` で supervisor timer interrupt を受けられる
 - `satp.MODE=8` を保持し、data-sideのSv39 3-level page table walkで4KiB identity mappingを確認できる
+- `0x10000000` にNS16550A互換の最小UARTを置き、polling TXでVerilator標準出力へ文字を出せる
 
 注意点:
 
@@ -22,6 +23,7 @@
 - SBI は S-mode から M-mode firmware へ入る `ecall`
 - `mideleg` は既に存在するpending bitの配送先を変える機構であり、`MTIP` を `STIP` に変換する機構ではない。現在はM-mode firmwareが明示的にSTIPを注入する
 - 今の debug MMIO は Linux 標準デバイスではなく、シミュレータ用の独自 console
+- Linux向けconsoleは、debug MMIOではなくNS16550A互換UARTへ寄せる
 
 ## Target Direction
 
@@ -411,6 +413,23 @@ UART:
 - polling TX から開始してよい
 - 最終的には interrupt 対応が必要
 
+現在:
+
+- UART baseは `0x10000000`
+- byte-spaced register、つまり `THR=base+0`, `LSR=base+5`
+- `THR` byte writeでVerilator標準出力へ文字を出す
+- `LSR[5]=THRE`, `LSR[6]=TEMT` を常に1、`LSR[0]=DR` を0として返す
+- `RBR` は0固定で、受信は未実装
+- `DLL/DLM/IER/FCR/LCR/MCR/SCR` は最小保持レジスタとして用意済み
+- `IIR` は no interrupt pending として `0x01` を返す
+- `make test-uart` で `A` とsuccessまで確認済み
+
+次:
+
+- UART register read/writeの専用テストを追加する
+- DTBに `serial@10000000` を追加する
+- Linux earlycon向けに `reg-shift=0`, `reg-io-width=1` を明記する
+
 ACLINT/CLINT:
 
 - `mtime`
@@ -521,10 +540,10 @@ shell
 
 直近でやる順番:
 
-1. PTWメモリエラー発生源とaccess fault経路を整理する
-2. `sfence.vma` と将来TLBの接続方針を整理する
-3. NS16550A polling UARTを追加する
-4. 最小DTBを用意する
+1. NS16550A UARTの基本レジスタread/writeテストを追加する
+2. 最小DTBを用意し、UART nodeをRTLのaddress mapと一致させる
+3. PTWメモリエラー発生源とaccess fault経路を整理する
+4. `sfence.vma` と将来TLBの接続方針を整理する
 5. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

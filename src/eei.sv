@@ -77,6 +77,18 @@ package eei;
 	localparam Addr MMAP_DMA_LEN    = Addr'('h20); // 32-bit (or 64)
 	localparam Addr MMAP_DMA_END    = MMAP_DMA_BEGIN + Addr'('h0FFF);
 
+	// UART (NS16550A compatible, byte-spaced registers)
+	localparam Addr MMAP_UART_BEGIN = Addr'('h1000_0000);
+	localparam Addr MMAP_UART_END   = MMAP_UART_BEGIN + Addr'('h00ff);
+	localparam Addr UART_REG_RBR_THR_DLL = Addr'('h00);
+	localparam Addr UART_REG_IER_DLM     = Addr'('h01);
+	localparam Addr UART_REG_IIR_FCR     = Addr'('h02);
+	localparam Addr UART_REG_LCR         = Addr'('h03);
+	localparam Addr UART_REG_MCR         = Addr'('h04);
+	localparam Addr UART_REG_LSR         = Addr'('h05);
+	localparam Addr UART_REG_MSR         = Addr'('h06);
+	localparam Addr UART_REG_SCR         = Addr'('h07);
+
 
 	// reset vector
 	localparam Addr INITIAL_PC = MMAP_ROM_BEGIN;

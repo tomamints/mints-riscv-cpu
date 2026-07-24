@@ -92,6 +92,7 @@ These suites are outside the currently claimed implementation scope and were not
 | Bitmanip / Zb* | Not claimed |
 | Cache block / address translation extensions | Not claimed |
 | DMA | Implemented experimentally, basic C test passes |
+| UART | WIP: NS16550A compatible minimal polling TX and LSR pass |
 | PMP | WIP: allow-all, S-mode load/store/fetch access fault, and blocked store side-effect tests pass |
 | Sv39 | WIP: data/fetch 3-level 4KiB identity mapping, satp.PPN switch, L1/L2 superpage, load/store/instruction page fault, SUM, MXR, A/D fault pass |
 
@@ -104,6 +105,7 @@ These suites are outside the currently claimed implementation scope and were not
 | `make test-output` | `core/test/debug_output.c` | Pass | `Hello,world!` と success まで到達 |
 | `make test-input INPUT_TEXT=A` | `core/test/debug_input.c` | Pass as manual I/O test | `A` を入力すると `B` が返る。self-terminating test ではなく cycle count で終了する |
 | `make test-dma` | `core/test/debug_dma.c` | Pass | DMA register 設定、RAM-to-RAM copy、結果検証、success まで到達 |
+| `make test-uart` | `core/test/uart_output.c` | Pass | NS16550A互換UARTの `LSR` をpollingし、`THR` へbyte writeして `A` とsuccessを出力。`0x10000000`のMMIO decode、byte lane read/write、Verilator標準出力を確認 |
 | `make test-mswi` | `core/test/mswi.c` | Pass | ACLINT machine software interrupt の handler 到達を確認 |
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
 | `make test-os2-min` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | 入力不要の統合テスト。PMP NAPOT allow-all設定後、S-mode遷移、SBI debug console putchar、SBI TIME `set_timer`、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回を確認 |

@@ -30,7 +30,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page faultまで到達済みです。Linux起動を優先するため、次はSv39の補完とLinux向けplatformへ進みます。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page fault、NS16550A互換UARTの最小polling TXまで到達済みです。Linux起動を優先するため、次はUARTのLinux向けレジスタ補完とDTBへ進みます。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -38,8 +38,8 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | Sv39補完 | PTWメモリエラー方針、将来TLB用の`sfence.vma`整理 |
-| 2 | Linux-oriented UART/DTB | early consoleとplatform記述に必要 |
+| 1 | Linux-oriented UART/DTB | early consoleとplatform記述に必要 |
+| 2 | Sv39補完 | PTWメモリエラー方針、将来TLB用の`sfence.vma`整理 |
 | 3 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 | 4 | OpenSBI/Linux bring-up | 実際のboot logから不足CSR/ISA/deviceを埋める |
 
@@ -63,7 +63,7 @@ M-mode trap
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
 | Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、TLB |
-| Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
+| Linux platform | WIP / UART TX minimal | `make test-uart` | NS16550A基本8レジスタ、DLAB、DTB、OpenSBI/Linux earlycon |
 
 ## テスト一覧
 
@@ -76,6 +76,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-output` | Pass | debug MMIO output |
 | `make test-input INPUT_TEXT=A` | Pass | debug MMIO input |
 | `make test-dma` | Pass | DMA register設定とRAM-to-RAM copy |
+| `make test-uart` | Pass | NS16550A互換UARTの最小polling TX。`0x10000005`のLSR read、`0x10000000`のTHR byte write、Verilator標準出力への表示 |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
 | `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回 |
@@ -102,7 +103,29 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 
 ## 次の実装候補
 
-### Option A: PMP / Access Control
+### Option A: Linux-oriented UART / DTB
+
+目的:
+
+- Linux earlyconで使える標準寄りのUARTを用意する
+- debug MMIOではなく、DTBに書けるplatform deviceとしてconsole経路を作る
+
+作業:
+
+- NS16550A基本8レジスタを実装する
+- `LCR.DLAB` による `DLL/DLM` アクセスを保持する
+- `IER/FCR/LCR/MCR/SCR` のread/write保持を確認する
+- `IIR=no interrupt pending`, `LSR.THRE/TEMT=1` を返す
+- DTBに `serial@10000000` を追加する
+- `earlycon=uart8250,mmio,0x10000000` 相当でLinux early outputを狙う
+
+完了条件:
+
+- `make test-uart` がPass
+- UART初期化コードが `DLL/DLM/LCR/IER/FCR/MCR/SCR` に触っても止まらない
+- DTBの `reg`, `reg-shift`, `reg-io-width` がRTLと一致する
+
+### Option B: PMP / Access Control
 
 目的:
 
@@ -130,7 +153,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 - fetchがR permissionではなくX permissionを見ることを確認する
 - 32-bit命令の後半2byteがPMP境界をまたぐfetch faultを確認する
 
-### Option B: timer / interrupt
+### Option C: timer / interrupt
 
 目的:
 
@@ -148,7 +171,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 - `scause` がinterrupt bit付きのtimer causeになる
 - `sret` で元のS-mode処理へ戻る
 
-### Option C: PMP / access control
+### Option D: PMP / access control
 
 目的:
 
@@ -166,7 +189,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 - 許可領域アクセスは成功
 - 禁止領域アクセスは期待したfaultになる
 
-### Option D: U-mode transition
+### Option E: U-mode transition
 
 目的:
 
@@ -185,7 +208,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 - U-mode codeが1文字出力、またはS-modeへ戻る合図を出せる
 - U-modeからS/M CSRアクセスでtrapする
 
-### Option E: U-mode syscall
+### Option F: U-mode syscall
 
 目的:
 

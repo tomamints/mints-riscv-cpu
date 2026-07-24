@@ -310,7 +310,8 @@ module mmio_controller (
     Membus.master rom_membus,
     Membus.master dbg_membus,
     Membus.master aclint_membus,
-    Membus.master dma_membus
+    Membus.master dma_membus,
+    Membus.master uart_membus
 );
 
     typedef enum logic [3:0] {
@@ -319,7 +320,8 @@ module mmio_controller (
         ROM,
         DEBUG,
         ACLINT,
-        DMA
+        DMA,
+        UART
     } Device;
 
     // outstanding リクエスト保持（1個だけ）
@@ -348,6 +350,7 @@ module mmio_controller (
         reset_membus_master(dbg_membus.valid,    dbg_membus.addr,    dbg_membus.wen,    dbg_membus.wdata,    dbg_membus.wmask);
         reset_membus_master(aclint_membus.valid, aclint_membus.addr, aclint_membus.wen, aclint_membus.wdata, aclint_membus.wmask);
         reset_membus_master(dma_membus.valid,    dma_membus.addr,    dma_membus.wen,    dma_membus.wdata,    dma_membus.wmask);
+        reset_membus_master(uart_membus.valid,   uart_membus.addr,   uart_membus.wen,   uart_membus.wdata,   uart_membus.wmask);
     endfunction
 
     function Device get_device (input Addr addr);
@@ -355,6 +358,7 @@ module mmio_controller (
         if ((MMAP_ROM_BEGIN    <= addr) && (addr <= MMAP_ROM_END))   return ROM;
         if ((MMAP_ACLINT_BEGIN <= addr) && (addr <= MMAP_ACLINT_END))return ACLINT;
         if ((MMAP_DMA_BEGIN    <= addr) && (addr <= MMAP_DMA_END))   return DMA;
+        if ((MMAP_UART_BEGIN   <= addr) && (addr <= MMAP_UART_END))  return UART;
         if (addr >= MMAP_RAM_BEGIN)                                  return RAM;
         return UNKNOWN;
     endfunction
@@ -403,6 +407,13 @@ module mmio_controller (
                 dma_membus.wmask = wmask;
                 dma_membus.addr  = addr - MMAP_DMA_BEGIN;
             end
+            UART: begin
+                uart_membus.valid = valid;
+                uart_membus.wen   = wen;
+                uart_membus.wdata = wdata;
+                uart_membus.wmask = wmask;
+                uart_membus.addr  = addr - MMAP_UART_BEGIN;
+            end
             default: ; // UNKNOWN は捨てる
         endcase
     endfunction
@@ -414,6 +425,7 @@ module mmio_controller (
             DEBUG:  return dbg_membus.rvalid;
             ACLINT: return aclint_membus.rvalid;
             DMA:    return dma_membus.rvalid;
+            UART:   return uart_membus.rvalid;
             default:return 1'b0;
         endcase
     endfunction
@@ -425,6 +437,7 @@ module mmio_controller (
             DEBUG:  return dbg_membus.ready;
             ACLINT: return aclint_membus.ready;
             DMA:    return dma_membus.ready;
+            UART:   return uart_membus.ready;
             default:return 1'b0;
         endcase
     endfunction
@@ -457,6 +470,10 @@ module mmio_controller (
             DMA: begin
                 rvalid = dma_membus.rvalid;
                 rdata  = dma_membus.rdata;
+            end
+            UART: begin
+                rvalid = uart_membus.rvalid;
+                rdata  = uart_membus.rdata;
             end
             default: ; // UNKNOWN
         endcase

@@ -25,6 +25,7 @@ src/sv39_ptw.sv
 src/muldivunit.sv
 src/memunit.sv
 src/amounit.sv
+src/uart_ns16550.sv
 src/mmio_controller.sv
 src/dma.sv
 src/ram_arbiter.sv

@@ -8,7 +8,7 @@
 
 現時点ではRVA23準拠を主張しません。
 
-現在主張しやすい範囲は、RV64IMAC、CSR/trap/interruptの一部、ACLINT、最小SBI、PMP data/fetch access check、Sv39 data/fetch identity mappingのbring-upです。
+現在主張しやすい範囲は、RV64IMAC、CSR/trap/interruptの一部、ACLINT、最小SBI、PMP data/fetch access check、Sv39 data/fetch identity mapping、NS16550A互換UARTの最小polling TXのbring-upです。
 
 ## ISA / Extension
 
@@ -42,13 +42,14 @@
 | Item | Status | Notes |
 |---|---|---|
 | ACLINT timer | Basic pass | MTIPをM-mode handlerで受け、STIPを注入 |
-| UART | TODO | debug MMIOはLinux標準デバイスではない |
+| UART | WIP | `0x10000000` にNS16550A互換の最小polling TXを追加。THR write、LSR THRE/TEMT、基本保持レジスタはあるが、RX/interrupt/PLIC連携は未実装 |
 | PLIC | TODO | 外部割り込み向け |
 | DTB | TODO | RAM/UART/ACLINT/PLICと一致させる |
 | OpenSBI compatibility | TODO | 現在は独自最小SBI |
 
 ## 次に確認したい項目
 
+- NS16550A UART register test、DTB node、Linux earlycon確認
 - PTW memory error発生源、A/D bit hardware update要否
 - `sfence.vma` のTLB flush接続
 - `fence.i`, `wfi`, counter CSRの仕様差分
