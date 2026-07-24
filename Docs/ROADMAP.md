@@ -358,6 +358,7 @@ M-mode firmware
 - 非leaf PTEの予約bitとmisaligned superpageはpage faultにする
 - 2MiB L1 / 1GiB L2 superpage aliasのloadを確認済み
 - A/D bitは現時点ではhardware updateせず、A=0 loadとD=0 storeがpage faultになることを確認済み
+- root page table A/Bを作り、`satp.PPN` を切り替えると同じVAが別PAを読むことを確認済み
 - X=0ページへのfetchで `INSTRUCTION_PAGE_FAULT`, `stval=fault VA` を確認済み
 - PTW中のPTE読み出し自体が失敗した場合はpage faultではなく、元アクセス種別に応じたinstruction/load/store access faultにする
 - PTWにPTE読み出しエラー用の `mem_error` 入力はあるが、現在のdata busにはerror応答がないため上位では常時0接続
@@ -380,7 +381,7 @@ VA 0x8000_0000
 PA 0x8000_0000
 ```
 
-最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、instruction fetch identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permission、A/D fault、X=0 fetch faultまで確認済みです。
+最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、instruction fetch identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permission、A/D fault、`satp.PPN` 切り替え、X=0 fetch faultまで確認済みです。
 
 ## Phase 10: Linux-oriented Devices
 

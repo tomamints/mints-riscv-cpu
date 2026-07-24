@@ -33,7 +33,7 @@
 | U-mode transition | Basic pass | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Basic pass | `medeleg[8]`, U-mode `ecall -> stvec`、戻り値とexitの最小確認 |
 | PMP | Basic pass | load/store R/W、fetch X、禁止storeのRAM副作用抑止を確認。MMIO副作用と部分重複の専用テストは未実装 |
-| Sv39 | Basic / data+fetch | `sv39_ptw.sv` にPTWを分離。`satp.MODE=8`、3-level page walk、4KiB leaf PTE、identity mapping、2MiB L1 / 1GiB L2 superpage、load page fault、instruction page fault、SUM、MXR、A/D fault方式、内部fault detailを確認。PTW PTE read errorはaccess faultへ分類するが、bus側のerror生成は未実装。TLB/ASID、A/D自動更新は未実装 |
+| Sv39 | Basic / data+fetch | `sv39_ptw.sv` にPTWを分離。`satp.MODE=8`、3-level page walk、4KiB leaf PTE、identity mapping、`satp.PPN`切り替え、2MiB L1 / 1GiB L2 superpage、load page fault、instruction page fault、SUM、MXR、A/D fault方式、内部fault detailを確認。PTW PTE read errorはaccess faultへ分類するが、bus側のerror生成は未実装。TLB/ASID、A/D自動更新は未実装 |
 | Counters | Partial | `mcounteren/scounteren` の追加確認が必要 |
 | WFI | Partial | timer waitで使用。詳細仕様は未確認 |
 

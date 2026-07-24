@@ -30,12 +30,24 @@ volatile uint64_t sv39_accessed_page[512] __attribute__((aligned(PAGE_SIZE))) = 
 volatile uint64_t sv39_dirty_page[512] __attribute__((aligned(PAGE_SIZE))) = {
     [0] = 0x0d0d0d0d0d0d0d0dULL
 };
+volatile uint64_t sv39_satp_va_page[512] __attribute__((aligned(PAGE_SIZE)));
+volatile uint64_t sv39_satp_page_a[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0xaaaaaaaa11111111ULL
+};
+volatile uint64_t sv39_satp_page_b[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0xbbbbbbbb22222222ULL
+};
 
 static uint64_t sv39_root_pt[512] __attribute__((aligned(PAGE_SIZE)));
 static uint64_t sv39_ram_l1[512] __attribute__((aligned(PAGE_SIZE)));
 static uint64_t sv39_ram_l0[512] __attribute__((aligned(PAGE_SIZE)));
 static uint64_t sv39_debug_l1[512] __attribute__((aligned(PAGE_SIZE)));
 static uint64_t sv39_debug_l0[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_root_pt_b[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_ram_l1_b[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_ram_l0_b[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_debug_l1_b[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_debug_l0_b[512] __attribute__((aligned(PAGE_SIZE)));
 
 #define SV39_PTE_FLAGS (PAGE_V | PAGE_R | PAGE_W | PAGE_X | PAGE_A | PAGE_D)
 #define SV39_DEBUG_ADDR 0x40000000UL
@@ -48,20 +60,22 @@ static uint64_t sv39_make_pte(uintptr_t pa, uint64_t flags) {
     return ((pa >> 12) << 10) | flags;
 }
 
-static void sv39_map_page(uintptr_t va, uintptr_t pa, uint64_t flags) {
+static void sv39_map_page_in(uint64_t *root, uint64_t *ram_l1, uint64_t *ram_l0,
+                             uint64_t *debug_l1, uint64_t *debug_l0,
+                             uintptr_t va, uintptr_t pa, uint64_t flags) {
     uint64_t vpn2 = (va >> 30) & 0x1ff;
     uint64_t vpn1 = (va >> 21) & 0x1ff;
     uint64_t vpn0 = (va >> 12) & 0x1ff;
     uint64_t *l0;
 
     if (va >= SV39_RAM_BASE && va < SV39_RAM_BASE + SV39_IDENTITY_SIZE) {
-        sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_ram_l1, PAGE_V);
-        sv39_ram_l1[vpn1] = sv39_make_pte((uintptr_t) sv39_ram_l0, PAGE_V);
-        l0 = sv39_ram_l0;
+        root[vpn2] = sv39_make_pte((uintptr_t) ram_l1, PAGE_V);
+        ram_l1[vpn1] = sv39_make_pte((uintptr_t) ram_l0, PAGE_V);
+        l0 = ram_l0;
     } else if (va >= SV39_DEBUG_ADDR && va < SV39_DEBUG_ADDR + PAGE_SIZE) {
-        sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_debug_l1, PAGE_V);
-        sv39_debug_l1[vpn1] = sv39_make_pte((uintptr_t) sv39_debug_l0, PAGE_V);
-        l0 = sv39_debug_l0;
+        root[vpn2] = sv39_make_pte((uintptr_t) debug_l1, PAGE_V);
+        debug_l1[vpn1] = sv39_make_pte((uintptr_t) debug_l0, PAGE_V);
+        l0 = debug_l0;
     } else {
         PANIC("sv39_map_page unsupported va=%lx", va);
     }
@@ -69,19 +83,30 @@ static void sv39_map_page(uintptr_t va, uintptr_t pa, uint64_t flags) {
     l0[vpn0] = sv39_make_pte(pa, flags);
 }
 
-static void sv39_build_identity_map(void) {
-    memset(sv39_root_pt, 0, sizeof(sv39_root_pt));
-    memset(sv39_ram_l1, 0, sizeof(sv39_ram_l1));
-    memset(sv39_ram_l0, 0, sizeof(sv39_ram_l0));
-    memset(sv39_debug_l1, 0, sizeof(sv39_debug_l1));
-    memset(sv39_debug_l0, 0, sizeof(sv39_debug_l0));
+static void sv39_map_page(uintptr_t va, uintptr_t pa, uint64_t flags) {
+    sv39_map_page_in(sv39_root_pt, sv39_ram_l1, sv39_ram_l0, sv39_debug_l1, sv39_debug_l0, va, pa, flags);
+}
+
+static void sv39_build_identity_map_in(uint64_t *root, uint64_t *ram_l1, uint64_t *ram_l0,
+                                       uint64_t *debug_l1, uint64_t *debug_l0) {
+    memset(root, 0, PAGE_SIZE);
+    memset(ram_l1, 0, PAGE_SIZE);
+    memset(ram_l0, 0, PAGE_SIZE);
+    memset(debug_l1, 0, PAGE_SIZE);
+    memset(debug_l0, 0, PAGE_SIZE);
 
     for (uintptr_t pa = SV39_RAM_BASE;
          pa < SV39_RAM_BASE + SV39_IDENTITY_SIZE;
          pa += PAGE_SIZE) {
-        sv39_map_page(pa, pa, SV39_PTE_FLAGS);
+        sv39_map_page_in(root, ram_l1, ram_l0, debug_l1, debug_l0, pa, pa, SV39_PTE_FLAGS);
     }
-    sv39_map_page(SV39_DEBUG_ADDR, SV39_DEBUG_ADDR, PAGE_V | PAGE_R | PAGE_W | PAGE_A | PAGE_D);
+    sv39_map_page_in(root, ram_l1, ram_l0, debug_l1, debug_l0,
+                     SV39_DEBUG_ADDR, SV39_DEBUG_ADDR, PAGE_V | PAGE_R | PAGE_W | PAGE_A | PAGE_D);
+}
+
+static void sv39_build_identity_map(void) {
+    sv39_build_identity_map_in(sv39_root_pt, sv39_ram_l1, sv39_ram_l0, sv39_debug_l1, sv39_debug_l0);
+    sv39_build_identity_map_in(sv39_root_pt_b, sv39_ram_l1_b, sv39_ram_l0_b, sv39_debug_l1_b, sv39_debug_l0_b);
 }
 
 static void sv39_remap_page(uintptr_t va, uint64_t flags) {
@@ -103,6 +128,25 @@ static void sv39_map_l2_superpage(uintptr_t va, uintptr_t pa, uint64_t flags) {
 
     sv39_root_pt[vpn2] = sv39_make_pte(pa, flags);
     __asm__ __volatile__("sfence.vma" ::: "memory");
+}
+
+static uint64_t sv39_load_with_satp(uintptr_t satp_value, uintptr_t restore_satp, uintptr_t va) {
+    uint64_t value;
+
+    __asm__ __volatile__(
+        "csrw satp, %[satp_value]\n"
+        "sfence.vma\n"
+        "ld %[value], 0(%[va])\n"
+        "csrw satp, %[restore_satp]\n"
+        "sfence.vma\n"
+        : [value] "=&r" (value)
+        : [satp_value] "r" (satp_value),
+          [restore_satp] "r" (restore_satp),
+          [va] "r" (va)
+        : "memory"
+    );
+
+    return value;
 }
 #endif
 
@@ -277,7 +321,9 @@ void test_sv39_data_identity(void) {
     sv39_build_identity_map();
     printf("Sv39 enable satp\n");
     __asm__ __volatile__("sfence.vma" ::: "memory");
-    WRITE_CSR(satp, SATP_SV39 | ((uintptr_t) sv39_root_pt >> 12));
+    uintptr_t satp_a = SATP_SV39 | (1ULL << 44) | ((uintptr_t) sv39_root_pt >> 12);
+    uintptr_t satp_b = SATP_SV39 | (2ULL << 44) | ((uintptr_t) sv39_root_pt_b >> 12);
+    WRITE_CSR(satp, satp_a);
     __asm__ __volatile__("sfence.vma" ::: "memory");
     printf("Sv39 satp enabled\n");
 
@@ -352,6 +398,20 @@ void test_sv39_data_identity(void) {
     if (sv39_dirty_page[0] != 0x0d0d0d0d0d0d0d0dULL)
         PANIC("Sv39 D=0 store changed page value=%lx", sv39_dirty_page[0]);
     printf("Sv39 D bit page fault OK\n");
+
+    uintptr_t switch_va = (uintptr_t) sv39_satp_va_page;
+    sv39_map_page(switch_va, (uintptr_t) sv39_satp_page_a, PAGE_V | PAGE_R | PAGE_W | PAGE_A | PAGE_D);
+    sv39_map_page_in(sv39_root_pt_b, sv39_ram_l1_b, sv39_ram_l0_b, sv39_debug_l1_b, sv39_debug_l0_b,
+                     switch_va, (uintptr_t) sv39_satp_page_b, PAGE_V | PAGE_R | PAGE_W | PAGE_A | PAGE_D);
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+
+    uint64_t satp_a_value = sv39_load_with_satp(satp_a, satp_a, switch_va);
+    uint64_t satp_b_value = sv39_load_with_satp(satp_b, satp_a, switch_va);
+    if (satp_a_value != sv39_satp_page_a[0])
+        PANIC("Sv39 satp A switch failed value=%lx", satp_a_value);
+    if (satp_b_value != sv39_satp_page_b[0])
+        PANIC("Sv39 satp B switch failed value=%lx", satp_b_value);
+    printf("Sv39 satp PPN switch OK\n");
 
     sv39_remap_page((uintptr_t) sv39_noexec_target, PAGE_V | PAGE_R | PAGE_A | PAGE_D);
     sv39_fetch_fault_seen = 0;

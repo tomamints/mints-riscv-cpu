@@ -62,7 +62,7 @@ M-mode trap
 | U-mode transition | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。必要になったらU-mode stack分離やCSR faultを追加 |
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
-| Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、MPRV/effective privilege、TLB |
+| Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、MPRV/effective privilege、TLB |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
 ## テスト一覧
@@ -82,7 +82,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-os2-min-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` | Pass | PMP禁止TOR領域へのS-mode load/store/fetchで `scause=5/7/1`, `stval=fault address`。禁止storeでRAM値が変化しないこと、fetchがRではなくXを見ること、32-bit命令後半2byteのX禁止も確認 |
-| `make test-os2-min-sv39` | Pass | S-modeで`satp.MODE=8`を設定し、4KiB PTEの3-level page walkでdata load/store/fetchをidentity mapping。2MiB L1 / 1GiB L2 superpage、未map load、SUM=0/1、MXR=0/1、A=0 load、D=0 store、X=0 fetch page faultを確認 |
+| `make test-os2-min-sv39` | Pass | S-modeで`satp.MODE=8`を設定し、4KiB PTEの3-level page walkでdata load/store/fetchをidentity mapping。2MiB L1 / 1GiB L2 superpage、未map load、SUM=0/1、MXR=0/1、A=0 load、D=0 store、satp.PPN切り替え、X=0 fetch page faultを確認 |
 
 ### riscv-tests Summary
 

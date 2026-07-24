@@ -341,7 +341,7 @@ VM-11	U bit	U/Sアクセス制御	PASS
 VM-12	A bit	accessed bitの扱い	PASS
 VM-13	D bit	dirty bitの扱い	PASS
 VM-14	sfence.vma	TLBを正しく無効化	WIP: TLBなしのためno-op
-VM-15	ASID変更	アドレス空間を切り替えられる	TODO
+VM-15	ASID / satp切り替え	`satp.PPN`切り替えでアドレス空間を切り替えられる	PPN切り替えPASS、ASID/TLB効果はTODO
 VM-16	canonical address	不正Sv39アドレスでfault	PASS
 VM-17	SUM	S-modeからUページへのdata access制御	PASS
 VM-18	MXR	execute-onlyページのread制御	PASS
@@ -350,7 +350,7 @@ VM-20	page table walk fault	正しいcauseとstval	WIP: PTE mem_errorはaccess f
 
 SATPはSupervisor Address Translation and Protectionを設定し、Sv39などのページベース仮想記憶モードを選択します。SFENCE.VMAはページテーブル変更後のアドレス変換キャッシュ同期に使います。
 
-現在の `make test-os2-min-sv39` では、`satp.MODE=8` 設定後に `sv39_ptw.sv` をdata-side load/storeとinstruction fetchの両方から使います。fetch側では、S/U-modeかつSv39有効時にfetch PCを仮想アドレスとしてPTWへ渡し、返ってきた物理アドレスで命令メモリを読みます。`X=0` のページへ飛ぶと `scause=12` のinstruction page faultとしてS-mode `stvec` へ入り、handlerで復帰できることを確認しています。
+現在の `make test-os2-min-sv39` では、`satp.MODE=8` 設定後に `sv39_ptw.sv` をdata-side load/storeとinstruction fetchの両方から使います。fetch側では、S/U-modeかつSv39有効時にfetch PCを仮想アドレスとしてPTWへ渡し、返ってきた物理アドレスで命令メモリを読みます。またroot page table A/Bを別々に作り、同じVAをAではpage A、Bではpage Bへmapして、`satp.PPN` 切り替えで読み分けられることを確認しています。`X=0` のページへ飛ぶと `scause=12` のinstruction page faultとしてS-mode `stvec` へ入り、handlerで復帰できることも確認しています。
 
 PTW中にPTE読み出しそのものが失敗した場合は、PTEの形式や権限違反ではないためpage faultではなく、元のアクセス種別に応じたinstruction/load/store access faultとして扱います。ただし、現在のbus側にはerror応答の発生源がないため、この経路は方針と入力だけが用意されている段階です。
 

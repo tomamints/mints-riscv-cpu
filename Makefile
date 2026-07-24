@@ -217,7 +217,7 @@ test-os2-min-strap: OS2_MIN_NAME=kernel_strap
 test-os2-min-strap: $(SIM) bootrom-build os2-min-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
 
-test-os2-min-sv39: CYCLES=3000000
+test-os2-min-sv39: CYCLES=8000000
 test-os2-min-sv39: OS2_MIN_DEFS=-DOS2_MIN_SV39
 test-os2-min-sv39: OS2_MIN_NAME=kernel_sv39
 test-os2-min-sv39: $(SIM) bootrom-build os2-min-build
