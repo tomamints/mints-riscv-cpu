@@ -33,7 +33,7 @@
 | U-mode transition | Basic pass | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Basic pass | `medeleg[8]`, U-mode `ecall -> stvec`、戻り値とexitの最小確認 |
 | PMP | Basic pass | load/store R/W、fetch X、禁止storeのRAM副作用抑止を確認。MMIO副作用と部分重複の専用テストは未実装 |
-| Sv39 | Basic / data-side only | `sv39_ptw.sv` にPTWを分離。`satp.MODE=8`、3-level page walk、4KiB leaf PTE、identity mapping、2MiB L1 superpage、load page fault、SUM、MXRを確認。instruction fetch側、TLB/ASID、PTW memory error、A/D自動更新は未実装 |
+| Sv39 | Basic / data-side only | `sv39_ptw.sv` にPTWを分離。`satp.MODE=8`、3-level page walk、4KiB leaf PTE、identity mapping、2MiB L1 / 1GiB L2 superpage、load page fault、SUM、MXR、内部fault detailを確認。instruction fetch側、TLB/ASID、bus側のPTW memory error生成、A/D自動更新は未実装 |
 | Counters | Partial | `mcounteren/scounteren` の追加確認が必要 |
 | WFI | Partial | timer waitで使用。詳細仕様は未確認 |
 
@@ -51,7 +51,7 @@
 
 - instruction fetch側Sv39
 - Sv39 store page fault / instruction page fault
-- L2 superpageテスト、PTW memory error、A/D bit方針
+- PTW memory error、MPRV/effective privilege、A/D bit方針
 - `sfence.vma` のTLB flush接続
 - `fence.i`, `wfi`, counter CSRの仕様差分
 - Linux最小起動要件とRVA23要件の差分

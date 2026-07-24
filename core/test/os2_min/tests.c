@@ -32,6 +32,7 @@ static uint64_t sv39_debug_l0[512] __attribute__((aligned(PAGE_SIZE)));
 #define SV39_DEBUG_ADDR 0x40000000UL
 #define SV39_RAM_BASE 0x80000000UL
 #define SV39_SUPERPAGE_ALIAS (SV39_RAM_BASE + 0x200000UL)
+#define SV39_L2_SUPERPAGE_ALIAS 0xc0000000UL
 
 static uint64_t sv39_make_pte(uintptr_t pa, uint64_t flags) {
     return ((pa >> 12) << 10) | flags;
@@ -84,6 +85,13 @@ static void sv39_map_l1_superpage(uintptr_t va, uintptr_t pa, uint64_t flags) {
 
     sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_ram_l1, PAGE_V);
     sv39_ram_l1[vpn1] = sv39_make_pte(pa, flags);
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+}
+
+static void sv39_map_l2_superpage(uintptr_t va, uintptr_t pa, uint64_t flags) {
+    uint64_t vpn2 = (va >> 30) & 0x1ff;
+
+    sv39_root_pt[vpn2] = sv39_make_pte(pa, flags);
     __asm__ __volatile__("sfence.vma" ::: "memory");
 }
 #endif
@@ -261,6 +269,12 @@ void test_sv39_data_identity(void) {
     if (superpage_alias_value != superpage_base_value)
         PANIC("Sv39 L1 superpage failed value=%lx expected=%lx", superpage_alias_value, superpage_base_value);
     printf("Sv39 L1 superpage OK\n");
+
+    sv39_map_l2_superpage(SV39_L2_SUPERPAGE_ALIAS, SV39_RAM_BASE, SV39_PTE_FLAGS);
+    uint64_t l2_superpage_alias_value = *(volatile uint64_t *) SV39_L2_SUPERPAGE_ALIAS;
+    if (l2_superpage_alias_value != superpage_base_value)
+        PANIC("Sv39 L2 superpage failed value=%lx expected=%lx", l2_superpage_alias_value, superpage_base_value);
+    printf("Sv39 L2 superpage OK\n");
 
     sv39_load_fault_seen = 0;
     __asm__ __volatile__("ld zero, 0(%0)" :: "r" (0x60000000UL) : "memory");

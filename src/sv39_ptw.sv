@@ -13,6 +13,7 @@ module sv39_ptw (
 	input logic mxr,
 	output logic done,
 	output logic fault,
+	output Sv39Fault fault_detail,
 	output Addr pa,
 	output CsrCause fault_cause,
 	output Addr fault_value,
@@ -20,6 +21,7 @@ module sv39_ptw (
 	output Addr mem_addr,
 	input logic mem_ready,
 	input logic mem_rvalid,
+	input logic mem_error,
 	input logic [MEMBUS_DATA_WIDTH-1:0] mem_rdata
 );
 
@@ -41,12 +43,16 @@ module sv39_ptw (
 	UIntX base_ppn;
 	UIntX pte;
 	logic result_fault;
+	Sv39Fault result_fault_detail;
 	Addr result_pa;
 	CsrCause result_fault_cause;
 
 	logic [8:0] vpn;
 	Addr pte_addr;
 	logic pte_v, pte_r, pte_w, pte_x, pte_u, pte_a, pte_d;
+	logic pte_v_invalid;
+	logic pte_w_no_r;
+	logic pte_reserved_fault;
 	logic pte_nonleaf;
 	logic pte_invalid;
 	logic pte_reserved_nonleaf;
@@ -57,6 +63,7 @@ module sv39_ptw (
 	assign ready = state == Idle;
 	assign done = state == Done;
 	assign fault = result_fault;
+	assign fault_detail = result_fault_detail;
 	assign pa = result_pa;
 	assign fault_cause = result_fault_cause;
 	assign fault_value = req_va;
@@ -64,7 +71,7 @@ module sv39_ptw (
 	assign mem_valid = state == Req;
 	assign mem_addr = pte_addr;
 
-	assign va_canonical = va[63:39] == {25{va[38]}};
+	assign va_canonical = is_sv39_canonical(va);
 
 	always_comb begin
 		unique case (level)
@@ -85,7 +92,10 @@ module sv39_ptw (
 	assign pte_a = pte[6];
 	assign pte_d = pte[7];
 	assign pte_nonleaf = !(pte_r || pte_x);
-	assign pte_invalid = !pte_v || (pte_w && !pte_r) || (pte[63:54] != 10'b0);
+	assign pte_v_invalid = !pte_v;
+	assign pte_w_no_r = pte_w && !pte_r;
+	assign pte_reserved_fault = pte[63:54] != 10'b0;
+	assign pte_invalid = pte_v_invalid || pte_w_no_r || pte_reserved_fault;
 	assign pte_reserved_nonleaf = pte_nonleaf && (pte_u || pte_a || pte_d);
 
 	always_comb begin
@@ -136,6 +146,42 @@ module sv39_ptw (
 		endcase
 	endfunction
 
+	function automatic logic is_sv39_canonical(input Addr addr);
+		return addr[63:39] == {25{addr[38]}};
+	endfunction
+
+	function automatic Sv39Fault invalid_fault_detail;
+		if (pte_v_invalid) begin
+			return SV39_FAULT_PTE_INVALID;
+		end else if (pte_w_no_r) begin
+			return SV39_FAULT_W_NO_R;
+		end else begin
+			return SV39_FAULT_RESERVED;
+		end
+	endfunction
+
+	function automatic Sv39Fault permission_fault_detail;
+		if (req_access_type == PMP_ACCESS_READ && !(pte_r || (req_mxr && pte_x))) begin
+			return SV39_FAULT_LOAD_R;
+		end else if (req_access_type == PMP_ACCESS_WRITE && !pte_w) begin
+			return SV39_FAULT_STORE_W;
+		end else if (req_access_type == PMP_ACCESS_EXEC && !pte_x) begin
+			return SV39_FAULT_FETCH_X;
+		end else if (!pte_a) begin
+			return SV39_FAULT_PTE_A;
+		end else if (req_access_type == PMP_ACCESS_WRITE && !pte_d) begin
+			return SV39_FAULT_PTE_D;
+		end else if (req_priv_mode == U && !pte_u) begin
+			return SV39_FAULT_PTE_U;
+		end else if (req_priv_mode == S && pte_u && req_access_type == PMP_ACCESS_EXEC) begin
+			return SV39_FAULT_PTE_U;
+		end else if (req_priv_mode == S && pte_u && !req_sum) begin
+			return SV39_FAULT_PTE_SUM;
+		end else begin
+			return SV39_FAULT_RESERVED;
+		end
+	endfunction
+
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
 			state <= Idle;
@@ -148,6 +194,7 @@ module sv39_ptw (
 			base_ppn <= '0;
 			pte <= '0;
 			result_fault <= 1'b0;
+			result_fault_detail <= SV39_FAULT_NONE;
 			result_pa <= '0;
 			result_fault_cause <= CsrCause'(0);
 		end else begin
@@ -162,6 +209,7 @@ module sv39_ptw (
 						level <= 2'd2;
 						base_ppn <= UIntX'(satp[43:0]);
 						result_fault <= !va_canonical;
+						result_fault_detail <= va_canonical ? SV39_FAULT_NONE : SV39_FAULT_ADDR_INVALID;
 						result_pa <= '0;
 						result_fault_cause <= page_fault_cause(access_type);
 						state <= va_canonical ? Req : Done;
@@ -183,36 +231,51 @@ module sv39_ptw (
 						if ($test$plusargs("TRACE_SV39")) begin
 							$display("[SV39] RESP pte=%h", mem_rdata);
 						end
-						pte <= mem_rdata;
-						state <= Check;
+						if (mem_error) begin
+							result_fault <= 1'b1;
+							result_fault_detail <= SV39_FAULT_PTE_MEM_ERROR;
+							state <= Done;
+						end else begin
+							pte <= UIntX'(mem_rdata[63:0]);
+							state <= Check;
+						end
 					end
 				end
 
 				Check: begin
 					if ($test$plusargs("TRACE_SV39")) begin
-						$display("[SV39] CHECK level=%0d pte=%h invalid=%b reserved_nonleaf=%b nonleaf=%b superpage_misaligned=%b perm_fault=%b",
-							level, pte, pte_invalid, pte_reserved_nonleaf, pte_nonleaf, superpage_misaligned, pte_perm_fault);
+						$display("[SV39] CHECK level=%0d pte=%h invalid=%b reserved_nonleaf=%b nonleaf=%b superpage_misaligned=%b perm_fault=%b detail=%0d",
+							level, pte, pte_invalid, pte_reserved_nonleaf, pte_nonleaf, superpage_misaligned, pte_perm_fault, result_fault_detail);
 					end
-					if (pte_invalid || pte_reserved_nonleaf) begin
+					if (pte_invalid) begin
 						result_fault <= 1'b1;
+						result_fault_detail <= invalid_fault_detail();
+						state <= Done;
+					end else if (pte_reserved_nonleaf) begin
+						result_fault <= 1'b1;
+						result_fault_detail <= SV39_FAULT_RESERVED;
 						state <= Done;
 					end else if (pte_nonleaf) begin
 						if (level == 2'd0) begin
 							result_fault <= 1'b1;
+							result_fault_detail <= SV39_FAULT_NONLEAF_AT_L0;
 							state <= Done;
 						end else begin
 							base_ppn <= UIntX'(pte[53:10]);
 							level <= level - 2'd1;
 							state <= Req;
 						end
-					end else if (pte_perm_fault) begin
-						result_fault <= 1'b1;
-						state <= Done;
 					end else if (superpage_misaligned) begin
 						result_fault <= 1'b1;
+						result_fault_detail <= SV39_FAULT_SUPERPAGE;
+						state <= Done;
+					end else if (pte_perm_fault) begin
+						result_fault <= 1'b1;
+						result_fault_detail <= permission_fault_detail();
 						state <= Done;
 					end else begin
 						result_fault <= 1'b0;
+						result_fault_detail <= SV39_FAULT_NONE;
 						result_pa <= leaf_pa(pte, req_va, level);
 						state <= Done;
 					end

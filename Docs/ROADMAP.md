@@ -356,16 +356,16 @@ M-mode firmware
 - `SUM=0/1` によるS-modeからUページへのdata access制御を確認済み
 - `MXR=0/1` によるexecute-onlyページのload制御を確認済み
 - 非leaf PTEの予約bitとmisaligned superpageはpage faultにする
-- 2MiB L1 superpage aliasのloadを確認済み
-- 1GiB L2 superpageのPA合成はPTWに実装済み。ただし専用テストは未追加
+- 2MiB L1 / 1GiB L2 superpage aliasのloadを確認済み
+- PTWにPTE読み出しエラー用の `mem_error` 入力はあるが、現在のdata busにはerror応答がないため上位では常時0接続
+- `Sv39Fault` でPTW内部fault理由を保持し、architecturalな `scause=12/13/15` とは別に波形/debugで原因を追える
 - `sfence.vma` はTLBなしのためno-op命令として受ける
 
 未対応:
 
 - instruction fetch側のSv39
 - store page fault / instruction page faultのSv39専用テスト
-- L2 superpage専用テスト
-- PTW中のPTE読み出しに対するbus/PMP error入力
+- PTW中のPTE読み出しに対するbus/PMP error生成
 - TLB / ASID
 - A/D bitのhardware update
 - permissionの厳密な仕様準拠
@@ -378,7 +378,7 @@ VA 0x8000_0000
 PA 0x8000_0000
 ```
 
-最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、2MiB L1 superpage、未map load page fault、SUM/MXRの基本permissionまで確認済みです。次は命令fetch側からも `sv39_ptw.sv` を使えるようにします。
+最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permissionまで確認済みです。次は命令fetch側からも `sv39_ptw.sv` を使えるようにします。
 
 ## Phase 10: Linux-oriented Devices
 
@@ -520,7 +520,7 @@ shell
 
 1. instruction fetch側にもSv39変換を入れる
 2. Sv39のstore page faultとinstruction page faultを確認する
-3. L2 superpageテストとPTWメモリエラー方針を追加する
+3. PTWメモリエラー方針とMPRV/effective privilegeを追加する
 4. NS16550A polling UARTを追加する
 5. 最小DTBを用意する
 6. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る

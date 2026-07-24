@@ -51,6 +51,7 @@ module memunit (
 	logic ptw_ready;
 	logic ptw_done;
 	logic ptw_fault;
+	Sv39Fault ptw_fault_detail;
 	Addr ptw_pa;
 	Addr ptw_fault_value;
 	logic ptw_mem_valid;
@@ -75,6 +76,7 @@ module memunit (
 		.mxr(sstatus_mxr),
 		.done(ptw_done),
 		.fault(ptw_fault),
+		.fault_detail(ptw_fault_detail),
 		.pa(ptw_pa),
 		.fault_cause(ptw_fault_cause),
 		.fault_value(ptw_fault_value),
@@ -82,6 +84,7 @@ module memunit (
 		.mem_addr(ptw_mem_addr),
 		.mem_ready(membus.ready),
 		.mem_rvalid(membus.rvalid),
+		.mem_error(1'b0),
 		.mem_rdata(membus.rdata)
 	);
 
@@ -150,13 +153,6 @@ module memunit (
 			default: rdata = 'x;
 		endcase
 
-		expt = '0;
-		if (state == Fault) begin
-			expt.valid = 1'b1;
-			expt.cause = ptw_fault_cause;
-			expt.value = ptw_fault_value;
-		end
-
 		case (state)
 			Init:            stall = valid & (is_new && inst_is_memop(ctrl));
 			TranslateWait:   stall = valid;
@@ -165,6 +161,19 @@ module memunit (
 			Fault:           stall = 1'b0;
 			default:         stall = 1'b0;
 		endcase
+	end
+
+	always_comb begin
+		expt = '0;
+		if (state == Fault) begin
+			expt.valid = 1'b1;
+			expt.cause = ptw_fault_cause;
+			expt.value = ptw_fault_value;
+			if ($test$plusargs("TRACE_SV39")) begin
+				$display("[SV39] FAULT cause=%0d detail=%0d value=%h",
+					ptw_fault_cause, ptw_fault_detail, ptw_fault_value);
+			end
+		end
 	end
 
 	always_ff @(posedge clk or negedge rst) begin

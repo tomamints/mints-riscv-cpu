@@ -241,7 +241,9 @@ make test-os2-min-sv39
 
 `OS2_MIN_USER` は最小U-modeテストです。S-modeで `stvec`、`medeleg[8]`、`sstatus.SPP=U`、`sepc=user_entry` を設定して `sret` し、U-modeへ入ります。U-mode側は1回目の `ecall` でS-mode trapへ入り、handlerが `a0=0x5678` と `sepc += 4` を設定してU-modeへ戻します。2回目の `ecall` はexit syscallとして扱い、S-mode handler側で `test success` を出します。
 
-`make test-os2-min-sv39` は最小Sv39 data-sideテストです。S-modeで3段page tableを作り、`satp.MODE=8` とroot PPNを設定します。CPU側は `sv39_ptw.sv` に分離したpage table walkerをdata-side load/storeから使います。現在はTLBがないため `sfence.vma` はno-opとして受けます。先頭2MiBのRAMとdebug MMIO 1ページを4KiB leaf PTEでidentity mapし、S-modeのload/storeがVA->PA変換後に成功すること、2MiB L1 superpage aliasでloadできること、未mapの `0x60000000` loadが `scause=13`、`stval=0x60000000` のload page faultになることを確認します。加えて、S-modeからUページへのloadが `SUM=0` ではfault、`SUM=1` では成功すること、execute-onlyページへのloadが `MXR=0` ではfault、`MXR=1` では成功することも確認します。
+`make test-os2-min-sv39` は最小Sv39 data-sideテストです。S-modeで3段page tableを作り、`satp.MODE=8` とroot PPNを設定します。CPU側は `sv39_ptw.sv` に分離したpage table walkerをdata-side load/storeから使います。現在はTLBがないため `sfence.vma` はno-opとして受けます。先頭2MiBのRAMとdebug MMIO 1ページを4KiB leaf PTEでidentity mapし、S-modeのload/storeがVA->PA変換後に成功すること、2MiB L1 / 1GiB L2 superpage aliasでloadできること、未mapの `0x60000000` loadが `scause=13`、`stval=0x60000000` のload page faultになることを確認します。加えて、S-modeからUページへのloadが `SUM=0` ではfault、`SUM=1` では成功すること、execute-onlyページへのloadが `MXR=0` ではfault、`MXR=1` では成功することも確認します。
+
+`sv39_ptw.sv` は architectural な `scause` とは別に `Sv39Fault` で内部fault理由も保持します。これはIOMMU側の `ptw_fault_e` と同じ位置づけで、波形や `+TRACE_SV39` でPTE invalid、W without R、reserved bit、permission、A/D不足、superpage misalignmentなどを切り分けるための情報です。
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 

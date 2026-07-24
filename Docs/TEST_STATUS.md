@@ -109,7 +109,7 @@ These suites currently fail on RV64 and are not claimed as supported:
 | Cache block / address translation extensions | Not claimed |
 | DMA | Implemented experimentally, basic C test passes |
 | PMP | WIP: allow-all, S-mode load/store/fetch access fault, and blocked store side-effect tests pass |
-| Sv39 | WIP: data-side 3-level 4KiB identity mapping, L1 superpage, load page fault, SUM, MXR pass |
+| Sv39 | WIP: data-side 3-level 4KiB identity mapping, L1/L2 superpage, load page fault, SUM, MXR pass |
 
 ## Custom C Tests
 
@@ -127,7 +127,7 @@ These suites currently fail on RV64 and are not claimed as supported:
 | `make test-os2-min-strap` | `core/test/os2_min/kernel.c` | Pass | `medeleg[9]` 設定後に S-mode `ecall` が `stvec` へ入り、handler で `sepc += 4` して `sret` で復帰することを確認 |
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c`, `firmware.c`, `sbi.c` | Pass | PMP entry1のTOR禁止領域へS-modeからload/store/fetchし、loadは`scause=5`、storeは`scause=7`、fetchは`scause=1`、いずれも`stval=fault address` でS-mode trapへ入ること、禁止storeで保護wordが変化しないことを確認。fetchは`X=1/R=0/W=0`で成功、`R=1/W=1/X=0`でfaultすること、32-bit命令後半2byteがX禁止領域に入るとfaultすることも確認 |
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=120000` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c` | Pass | S-modeから`sstatus.SPP=U`、`sepc=user_entry`、`sret`でU-modeへ入り、U-mode `ecall` が`scause=8`でS-mode trapへ入ること、1回目のsyscall戻り値でU-modeへ復帰できること、2回目をexit syscallとして処理できることを確認 |
-| `make test-os2-min-sv39` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c` | Pass | S-modeで3段page tableを作成し、`satp.MODE=8`でdata-side Sv39を有効化。identity load/store、2MiB L1 superpage、未map load page fault、SUM=0/1、MXR=0/1を確認 |
+| `make test-os2-min-sv39` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c` | Pass | S-modeで3段page tableを作成し、`satp.MODE=8`でdata-side Sv39を有効化。identity load/store、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM=0/1、MXR=0/1を確認 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

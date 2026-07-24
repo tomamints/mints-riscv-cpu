@@ -20,6 +20,24 @@ package eei;
 		PMP_ACCESS_EXEC  = 2'b10
 	} PmpAccessType;
 
+	typedef enum logic [4:0] {
+		SV39_FAULT_NONE              = 5'd0,
+		SV39_FAULT_ADDR_INVALID      = 5'd1,
+		SV39_FAULT_PTE_MEM_ERROR     = 5'd2,
+		SV39_FAULT_PTE_INVALID       = 5'd3,
+		SV39_FAULT_W_NO_R            = 5'd4,
+		SV39_FAULT_RESERVED          = 5'd5,
+		SV39_FAULT_NONLEAF_AT_L0     = 5'd6,
+		SV39_FAULT_SUPERPAGE         = 5'd7,
+		SV39_FAULT_FETCH_X           = 5'd8,
+		SV39_FAULT_LOAD_R            = 5'd9,
+		SV39_FAULT_STORE_W           = 5'd10,
+		SV39_FAULT_PTE_A             = 5'd11,
+		SV39_FAULT_PTE_D             = 5'd12,
+		SV39_FAULT_PTE_U             = 5'd13,
+		SV39_FAULT_PTE_SUM           = 5'd14
+	} Sv39Fault;
+
 	localparam UIntX MACHINE_IMPLEMENTATION_ID = 1;
 	localparam UIntX PMPCFG0_WMASK = UIntX'('h0000_0000_1f1f_1f1f);
 	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
