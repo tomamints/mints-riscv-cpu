@@ -218,7 +218,7 @@ OS2 minimum port:
 make test-os2-min
 make test-os2-min-input INPUT_TEXT=Z
 make test-os2-min-strap
-make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000
+make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000
 make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=120000
 ```
 
@@ -236,7 +236,7 @@ make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=12
 
 `make test-os2-min-strap` は S-mode `ecall` を `stvec` で受けるテストです。`medeleg[9]` で S-mode ecall を S-mode trap へ委譲し、handler で `sepc += 4` して `sret` で元のS-mode処理へ戻れることを確認します。
 
-`OS2_MIN_PMP` は PMP access fault のテストです。M-modeでPMP entry1に `pmp_protected_word` の8byteだけTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=fault address` でS-mode trapへ入り、handlerで `sepc += 4` して復帰できることを確認します。さらにM-mode SBIで保護wordを読み直し、禁止storeがRAMを書き換えていないことも確認します。fetch側は、`pmp_protected_exec_target` を `X=1/R=0/W=0` にした場合は実行でき、`R=1/W=1/X=0` にした場合は `scause=1`、`stval=fetch address` でS-mode trapへ入ることを確認します。
+`OS2_MIN_PMP` は PMP access fault のテストです。M-modeでPMP entry1に `pmp_protected_word` の8byteだけTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=fault address` でS-mode trapへ入り、handlerで `sepc += 4` して復帰できることを確認します。さらにM-mode SBIで保護wordを読み直し、禁止storeがRAMを書き換えていないことも確認します。fetch側は、`pmp_protected_exec_target` を `X=1/R=0/W=0` にした場合は実行でき、`R=1/W=1/X=0` にした場合は `scause=1`、`stval=fetch address` でS-mode trapへ入ることを確認します。さらに32-bit命令を4byte境界+2に置き、命令後半2byteだけがX禁止領域に入る場合もinstruction access faultになることを確認します。
 
 `OS2_MIN_USER` は最小U-modeテストです。S-modeで `stvec`、`medeleg[8]`、`sstatus.SPP=U`、`sepc=user_entry` を設定して `sret` し、U-modeへ入ります。U-mode側は1回目の `ecall` でS-mode trapへ入り、handlerが `a0=0x5678` と `sepc += 4` を設定してU-modeへ戻します。2回目の `ecall` はexit syscallとして扱い、S-mode handler側で `test success` を出します。
 

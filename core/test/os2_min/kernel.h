@@ -69,6 +69,7 @@ struct sbiret sbi_set_timer(uint64_t stime_value);
 struct sbiret sbi_test_read_pmp_word(void);
 struct sbiret sbi_test_allow_exec_only_target(void);
 struct sbiret sbi_test_protect_exec_target(void);
+struct sbiret sbi_test_protect_cross_exec_target(void);
 void firmware_handle_sbi(struct trap_frame *f);
 void test_smode_basic(void);
 void test_sbi_putchar(void);
@@ -82,7 +83,9 @@ extern volatile uint64_t pmp_protected_word;
 extern volatile int pmp_load_fault_seen;
 extern volatile int pmp_store_fault_seen;
 extern volatile int pmp_exec_fault_seen;
+extern volatile int pmp_cross_exec_fault_seen;
 void pmp_protected_exec_target(void);
+void pmp_cross_exec_target(void);
 extern volatile int umode_step;
 extern volatile int umode_ecall_seen;
 
@@ -170,6 +173,7 @@ struct process
 #define SBI_FUNC_TEST_READ_PMP_WORD 0
 #define SBI_FUNC_TEST_ALLOW_EXEC_ONLY_TARGET 1
 #define SBI_FUNC_TEST_PROTECT_EXEC_TARGET 2
+#define SBI_FUNC_TEST_PROTECT_CROSS_EXEC_TARGET 3
 
 #define PROC_EXITED 2
 

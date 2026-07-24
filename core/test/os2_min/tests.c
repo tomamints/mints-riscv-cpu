@@ -4,6 +4,7 @@ volatile uint64_t pmp_protected_word __attribute__((aligned(8))) = 0x11223344556
 volatile int pmp_load_fault_seen = -1;
 volatile int pmp_store_fault_seen = -1;
 volatile int pmp_exec_fault_seen = -1;
+volatile int pmp_cross_exec_fault_seen = -1;
 volatile int umode_step = -1;
 volatile int umode_ecall_seen = -1;
 
@@ -13,6 +14,21 @@ __attribute__((noinline, aligned(8)))
 void pmp_protected_exec_target(void) {
     __asm__ __volatile__("nop" ::: "memory");
 }
+
+__asm__(
+    ".section .text\n"
+    ".balign 4\n"
+    ".2byte 0x0001\n"
+    ".globl pmp_cross_exec_target\n"
+    ".type pmp_cross_exec_target, @function\n"
+    "pmp_cross_exec_target:\n"
+    ".option push\n"
+    ".option norvc\n"
+    "addi zero, zero, 0\n"
+    "jalr zero, 0(ra)\n"
+    ".option pop\n"
+    ".size pmp_cross_exec_target, .-pmp_cross_exec_target\n"
+);
 
 void test_smode_basic(void) {
     printf("entered S-mode\n");
@@ -99,6 +115,15 @@ void test_pmp_data_fault(void) {
     if (!pmp_exec_fault_seen)
         PANIC("PMP exec fault was not raised");
     printf("PMP exec fault OK\n");
+
+    ret = sbi_test_protect_cross_exec_target();
+    if (ret.error != SBI_SUCCESS)
+        PANIC("sbi_test_protect_cross_exec_target failed error=%ld", ret.error);
+    pmp_cross_exec_fault_seen = 0;
+    pmp_cross_exec_target();
+    if (!pmp_cross_exec_fault_seen)
+        PANIC("PMP cross exec fault was not raised");
+    printf("PMP cross-boundary exec fault OK\n");
 }
 
 __attribute__((noreturn, noinline, aligned(4)))

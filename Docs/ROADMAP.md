@@ -240,6 +240,7 @@ S-mode
 - `OS2_MIN_PMP` で、entry1のTOR禁止領域にS-mode load/storeすると `scause=5/7`, `stval=fault address` でS-mode trapへ入る
 - 禁止store後にM-mode SBIで保護wordを読み直し、RAM値が変化していないことを確認する
 - instruction fetchにもPMP X permissionを適用し、`X=1/R=0/W=0`で実行成功、`R=1/W=1/X=0`で `scause=1`, `stval=fetch address` を確認する
+- 32-bit命令の後半2byteがX禁止領域に入る場合も、issue段の命令長ベースPMP checkで `scause=1` になることを確認する
 
 完了条件:
 
@@ -255,7 +256,6 @@ Phase 6全体の完了条件:
 - RAM/MMIO/firmware領域のPMP方針を分ける
 - fault時にMMIO requestが発行されないことを波形または専用MMIOテストで確認する
 - 部分重複accessの優先順位を専用テストで確認する
-- 32-bit命令の後半2byteがPMP境界をまたぐ場合のfetch/X checkを追加する
 
 ## Phase 7: U-mode Transition
 

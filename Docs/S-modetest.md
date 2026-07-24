@@ -57,12 +57,13 @@ S-modeは、単に現在の特権レベルを変えるだけではありませ�
 | SINT-08 | timer handlerから `sret` で元のS-mode処理へ戻る | PASS | `make test-os2-min` |
 | SINT-09 | timerを複数回再設定できる | PASS | `make test-os2-min` |
 | PMP-01 | M-modeでS-mode向けPMP allow-allを設定できる | PASS | `make test-os2-min` |
-| PMP-02 | S-mode loadがPMP禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000` |
-| PMP-03 | S-mode storeがPMP禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000` |
-| PMP-04 | PMP fault時に `stval=fault address` が入る | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000` |
-| PMP-05 | PMPで禁止されたstoreがRAMを書き換えない | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000` |
-| PMP-06 | S-mode fetchがPMP実行禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=260000` |
+| PMP-02 | S-mode loadがPMP禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` |
+| PMP-03 | S-mode storeがPMP禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` |
+| PMP-04 | PMP fault時に `stval=fault address` が入る | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` |
+| PMP-05 | PMPで禁止されたstoreがRAMを書き換えない | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` |
+| PMP-06 | S-mode fetchがPMP実行禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` |
 | PMP-07 | fetch権限がRではなくXを見る | PASS | `X=1/R=0/W=0`で実行成功、`R=1/W=1/X=0`でinstruction access fault |
+| PMP-08 | 32-bit命令の後半2byteがX禁止領域に入るとfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` |
 
 ## S-modeテスト一覧
 
@@ -141,7 +142,7 @@ STRAP-08	trap時のsepc	例外命令のPC
 STRAP-09	trap時のstval	不正アドレスまたは命令情報
 STRAP-10	sret	sepcの次の実行へ戻る
 
-現在、PMP由来のS-mode load/store/fetch access faultは `OS2_MIN_PMP` で確認済みです。このテストでは、M-modeがPMP entry1に8byteのTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=禁止wordの物理アドレス` を確認してから `sepc += 4` で復帰します。store fault後はM-mode SBIで保護wordを読み直し、禁止storeがRAMを書き換えていないことも確認します。fetch側は `pmp_protected_exec_target` を `X=1/R=0/W=0` にした場合は実行でき、`R=1/W=1/X=0` にした場合は `scause=1`、`stval=fetch address` でtrapすることを確認します。
+現在、PMP由来のS-mode load/store/fetch access faultは `OS2_MIN_PMP` で確認済みです。このテストでは、M-modeがPMP entry1に8byteのTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=禁止wordの物理アドレス` を確認してから `sepc += 4` で復帰します。store fault後はM-mode SBIで保護wordを読み直し、禁止storeがRAMを書き換えていないことも確認します。fetch側は `pmp_protected_exec_target` を `X=1/R=0/W=0` にした場合は実行でき、`R=1/W=1/X=0` にした場合は `scause=1`、`stval=fetch address` でtrapすることを確認します。また `pmp_cross_exec_target` では32-bit命令を4byte境界+2に配置し、命令後半2byteだけがX禁止領域に入る場合もfaultすることを確認します。
 
 S-modeから実行された `ecall` は exception code 9 として扱われます。
 

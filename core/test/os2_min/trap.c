@@ -87,6 +87,13 @@ void supervisor_trap_handler(struct trap_frame *f) {
         WRITE_CSR(sepc, f->ra);
         return;
     }
+    uintptr_t cross_exec_target = (uintptr_t) pmp_cross_exec_target;
+    if (scause == INSTRUCTION_ACCESS_FAULT && stval >= cross_exec_target && stval < cross_exec_target + 4) {
+        printf("PMP cross instruction access fault stval=%lx\n", stval);
+        pmp_cross_exec_fault_seen = 1;
+        WRITE_CSR(sepc, f->ra);
+        return;
+    }
 #endif
 
     if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {

@@ -106,6 +106,32 @@ module inst_fetcher (
         .inst32 (rvcc_inst32)
     );
 
+    Addr  issue_pmp_addr;
+    UIntX issue_pmp_size;
+    logic issue_pmp_allow;
+
+    pmp_checker pmp_issue_checker (
+        .priv_mode(priv_mode),
+        .access_start(issue_pmp_addr),
+        .access_size(issue_pmp_size),
+        .access_type(PMP_ACCESS_EXEC),
+        .pmpcfg0(pmpcfg0),
+        .pmpaddr0(pmpaddr0),
+        .pmpaddr1(pmpaddr1),
+        .pmpaddr2(pmpaddr2),
+        .pmpaddr3(pmpaddr3),
+        .allow(issue_pmp_allow)
+    );
+
+    always_comb begin
+        issue_pmp_addr = {fetch_fifo_rdata.addr[$bits(Addr)-1:3], issue_pc_offset};
+        issue_pmp_size = rvcc_is_rvc ? UIntX'(2) : UIntX'(4);
+        if ((issue_pc_offset == 3'd6) && issue_is_rdata_saved) begin
+            issue_pmp_addr = {issue_saved_addr[$bits(Addr)-1:3], issue_pc_offset};
+            issue_pmp_size = UIntX'(4);
+        end
+    end
+
     // issue_pc_offset / saved_* レジスタ
     always_ff @(posedge clk or negedge rst) begin
         if (!rst) begin
@@ -162,6 +188,11 @@ module inst_fetcher (
                         issue_fifo_wdata.bits   = {rdata[15:0], issue_saved_bits};
                         issue_fifo_wdata.is_rvc = 1'b0;
                         issue_fifo_wdata.expt   = fetch_fifo_rdata.expt;
+                        if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
+                            issue_fifo_wdata.expt.valid = 1'b1;
+                            issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
+                            issue_fifo_wdata.expt.value = issue_pmp_addr;
+                        end
                     end else begin
                         fetch_fifo_rready = 1'b1;
                         if (rvcc_is_rvc) begin
@@ -170,6 +201,11 @@ module inst_fetcher (
                             issue_fifo_wdata.is_rvc = 1'b1;
                             issue_fifo_wdata.bits   = rvcc_inst32;
                             issue_fifo_wdata.expt   = fetch_fifo_rdata.expt;
+                            if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
+                                issue_fifo_wdata.expt.valid = 1'b1;
+                                issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
+                                issue_fifo_wdata.expt.value = issue_pmp_addr;
+                            end
                         end else begin
                             // Read next 8 bytes (Veryl でも未実装部分)
                         end
@@ -191,6 +227,11 @@ module inst_fetcher (
                     end
                     issue_fifo_wdata.is_rvc = rvcc_is_rvc;
                     issue_fifo_wdata.expt   = fetch_fifo_rdata.expt;
+                    if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
+                        issue_fifo_wdata.expt.valid = 1'b1;
+                        issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
+                        issue_fifo_wdata.expt.value = issue_pmp_addr;
+                    end
                 end
             end
         end

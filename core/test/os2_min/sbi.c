@@ -52,3 +52,7 @@ struct sbiret sbi_test_allow_exec_only_target(void) {
 struct sbiret sbi_test_protect_exec_target(void) {
     return sbi_call(SBI_EXT_TEST, SBI_FUNC_TEST_PROTECT_EXEC_TARGET, 0);
 }
+
+struct sbiret sbi_test_protect_cross_exec_target(void) {
+    return sbi_call(SBI_EXT_TEST, SBI_FUNC_TEST_PROTECT_CROSS_EXEC_TARGET, 0);
+}
