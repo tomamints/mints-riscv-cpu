@@ -56,6 +56,9 @@ S-modeは、単に現在の特権レベルを変えるだけではありませ�
 | SINT-07 | `sip.STIP` をclearできる | PASS | `make test-os2-min` |
 | SINT-08 | timer handlerから `sret` で元のS-mode処理へ戻る | PASS | `make test-os2-min` |
 | SINT-09 | timerを複数回再設定できる | PASS | `make test-os2-min` |
+| PMP-01 | M-modeでS-mode向けPMP allow-allを設定できる | PASS | `make test-os2-min` |
+| PMP-02 | S-mode loadがPMP禁止TOR領域でfaultする | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=120000` |
+| PMP-03 | PMP fault時に `scause=5`, `stval=fault address` が入る | PASS | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=120000` |
 
 ## S-modeテスト一覧
 
@@ -133,6 +136,8 @@ STRAP-07	U-mode ecall	scause=8
 STRAP-08	trap時のsepc	例外命令のPC
 STRAP-09	trap時のstval	不正アドレスまたは命令情報
 STRAP-10	sret	sepcの次の実行へ戻る
+
+現在、PMP由来のS-mode load access faultは `OS2_MIN_PMP` で確認済みです。このテストでは、M-modeがPMP entry1に8byteのTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをloadし、`scause=5` と `stval=禁止wordの物理アドレス` を確認してから `sepc += 4` で復帰します。
 
 S-modeから実行された `ecall` は exception code 9 として扱われます。
 

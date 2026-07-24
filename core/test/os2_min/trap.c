@@ -29,6 +29,7 @@ void kernel_trap_handler(struct trap_frame *f) {
 void supervisor_trap_handler(struct trap_frame *f) {
     uintptr_t scause = READ_CSR(scause);
     uintptr_t sepc = READ_CSR(sepc);
+    uintptr_t stval = READ_CSR(stval);
 
     printf("S trap scause=%lx sepc=%lx\n", scause, sepc);
     printf("saved a0=%lx sp=%lx\n", f->a0, f->sp);
@@ -50,6 +51,15 @@ void supervisor_trap_handler(struct trap_frame *f) {
         );
         return;
     }
+
+#ifdef OS2_MIN_PMP
+    if (scause == LOAD_ACCESS_FAULT && stval == (uintptr_t) &pmp_protected_word) {
+        printf("PMP load access fault stval=%lx\n", stval);
+        pmp_load_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
+#endif
 
     if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {
         printf("S timer interrupt\n");

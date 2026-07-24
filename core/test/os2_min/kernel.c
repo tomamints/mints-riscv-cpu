@@ -32,6 +32,8 @@ void supervisor_main(void) {
     platform_test_success();
     for (;;)
         ;
+#elif defined(OS2_MIN_PMP)
+    test_pmp_data_fault();
 #else
     test_smode_basic();
     test_sbi_putchar();
@@ -44,10 +46,21 @@ void supervisor_main(void) {
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-#if defined(OS2_MIN_INPUT) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_NO_INPUT)
+#if defined(OS2_MIN_INPUT) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_NO_INPUT) || defined(OS2_MIN_PMP)
     printf("OS2 min S-mode test\n");
+#ifdef OS2_MIN_PMP
+    uintptr_t protected_start = (uintptr_t) &pmp_protected_word;
+    uintptr_t protected_end = protected_start + sizeof(pmp_protected_word);
+    WRITE_CSR(pmpcfg0, 0);
+    WRITE_CSR(pmpaddr0, protected_start >> 2);
+    WRITE_CSR(pmpaddr1, protected_end >> 2);
+    WRITE_CSR(pmpaddr2, ~0UL);
+    WRITE_CSR(pmpcfg0, ((PMP_A_TOR) << 8) | ((PMP_R | PMP_W | PMP_X | PMP_A_NAPOT) << 16));
+    WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << LOAD_ACCESS_FAULT));
+#else
     WRITE_CSR(pmpaddr0, ~0UL); // pmpaddr0をNAPOT all-onesにして、全物理アドレスを1つのPMP領域にする
     WRITE_CSR(pmpcfg0, PMP_R | PMP_W | PMP_X | PMP_A_NAPOT); // PMP entry0をR/W/X許可にして、S-modeのdata accessを通す
+#endif
 #ifdef OS2_MIN_STRAP
     WRITE_CSR(medeleg, 1UL << MCAUSE_ECALL_FROM_S);
 #endif

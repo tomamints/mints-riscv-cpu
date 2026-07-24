@@ -72,6 +72,10 @@ void test_sbi_putchar(void);
 void test_sbi_getchar(void);
 void test_sbi_timer(void);
 void test_smode_trap(void);
+void test_pmp_data_fault(void);
+
+extern volatile uint64_t pmp_protected_word;
+extern volatile int pmp_load_fault_seen;
 
 #define READ_CSR(reg)\
     ({\
@@ -127,6 +131,7 @@ struct process
 #define PMP_R (1UL << 0)
 #define PMP_W (1UL << 1)
 #define PMP_X (1UL << 2)
+#define PMP_A_TOR (1UL << 3)
 #define PMP_A_NAPOT (3UL << 3)
 #define SSTATUS_SIE (1UL << 1)
 #define SIE_STIE (1UL << 5)
@@ -137,6 +142,8 @@ struct process
 #define MCAUSE_ECALL_FROM_U 8
 #define MCAUSE_ECALL_FROM_S 9
 #define MCAUSE_ECALL_FROM_M 11
+#define LOAD_ACCESS_FAULT 5
+#define STORE_AMO_ACCESS_FAULT 7
 
 #define SBI_SUCCESS 0
 #define SBI_ERR_NOT_SUPPORTED -2

@@ -1,5 +1,8 @@
 #include "kernel.h"
 
+volatile uint64_t pmp_protected_word __attribute__((aligned(8))) = 0x1122334455667788ULL;
+volatile int pmp_load_fault_seen = -1;
+
 void test_smode_basic(void) {
     printf("entered S-mode\n");
     printf("sstatus=%lx\n", READ_CSR(sstatus));
@@ -47,4 +50,14 @@ void test_smode_trap(void) {
     WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
     __asm__ __volatile__("ecall");
     printf("returned from S trap\n");
+}
+
+void test_pmp_data_fault(void) {
+    printf("PMP data fault test\n");
+    WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
+    pmp_load_fault_seen = 0;
+    __asm__ __volatile__("ld zero, 0(%0)" :: "r" (&pmp_protected_word) : "memory");
+    if (!pmp_load_fault_seen)
+        PANIC("PMP load fault was not raised");
+    printf("PMP load fault OK\n");
 }

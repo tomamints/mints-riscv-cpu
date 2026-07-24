@@ -23,7 +23,7 @@ SECTIONS {
         __bss_end = .;
     }
 
-    . = ALIGN(4);
+    . = ALIGN(16);
     . += 128 * 1024; /* 128kB */
     __stack_top = .; /* __stack_top = bss_end + 128KB */
 

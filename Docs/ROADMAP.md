@@ -237,6 +237,7 @@ S-mode
 - PMP entryはaccessの一部でも重なればmatch候補になり、番号の小さいentryを優先する
 - 優先されたentryがaccess size全体を含まない場合はaccess faultにする
 - `pmpaddr0=~0UL`, `pmpcfg0=NAPOT|R|W|X` のallow-allで既存S-modeテストがPass
+- `OS2_MIN_PMP` で、entry1のTOR禁止領域にS-mode loadすると `scause=5`, `stval=fault address` でS-mode trapへ入る
 
 完了条件:
 
