@@ -290,6 +290,7 @@ MMU なしでも U-mode は意味があります。メモリ保護は弱いで�
 目的:
 
 - 本来の意味での syscall を作る
+- Linux起動を優先する場合は、ここを深追いせず最小確認で区切る
 
 基本 ABI:
 
@@ -323,7 +324,38 @@ M-mode firmware
   -> hardware
 ```
 
-## Phase 9: Linux-oriented Devices
+現在は `OS2_MIN_USER` で、U-modeへ入り、U-mode `ecall` をS-modeで受け、1回目は戻り値を返してU-modeへ復帰し、2回目はexitとして処理する最小経路まで確認済みです。Linux起動を大目標にする場合、ここで一旦区切り、次はSv39へ進みます。
+
+## Phase 9: Sv39 MMU
+
+目的:
+
+- Linuxに必須のS-mode仮想記憶を最小構成で動かす
+
+最初に作る範囲:
+
+- `satp` CSR
+- `MODE=8` Sv39
+- 3-level page table walk
+- 4KiB pageのみ
+- ASID無視
+- TLBなし、または全flush扱い
+- identity mapping
+- R/W/X/U permission
+- instruction/load/store page fault
+- `sfence.vma` は全flushまたはno-op相当から開始
+
+最初のテスト:
+
+```text
+VA 0x8000_0000
+  -> Sv39 page table walk
+PA 0x8000_0000
+```
+
+最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。これにより、アドレス配置の変更ではなく、`satp`有効化、PTE walk、permission、page faultに集中できます。
+
+## Phase 10: Linux-oriented Devices
 
 目的:
 
@@ -337,8 +369,8 @@ M-mode firmware
 
 最初のLinux起動へ向けた分割:
 
-- Phase 9A: NS16550A polling UART と ACLINT/SBI timer
-- Phase 9B: PLIC、UART interrupt、その他device interrupt
+- Phase 10A: NS16550A polling UART と ACLINT/SBI timer
+- Phase 10B: PLIC、UART interrupt、その他device interrupt
 
 UART:
 
@@ -367,26 +399,20 @@ PLIC:
 - claim/complete
 - DTB の interrupt number と RTL 実装を一致させる
 
-## Phase 10: Sv39 MMU
+## Phase 11: Sv39 Completeness
 
 目的:
 
-- Linux が必要とする仮想記憶を CPU 側へ実装する
+- identity mapping後にLinux向けの細部を詰める
 
 必要な要素:
 
-- `satp`
-- Sv39 3-level page table walk
 - ITLB / DTLB または同等の変換 cache
-- instruction page fault
-- load page fault
-- store/AMO page fault
-- PTE permission
-- U/S permission
+- superpage
+- U/S permissionの詳細
 - `SUM`
 - `MXR`
 - A/D bit policy
-- `sfence.vma`
 - canonical virtual address check
 - ASID policy
 
@@ -409,7 +435,7 @@ OS2_min で確認すること:
 - non-canonical VA fault
 - `stval` / `scause` / `sepc`
 
-## Phase 11: Device Tree
+## Phase 12: Device Tree
 
 目的:
 
@@ -438,7 +464,7 @@ satp = 0
 - DTB の address map と RTL の address map を一致させる
 - RAM base/size、UART base、interrupt number、timebase-frequency をズラさない
 
-## Phase 12: Linux Image + Initramfs
+## Phase 13: Linux Image + Initramfs
 
 最初の Linux 構成:
 
@@ -467,9 +493,11 @@ shell
 
 直近でやる順番:
 
-1. SBI / firmwareコードを `sbi.c` / `platform.c` / `firmware.c` の境界で維持・整理する
-2. U-modeへ遷移する
-3. U-mode `ecall` をS-mode syscall handlerで受ける
-4. PMP fault時にMMIO副作用が起きないことを確認する
-5. PMP部分重複accessの専用テストを追加する
-6. Sv39の最小identity mappingへ進む
+1. Sv39の最小identity mappingへ進む
+2. instruction/load/store page faultを確認する
+3. `sfence.vma` を全flushまたはno-op相当で受ける
+4. NS16550A polling UARTを追加する
+5. 最小DTBを用意する
+6. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
+
+U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

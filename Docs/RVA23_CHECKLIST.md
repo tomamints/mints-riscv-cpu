@@ -49,9 +49,8 @@
 
 ## 次に確認したい項目
 
-- PMP fault時にMMIO requestが出ないこと
-- PMP部分重複accessの優先順位テスト
-- U-modeへ `sret` で遷移できること
-- U-mode `ecall` をS-mode syscall handlerで受けること
+- Sv39 identity mapping
+- instruction/load/store page fault
+- `sfence.vma`
 - `fence.i`, `wfi`, counter CSRの仕様差分
 - Linux最小起動要件とRVA23要件の差分

@@ -242,6 +242,8 @@ make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=12
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切り、次フェーズはSv39の最小identity mappingです。
+
 trace run:
 
 ```sh

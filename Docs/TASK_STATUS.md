@@ -30,7 +30,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止確認まで到達済みです。次はU-mode transitionへ進むのが自然です。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認まで到達済みです。Linux起動を優先するため、次はSv39 identity mappingへ進みます。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -38,10 +38,10 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | U-mode syscall cleanup | syscall番号、trap frame、exit/putcharを整理 |
-| 2 | U-mode CSR/fault tests | U-modeからS/M CSRアクセス時のillegal instructionなどを確認 |
-| 3 | PMP detail tests | MMIO副作用、部分重複、firmware領域保護を確認 |
-| 4 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
+| 1 | Sv39 MMU | Linux起動の必須要素。まずidentity mappingで変換経路だけ確認する |
+| 2 | instruction/data page fault | Linux bring-up前にfault causeと`stval`を確認する |
+| 3 | `sfence.vma` | 最初は全flush扱いでよいが、命令として必要 |
+| 4 | Linux-oriented UART/DTB | early consoleとplatform記述に必要 |
 | 5 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 
 ## 機能別ステータス
@@ -60,13 +60,15 @@ M-mode trap
 | SBI getchar | Pass | `make test-os2-min-input INPUT_TEXT=Z` | 将来のUART inputへ差し替えられる形を保つ |
 | SBI timer | Pass / periodic basic | `make test-os2-min` | timer間隔やdeadline再設定方針を整理 |
 | S-mode timer interrupt | Pass / periodic basic | `make test-os2-min` | interrupt中のSIE/SPIEを追加確認 |
-| U-mode transition | Pass / minimal | `OS2_MIN_USER` | U-mode stack分離、U-modeからS/M CSRアクセス時のillegal instruction確認 |
-| U-mode syscall | Pass / minimal | `OS2_MIN_USER` | syscall番号、exit/putchar、trap frame整理 |
+| U-mode transition | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。必要になったらU-mode stack分離やCSR faultを追加 |
+| U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
-| Sv39 | Not started | none | Bareからidentity mappingへ |
+| Sv39 | Not started | none | `satp.MODE=8`, 3-level walk, 4KiB identity mapping |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
 ## テスト一覧
+
+Linux起動を大目標にするため、U-mode syscallは最小確認済みで一旦区切ります。次の主作業はSv39最小identity mappingです。
 
 ### Custom Tests
 
