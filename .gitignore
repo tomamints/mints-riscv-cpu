@@ -24,6 +24,7 @@ boost_1_88_0/
 !core/test/
 core/test/*
 !core/test/uart_output.c
+!core/test/uart_regs.c
 !core/test/hex/
 !core/test/hex/*.hex
 !core/test/os2_min/

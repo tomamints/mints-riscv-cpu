@@ -218,9 +218,12 @@ UART polling output:
 
 ```sh
 make test-uart
+make test-uart-regs
 ```
 
 `uart_output.c` は NS16550A 互換UARTの `LSR` をpollingし、`THR` へbyte writeします。現在のUART baseは `0x10000000`、byte-spaced registerで、`LSR[5]=THRE` と `LSR[6]=TEMT` を常に1として返します。このテストで `A` と success まで到達することを確認済みです。
+
+`uart_regs.c` は `IER/MCR/SCR/LCR` の保持、`LCR.DLAB=1` 時の `DLL/DLM` 切り替え、`IIR=0x01`、`MSR=0`、`LSR.THRE/TEMT=1` を確認します。Linux earlyconやOpenSBIのUART初期化で触る可能性がある最小レジスタ群のbring-up確認です。
 
 ACLINT interrupt tests:
 

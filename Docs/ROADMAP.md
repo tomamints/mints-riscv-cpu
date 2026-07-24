@@ -423,12 +423,13 @@ UART:
 - `DLL/DLM/IER/FCR/LCR/MCR/SCR` は最小保持レジスタとして用意済み
 - `IIR` は no interrupt pending として `0x01` を返す
 - `make test-uart` で `A` とsuccessまで確認済み
+- `make test-uart-regs` で基本保持レジスタと `LCR.DLAB` による `DLL/DLM` 切り替えを確認済み
 
 次:
 
-- UART register read/writeの専用テストを追加する
 - DTBに `serial@10000000` を追加する
 - Linux earlycon向けに `reg-shift=0`, `reg-io-width=1` を明記する
+- OpenSBIまたはLinux earlyconの初期化がこのUARTで進むか確認する
 
 ACLINT/CLINT:
 
@@ -540,10 +541,10 @@ shell
 
 直近でやる順番:
 
-1. NS16550A UARTの基本レジスタread/writeテストを追加する
-2. 最小DTBを用意し、UART nodeをRTLのaddress mapと一致させる
+1. 最小DTBを用意し、UART nodeをRTLのaddress mapと一致させる
+2. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
 3. PTWメモリエラー発生源とaccess fault経路を整理する
 4. `sfence.vma` と将来TLBの接続方針を整理する
-5. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
+5. Linux earlyconのログから不足device/CSRを埋める
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

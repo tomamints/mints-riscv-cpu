@@ -77,7 +77,7 @@ OS2_MIN_HEX = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin.hex
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
 
 
 
@@ -190,6 +190,10 @@ test-uart: C_TEST=uart_output
 test-uart: CYCLES=20000
 test-uart: c-test
 
+test-uart-regs: C_TEST=uart_regs
+test-uart-regs: CYCLES=30000
+test-uart-regs: c-test
+
 test-mswi: C_TEST=mswi
 test-mswi: CYCLES=20000
 test-mswi: c-test
@@ -238,6 +242,7 @@ test-custom-all:
 	$(MAKE) test-input
 	$(MAKE) test-dma
 	$(MAKE) test-uart
+	$(MAKE) test-uart-regs
 	$(MAKE) test-mswi
 	$(MAKE) test-mtime
 	$(MAKE) test-os2-min
