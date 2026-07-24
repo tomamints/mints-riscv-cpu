@@ -335,7 +335,7 @@ VM-05	write permission	W=1ページへ書ける	PASS
 VM-06	execute permission	X=1ページを実行できる	PASS
 VM-07	invalid / unmapped PTE	page fault	PASS
 VM-08	R=0 load	load page fault	PASS
-VM-09	W=0 store	store page fault	TODO: 専用permission test強化
+VM-09	W=0 store	store page fault	PASS
 VM-10	X=0 fetch	instruction page fault	PASS
 VM-11	U bit	U/Sアクセス制御	PASS
 VM-12	A bit	accessed bitの扱い	PASS

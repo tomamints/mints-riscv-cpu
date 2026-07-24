@@ -12,6 +12,7 @@ volatile int sv39_sum_fault_seen = -1;
 volatile int sv39_mxr_fault_seen = -1;
 volatile int sv39_accessed_fault_seen = -1;
 volatile int sv39_dirty_fault_seen = -1;
+volatile int sv39_store_perm_fault_seen = -1;
 volatile int sv39_fetch_fault_seen = -1;
 
 #define PMP_PROTECTED_WORD_INITIAL 0x1122334455667788ULL
@@ -29,6 +30,9 @@ volatile uint64_t sv39_accessed_page[512] __attribute__((aligned(PAGE_SIZE))) = 
 };
 volatile uint64_t sv39_dirty_page[512] __attribute__((aligned(PAGE_SIZE))) = {
     [0] = 0x0d0d0d0d0d0d0d0dULL
+};
+volatile uint64_t sv39_readonly_page[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0x5151515151515151ULL
 };
 volatile uint64_t sv39_satp_va_page[512] __attribute__((aligned(PAGE_SIZE)));
 volatile uint64_t sv39_satp_page_a[512] __attribute__((aligned(PAGE_SIZE))) = {
@@ -398,6 +402,15 @@ void test_sv39_data_identity(void) {
     if (sv39_dirty_page[0] != 0x0d0d0d0d0d0d0d0dULL)
         PANIC("Sv39 D=0 store changed page value=%lx", sv39_dirty_page[0]);
     printf("Sv39 D bit page fault OK\n");
+
+    sv39_remap_page((uintptr_t) sv39_readonly_page, PAGE_V | PAGE_R | PAGE_A | PAGE_D);
+    sv39_store_perm_fault_seen = 0;
+    __asm__ __volatile__("sd zero, 0(%0)" :: "r" (sv39_readonly_page) : "memory");
+    if (!sv39_store_perm_fault_seen)
+        PANIC("Sv39 W=0 store fault was not raised");
+    if (sv39_readonly_page[0] != 0x5151515151515151ULL)
+        PANIC("Sv39 W=0 store changed page value=%lx", sv39_readonly_page[0]);
+    printf("Sv39 W permission page fault OK\n");
 
     uintptr_t switch_va = (uintptr_t) sv39_satp_va_page;
     sv39_map_page(switch_va, (uintptr_t) sv39_satp_page_a, PAGE_V | PAGE_R | PAGE_W | PAGE_A | PAGE_D);

@@ -94,11 +94,13 @@ extern volatile int sv39_sum_fault_seen;
 extern volatile int sv39_mxr_fault_seen;
 extern volatile int sv39_accessed_fault_seen;
 extern volatile int sv39_dirty_fault_seen;
+extern volatile int sv39_store_perm_fault_seen;
 extern volatile int sv39_fetch_fault_seen;
 extern volatile uint64_t sv39_user_page[512];
 extern volatile uint64_t sv39_exec_page[512];
 extern volatile uint64_t sv39_accessed_page[512];
 extern volatile uint64_t sv39_dirty_page[512];
+extern volatile uint64_t sv39_readonly_page[512];
 void sv39_noexec_target(void);
 
 #define READ_CSR(reg)\

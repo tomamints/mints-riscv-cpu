@@ -358,6 +358,7 @@ M-mode firmware
 - 非leaf PTEの予約bitとmisaligned superpageはpage faultにする
 - 2MiB L1 / 1GiB L2 superpage aliasのloadを確認済み
 - A/D bitは現時点ではhardware updateせず、A=0 loadとD=0 storeがpage faultになることを確認済み
+- W=0ページへのstoreで `STORE_AMO_PAGE_FAULT`, `stval=fault VA` となり、store副作用が起きないことを確認済み
 - root page table A/Bを作り、`satp.PPN` を切り替えると同じVAが別PAを読むことを確認済み
 - X=0ページへのfetchで `INSTRUCTION_PAGE_FAULT`, `stval=fault VA` を確認済み
 - PTW中のPTE読み出し自体が失敗した場合はpage faultではなく、元アクセス種別に応じたinstruction/load/store access faultにする
@@ -367,7 +368,6 @@ M-mode firmware
 
 未対応:
 
-- W=0 store page faultのSv39専用テスト強化
 - PTW中のPTE読み出しに対するbus/PMP error生成
 - TLB / ASID
 - A/D bitのhardware update要否判断
@@ -381,7 +381,7 @@ VA 0x8000_0000
 PA 0x8000_0000
 ```
 
-最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、instruction fetch identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permission、A/D fault、`satp.PPN` 切り替え、X=0 fetch faultまで確認済みです。
+最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、instruction fetch identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permission、A/D fault、W=0 store fault、`satp.PPN` 切り替え、X=0 fetch faultまで確認済みです。
 
 ## Phase 10: Linux-oriented Devices
 
@@ -521,11 +521,10 @@ shell
 
 直近でやる順番:
 
-1. W=0 store page faultのSv39専用テストを強める
-2. PTWメモリエラー方針とMPRV/effective privilegeを追加する
-3. `sfence.vma` と将来TLBの接続方針を整理する
-4. NS16550A polling UARTを追加する
-5. 最小DTBを用意する
-6. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
+1. PTWメモリエラー方針とMPRV/effective privilegeを追加する
+2. `sfence.vma` と将来TLBの接続方針を整理する
+3. NS16550A polling UARTを追加する
+4. 最小DTBを用意する
+5. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。
