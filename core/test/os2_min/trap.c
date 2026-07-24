@@ -115,6 +115,18 @@ void supervisor_trap_handler(struct trap_frame *f) {
         WRITE_CSR(sepc, sepc + 4);
         return;
     }
+    if (scause == LOAD_PAGE_FAULT && stval == (uintptr_t) sv39_accessed_page) {
+        printf("Sv39 A bit load page fault stval=%lx\n", stval);
+        sv39_accessed_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
+    if (scause == STORE_AMO_PAGE_FAULT && stval == (uintptr_t) sv39_dirty_page) {
+        printf("Sv39 D bit store page fault stval=%lx\n", stval);
+        sv39_dirty_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
 #endif
 
     if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {

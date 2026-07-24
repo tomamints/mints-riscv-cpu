@@ -92,8 +92,12 @@ extern volatile int umode_ecall_seen;
 extern volatile int sv39_load_fault_seen;
 extern volatile int sv39_sum_fault_seen;
 extern volatile int sv39_mxr_fault_seen;
+extern volatile int sv39_accessed_fault_seen;
+extern volatile int sv39_dirty_fault_seen;
 extern volatile uint64_t sv39_user_page[512];
 extern volatile uint64_t sv39_exec_page[512];
+extern volatile uint64_t sv39_accessed_page[512];
+extern volatile uint64_t sv39_dirty_page[512];
 
 #define READ_CSR(reg)\
     ({\

@@ -357,6 +357,8 @@ M-mode firmware
 - `MXR=0/1` によるexecute-onlyページのload制御を確認済み
 - 非leaf PTEの予約bitとmisaligned superpageはpage faultにする
 - 2MiB L1 / 1GiB L2 superpage aliasのloadを確認済み
+- A/D bitは現時点ではhardware updateせず、A=0 loadとD=0 storeがpage faultになることを確認済み
+- PTW中のPTE読み出し自体が失敗した場合はpage faultではなく、元アクセス種別に応じたinstruction/load/store access faultにする
 - PTWにPTE読み出しエラー用の `mem_error` 入力はあるが、現在のdata busにはerror応答がないため上位では常時0接続
 - `Sv39Fault` でPTW内部fault理由を保持し、architecturalな `scause=12/13/15` とは別に波形/debugで原因を追える
 - `sfence.vma` はTLBなしのためno-op命令として受ける
@@ -367,8 +369,8 @@ M-mode firmware
 - store page fault / instruction page faultのSv39専用テスト
 - PTW中のPTE読み出しに対するbus/PMP error生成
 - TLB / ASID
-- A/D bitのhardware update
-- permissionの厳密な仕様準拠
+- A/D bitのhardware update要否判断
+- permissionの追加仕様差分確認
 
 最初のテスト:
 

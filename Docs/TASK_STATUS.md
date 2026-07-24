@@ -63,7 +63,7 @@ M-mode trap
 | U-mode transition | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。必要になったらU-mode stack分離やCSR faultを追加 |
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
-| Sv39 | Pass / data-side minimal | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideから利用中。identity load/store、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXRは確認済み。`Sv39Fault` で内部fault理由も追跡可能。次は命令fetch側Sv39、store/fetch page fault、PTW error、TLB |
+| Sv39 | Pass / data-side minimal | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideから利用中。identity load/store、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次は命令fetch側Sv39、store/fetch page fault、PTW error発生源、TLB |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
 ## テスト一覧

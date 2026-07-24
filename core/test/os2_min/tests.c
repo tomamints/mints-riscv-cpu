@@ -10,6 +10,8 @@ volatile int umode_ecall_seen = -1;
 volatile int sv39_load_fault_seen = -1;
 volatile int sv39_sum_fault_seen = -1;
 volatile int sv39_mxr_fault_seen = -1;
+volatile int sv39_accessed_fault_seen = -1;
+volatile int sv39_dirty_fault_seen = -1;
 
 #define PMP_PROTECTED_WORD_INITIAL 0x1122334455667788ULL
 
@@ -20,6 +22,12 @@ volatile uint64_t sv39_user_page[512] __attribute__((aligned(PAGE_SIZE))) = {
 };
 volatile uint64_t sv39_exec_page[512] __attribute__((aligned(PAGE_SIZE))) = {
     [0] = 0xfeedfacecafebeefULL
+};
+volatile uint64_t sv39_accessed_page[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0x0a0a0a0a0a0a0a0aULL
+};
+volatile uint64_t sv39_dirty_page[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0x0d0d0d0d0d0d0d0dULL
 };
 
 static uint64_t sv39_root_pt[512] __attribute__((aligned(PAGE_SIZE)));
@@ -309,6 +317,22 @@ void test_sv39_data_identity(void) {
         PANIC("Sv39 MXR=1 load failed value=%lx", value);
     WRITE_CSR(sstatus, saved_sstatus);
     printf("Sv39 MXR permission OK\n");
+
+    sv39_remap_page((uintptr_t) sv39_accessed_page, PAGE_V | PAGE_R | PAGE_W | PAGE_D);
+    sv39_accessed_fault_seen = 0;
+    __asm__ __volatile__("ld zero, 0(%0)" :: "r" (sv39_accessed_page) : "memory");
+    if (!sv39_accessed_fault_seen)
+        PANIC("Sv39 A=0 fault was not raised");
+    printf("Sv39 A bit page fault OK\n");
+
+    sv39_remap_page((uintptr_t) sv39_dirty_page, PAGE_V | PAGE_R | PAGE_W | PAGE_A);
+    sv39_dirty_fault_seen = 0;
+    __asm__ __volatile__("sd zero, 0(%0)" :: "r" (sv39_dirty_page) : "memory");
+    if (!sv39_dirty_fault_seen)
+        PANIC("Sv39 D=0 fault was not raised");
+    if (sv39_dirty_page[0] != 0x0d0d0d0d0d0d0d0dULL)
+        PANIC("Sv39 D=0 store changed page value=%lx", sv39_dirty_page[0]);
+    printf("Sv39 D bit page fault OK\n");
 
     WRITE_CSR(satp, 0);
     __asm__ __volatile__("sfence.vma" ::: "memory");

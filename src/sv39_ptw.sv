@@ -56,7 +56,8 @@ module sv39_ptw (
 	logic pte_nonleaf;
 	logic pte_invalid;
 	logic pte_reserved_nonleaf;
-	logic pte_perm_fault;
+	logic pte_access_perm_fault;
+	logic pte_ad_fault;
 	logic superpage_misaligned;
 	logic va_canonical;
 
@@ -107,26 +108,33 @@ module sv39_ptw (
 	end
 
 	always_comb begin
-		pte_perm_fault = 1'b0;
+		pte_access_perm_fault = 1'b0;
 		unique case (req_access_type)
-			PMP_ACCESS_READ:  pte_perm_fault = !(pte_r || (req_mxr && pte_x)) || !pte_a;
-			PMP_ACCESS_WRITE: pte_perm_fault = !pte_w || !pte_a || !pte_d;
-			PMP_ACCESS_EXEC:  pte_perm_fault = !pte_x || !pte_a;
-			default:          pte_perm_fault = 1'b1;
+			PMP_ACCESS_READ:  pte_access_perm_fault = !(pte_r || (req_mxr && pte_x));
+			PMP_ACCESS_WRITE: pte_access_perm_fault = !pte_w;
+			PMP_ACCESS_EXEC:  pte_access_perm_fault = !pte_x;
+			default:          pte_access_perm_fault = 1'b1;
 		endcase
 
 		if (req_priv_mode == U) begin
 			if (!pte_u) begin
-				pte_perm_fault = 1'b1;
+				pte_access_perm_fault = 1'b1;
 			end
 		end else if (req_priv_mode == S) begin
 			if (pte_u) begin
 				if (req_access_type == PMP_ACCESS_EXEC) begin
-					pte_perm_fault = 1'b1;
+					pte_access_perm_fault = 1'b1;
 				end else if (!req_sum) begin
-					pte_perm_fault = 1'b1;
+					pte_access_perm_fault = 1'b1;
 				end
 			end
+		end
+	end
+
+	always_comb begin
+		pte_ad_fault = !pte_a;
+		if (req_access_type == PMP_ACCESS_WRITE && !pte_d) begin
+			pte_ad_fault = 1'b1;
 		end
 	end
 
@@ -146,37 +154,67 @@ module sv39_ptw (
 		endcase
 	endfunction
 
+	function automatic CsrCause access_fault_cause(input PmpAccessType access);
+		unique case (access)
+			PMP_ACCESS_EXEC:  return INSTRUCTION_ACCESS_FAULT;
+			PMP_ACCESS_WRITE: return STORE_AMO_ACCESS_FAULT;
+			default:          return LOAD_ACCESS_FAULT;
+		endcase
+	endfunction
+
 	function automatic logic is_sv39_canonical(input Addr addr);
 		return addr[63:39] == {25{addr[38]}};
 	endfunction
 
-	function automatic Sv39Fault invalid_fault_detail;
-		if (pte_v_invalid) begin
+	function automatic Sv39Fault invalid_fault_detail(
+		input logic v_invalid,
+		input logic w_no_r
+	);
+		if (v_invalid) begin
 			return SV39_FAULT_PTE_INVALID;
-		end else if (pte_w_no_r) begin
+		end else if (w_no_r) begin
 			return SV39_FAULT_W_NO_R;
 		end else begin
 			return SV39_FAULT_RESERVED;
 		end
 	endfunction
 
-	function automatic Sv39Fault permission_fault_detail;
-		if (req_access_type == PMP_ACCESS_READ && !(pte_r || (req_mxr && pte_x))) begin
+	function automatic Sv39Fault access_perm_fault_detail(
+		input PmpAccessType access,
+		input PrivMode priv,
+		input logic r,
+		input logic w,
+		input logic x,
+		input logic u,
+		input logic local_sum,
+		input logic local_mxr
+	);
+		if (access == PMP_ACCESS_READ && !(r || (local_mxr && x))) begin
 			return SV39_FAULT_LOAD_R;
-		end else if (req_access_type == PMP_ACCESS_WRITE && !pte_w) begin
+		end else if (access == PMP_ACCESS_WRITE && !w) begin
 			return SV39_FAULT_STORE_W;
-		end else if (req_access_type == PMP_ACCESS_EXEC && !pte_x) begin
+		end else if (access == PMP_ACCESS_EXEC && !x) begin
 			return SV39_FAULT_FETCH_X;
-		end else if (!pte_a) begin
-			return SV39_FAULT_PTE_A;
-		end else if (req_access_type == PMP_ACCESS_WRITE && !pte_d) begin
-			return SV39_FAULT_PTE_D;
-		end else if (req_priv_mode == U && !pte_u) begin
+		end else if (priv == U && !u) begin
 			return SV39_FAULT_PTE_U;
-		end else if (req_priv_mode == S && pte_u && req_access_type == PMP_ACCESS_EXEC) begin
+		end else if (priv == S && u && access == PMP_ACCESS_EXEC) begin
 			return SV39_FAULT_PTE_U;
-		end else if (req_priv_mode == S && pte_u && !req_sum) begin
+		end else if (priv == S && u && !local_sum) begin
 			return SV39_FAULT_PTE_SUM;
+		end else begin
+			return SV39_FAULT_RESERVED;
+		end
+	endfunction
+
+	function automatic Sv39Fault ad_fault_detail(
+		input logic a,
+		input logic d,
+		input PmpAccessType access
+	);
+		if (!a) begin
+			return SV39_FAULT_PTE_A;
+		end else if (access == PMP_ACCESS_WRITE && !d) begin
+			return SV39_FAULT_PTE_D;
 		end else begin
 			return SV39_FAULT_RESERVED;
 		end
@@ -234,6 +272,7 @@ module sv39_ptw (
 						if (mem_error) begin
 							result_fault <= 1'b1;
 							result_fault_detail <= SV39_FAULT_PTE_MEM_ERROR;
+							result_fault_cause <= access_fault_cause(req_access_type);
 							state <= Done;
 						end else begin
 							pte <= UIntX'(mem_rdata[63:0]);
@@ -244,12 +283,12 @@ module sv39_ptw (
 
 				Check: begin
 					if ($test$plusargs("TRACE_SV39")) begin
-						$display("[SV39] CHECK level=%0d pte=%h invalid=%b reserved_nonleaf=%b nonleaf=%b superpage_misaligned=%b perm_fault=%b detail=%0d",
-							level, pte, pte_invalid, pte_reserved_nonleaf, pte_nonleaf, superpage_misaligned, pte_perm_fault, result_fault_detail);
+						$display("[SV39] CHECK level=%0d pte=%h invalid=%b reserved_nonleaf=%b nonleaf=%b access_perm_fault=%b superpage_misaligned=%b ad_fault=%b",
+							level, pte, pte_invalid, pte_reserved_nonleaf, pte_nonleaf, pte_access_perm_fault, superpage_misaligned, pte_ad_fault);
 					end
 					if (pte_invalid) begin
 						result_fault <= 1'b1;
-						result_fault_detail <= invalid_fault_detail();
+						result_fault_detail <= invalid_fault_detail(pte_v_invalid, pte_w_no_r);
 						state <= Done;
 					end else if (pte_reserved_nonleaf) begin
 						result_fault <= 1'b1;
@@ -265,13 +304,17 @@ module sv39_ptw (
 							level <= level - 2'd1;
 							state <= Req;
 						end
+					end else if (pte_access_perm_fault) begin
+						result_fault <= 1'b1;
+						result_fault_detail <= access_perm_fault_detail(req_access_type, req_priv_mode, pte_r, pte_w, pte_x, pte_u, req_sum, req_mxr);
+						state <= Done;
 					end else if (superpage_misaligned) begin
 						result_fault <= 1'b1;
 						result_fault_detail <= SV39_FAULT_SUPERPAGE;
 						state <= Done;
-					end else if (pte_perm_fault) begin
+					end else if (pte_ad_fault) begin
 						result_fault <= 1'b1;
-						result_fault_detail <= permission_fault_detail();
+						result_fault_detail <= ad_fault_detail(pte_a, pte_d, req_access_type);
 						state <= Done;
 					end else begin
 						result_fault <= 1'b0;
