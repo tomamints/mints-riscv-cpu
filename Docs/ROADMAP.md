@@ -237,12 +237,21 @@ S-mode
 - PMP entryはaccessの一部でも重なればmatch候補になり、番号の小さいentryを優先する
 - 優先されたentryがaccess size全体を含まない場合はaccess faultにする
 - `pmpaddr0=~0UL`, `pmpcfg0=NAPOT|R|W|X` のallow-allで既存S-modeテストがPass
-- `OS2_MIN_PMP` で、entry1のTOR禁止領域にS-mode loadすると `scause=5`, `stval=fault address` でS-mode trapへ入る
+- `OS2_MIN_PMP` で、entry1のTOR禁止領域にS-mode load/storeすると `scause=5/7`, `stval=fault address` でS-mode trapへ入る
 
 完了条件:
 
-- 許可領域のread/write/executeが成功する
-- 禁止領域アクセスがfaultになる
+Step 1完了条件:
+
+- 許可領域のload/storeが成功する
+- 禁止領域のload/storeがaccess faultになる
+- fault時にmemory/MMIO requestが発行されない
+
+Phase 6全体の完了条件:
+
+- RAM/MMIO/firmware領域のPMP方針を分ける
+- instruction fetchにもPMP X permissionを適用する
+- 禁止領域からのfetchがinstruction access faultになる
 
 ## Phase 7: U-mode Transition
 
@@ -447,8 +456,9 @@ shell
 
 直近でやる順番:
 
-1. 最小SBIを `sbi.c` / `platform.c` / `firmware.c` へ整理する
-2. SBI `getchar` と `set_timer` の入口を追加する
-3. timer / interrupt をS-modeで受ける
-4. PMPでRAM/MMIOとfirmware領域のアクセス制御を確認する
-5. U-modeへ落として U-mode `ecall` をS-modeで受ける
+1. SBI / firmwareコードを `sbi.c` / `platform.c` / `firmware.c` の境界で維持・整理する
+2. PMP fault時にmemory/MMIO副作用が起きないことを確認する
+3. PMPのinstruction fetch / X permission enforcementを追加する
+4. U-modeへ遷移する
+5. U-mode `ecall` をS-mode syscall handlerで受ける
+6. Sv39の最小identity mappingへ進む

@@ -59,6 +59,12 @@ void supervisor_trap_handler(struct trap_frame *f) {
         WRITE_CSR(sepc, sepc + 4);
         return;
     }
+    if (scause == STORE_AMO_ACCESS_FAULT && stval == (uintptr_t) &pmp_protected_word) {
+        printf("PMP store access fault stval=%lx\n", stval);
+        pmp_store_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
 #endif
 
     if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {

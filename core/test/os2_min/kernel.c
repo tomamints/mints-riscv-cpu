@@ -56,7 +56,7 @@ void kernel_main(void) {
     WRITE_CSR(pmpaddr1, protected_end >> 2);
     WRITE_CSR(pmpaddr2, ~0UL);
     WRITE_CSR(pmpcfg0, ((PMP_A_TOR) << 8) | ((PMP_R | PMP_W | PMP_X | PMP_A_NAPOT) << 16));
-    WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << LOAD_ACCESS_FAULT));
+    WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << LOAD_ACCESS_FAULT) | (1UL << STORE_AMO_ACCESS_FAULT));
 #else
     WRITE_CSR(pmpaddr0, ~0UL); // pmpaddr0をNAPOT all-onesにして、全物理アドレスを1つのPMP領域にする
     WRITE_CSR(pmpcfg0, PMP_R | PMP_W | PMP_X | PMP_A_NAPOT); // PMP entry0をR/W/X許可にして、S-modeのdata accessを通す

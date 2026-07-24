@@ -76,6 +76,7 @@ void test_pmp_data_fault(void);
 
 extern volatile uint64_t pmp_protected_word;
 extern volatile int pmp_load_fault_seen;
+extern volatile int pmp_store_fault_seen;
 
 #define READ_CSR(reg)\
     ({\

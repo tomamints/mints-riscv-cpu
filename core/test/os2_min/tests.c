@@ -2,6 +2,7 @@
 
 volatile uint64_t pmp_protected_word __attribute__((aligned(8))) = 0x1122334455667788ULL;
 volatile int pmp_load_fault_seen = -1;
+volatile int pmp_store_fault_seen = -1;
 
 void test_smode_basic(void) {
     printf("entered S-mode\n");
@@ -60,4 +61,10 @@ void test_pmp_data_fault(void) {
     if (!pmp_load_fault_seen)
         PANIC("PMP load fault was not raised");
     printf("PMP load fault OK\n");
+
+    pmp_store_fault_seen = 0;
+    __asm__ __volatile__("sd zero, 0(%0)" :: "r" (&pmp_protected_word) : "memory");
+    if (!pmp_store_fault_seen)
+        PANIC("PMP store fault was not raised");
+    printf("PMP store fault OK\n");
 }

@@ -29,7 +29,7 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 | Exceptions | WIP | illegal instruction, ECALL, EBREAK, misaligned access など |
 | Interrupts | WIP | ACLINT の software/timer interrupt を CSR unit に接続 |
 | Privilege modes | WIP | M/S/U mode、trap delegation、`MRET`/`SRET` を部分実装 |
-| PMP | WIP | 4 entries、TOR/NAPOT、data access check。S-mode allow-all と禁止load faultを確認 |
+| PMP | WIP | 4 entries、TOR/NAPOT、data access check。S-mode allow-all と禁止load/store faultを確認 |
 
 ## U-mode / CSR Support
 
@@ -218,7 +218,7 @@ OS2 minimum port:
 make test-os2-min
 make test-os2-min-input INPUT_TEXT=Z
 make test-os2-min-strap
-make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=120000
+make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=140000
 ```
 
 `core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、virtio-blk、paging、U-mode process は使わず、OS2由来の `printf` と `getchar` が debug MMIO `0x40000000` 経由で動くことを確認する段階です。
@@ -235,9 +235,9 @@ make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=1200
 
 `make test-os2-min-strap` は S-mode `ecall` を `stvec` で受けるテストです。`medeleg[9]` で S-mode ecall を S-mode trap へ委譲し、handler で `sepc += 4` して `sret` で元のS-mode処理へ戻れることを確認します。
 
-`OS2_MIN_PMP` は PMP data access fault のテストです。M-modeでPMP entry1に `pmp_protected_word` の8byteだけTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをloadし、`scause=5`、`stval=fault address` でS-mode trapへ入り、handlerで `sepc += 4` して復帰できることを確認します。
+`OS2_MIN_PMP` は PMP data access fault のテストです。M-modeでPMP entry1に `pmp_protected_word` の8byteだけTOR禁止領域を作り、entry2をNAPOT allow-allにします。その後S-modeから禁止wordをload/storeし、loadでは `scause=5`、storeでは `scause=7`、どちらも `stval=fault address` でS-mode trapへ入り、handlerで `sepc += 4` して復帰できることを確認します。
 
-今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。
+今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
 trace run:
 

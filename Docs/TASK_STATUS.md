@@ -8,6 +8,7 @@
 - `Docs/TEST_STATUS.md`: 実際に走らせたテスト結果
 - `Docs/S-modetest.md`: Supervisor-mode 検証チェックリスト
 - `Docs/DMA.md`: DMA 実装メモ
+- `Docs/RVA23_CHECKLIST.md`: RVA23方向の棚卸し
 
 ## 現在地
 
@@ -29,7 +30,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load access faultまで到達済みです。次はPMPの許可範囲をRAM/MMIO/firmwareに分けるか、U-mode transitionへ進むのが自然です。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store access faultまで到達済みです。次はPMPの許可範囲をRAM/MMIO/firmwareに分けるか、U-mode transitionへ進むのが自然です。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -37,7 +38,7 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | PMP / access control | firmware領域保護とRAM/MMIO許可を整理 |
+| 1 | PMP side-effect / X check | fault時のmemory/MMIO副作用抑止とinstruction fetch側を確認 |
 | 2 | U-mode transition | 本来のsyscall経路を作る前提 |
 | 3 | U-mode syscall | `U-mode app -> S-mode OS` の本来のsyscall確認 |
 | 4 | Sv39 MMU | Linux必須だが、trap/privilege後に進める方が安全 |
@@ -61,7 +62,7 @@ M-mode trap
 | S-mode timer interrupt | Pass / periodic basic | `make test-os2-min` | interrupt中のSIE/SPIEを追加確認 |
 | U-mode transition | Not started | none | `sstatus.SPP=U`, `sepc=user_entry`, `sret` |
 | U-mode syscall | Not started | none | `medeleg[8]=1`, `U-mode ecall -> S-mode trap` |
-| PMP | Pass / data load fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | store fault、RAM/MMIO/firmwareの実運用向け範囲分割 |
+| PMP | Pass / data load/store fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | fault時の副作用抑止確認、fetch/X enforcement、部分重複テスト |
 | Sv39 | Not started | none | Bareからidentity mappingへ |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
@@ -79,7 +80,7 @@ M-mode trap
 | `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回 |
 | `make test-os2-min-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
-| `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=120000` | Pass | PMP禁止TOR領域へのS-mode loadで `scause=5`, `stval=fault address` |
+| `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=140000` | Pass | PMP禁止TOR領域へのS-mode load/storeで `scause=5/7`, `stval=fault address` |
 
 ### riscv-tests Summary
 
@@ -104,20 +105,24 @@ M-mode trap
 
 - S-mode / U-modeから使えるRAM/MMIO範囲を定義する
 - M-mode firmware領域をS-modeから保護する
+- PMP fault時に副作用のあるmemory/MMIO requestを出さない
 
 作業:
 
 - PMP allow-all構成を作り、まず既存S-modeテストが壊れないことを確認する
-- PMP禁止TOR領域へのS-mode loadでaccess faultになることを確認する
+- PMP禁止TOR領域へのS-mode load/storeでaccess faultになることを確認する
+- fault時にmemory/MMIO requestが発行されないことを確認する
+- instruction fetchにもPMP X permissionを適用する
 - RAM / debug MMIO / ACLINT のアクセス許可範囲を明文化する
 - firmware text/dataをS-modeからアクセス禁止にする
-- store fault、部分重複、MMIO許可/禁止などのtrapを追加テストする
+- 部分重複、MMIO許可/禁止などのtrapを追加テストする
 
 完了条件:
 
 - `make test-os2-min` が引き続きPass
 - 許可したRAM/MMIO accessが通る
 - 禁止したfirmware領域accessがfaultになる
+- 禁止fetchがinstruction access faultになる
 
 ### Option B: timer / interrupt
 
