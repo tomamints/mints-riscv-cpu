@@ -167,13 +167,22 @@ make test-rv64si
 現時点で確認した結果:
 
 ```text
-make test-rv32ui TEST_TIMEOUT=20 -> PASS 42 / 42
-make test-rv64ui TEST_TIMEOUT=20 -> PASS 53 / 54
+make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full
+rv32ui-p 42 / 42
+rv32um-p  8 / 8
+rv32ua-p 10 / 10
+rv32uc-p  1 / 1
+rv32mi-p 16 / 16
+rv32si-p  6 / 6
+rv64ui-p 54 / 54
+rv64um-p 13 / 13
+rv64ua-p 19 / 19
+rv64uc-p  1 / 1
+rv64mi-p 17 / 17
+rv64si-p  7 / 7
 ```
 
-`rv64ui-p-ma_data` は現状 fail します。
-
-より広い suite の結果は `Docs/TEST_STATUS.md` を参照してください。注意点として、`F`, `D`, `Zb*`, `Zfh` 系は pass している rv32 suite もありますが、現状の実装から正式サポートとは扱っていません。
+より広い suite の結果は `Docs/TEST_STATUS.md` を参照してください。注意点として、`F`, `D`, `Zb*`, `Zfh` 系は現状の実装から正式サポートとは扱っていません。
 
 ### Custom C Tests
 
@@ -248,7 +257,7 @@ make test-os2-min-sv39
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはSv39の補完、PTWメモリエラー発生源、MPRV/effective privilege、NS16550A UARTです。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはSv39の補完、PTWメモリエラー発生源、`sfence.vma` / TLB方針、NS16550A UARTです。
 
 trace run:
 

@@ -521,7 +521,7 @@ shell
 
 直近でやる順番:
 
-1. PTWメモリエラー方針とMPRV/effective privilegeを追加する
+1. PTWメモリエラー発生源とaccess fault経路を整理する
 2. `sfence.vma` と将来TLBの接続方針を整理する
 3. NS16550A polling UARTを追加する
 4. 最小DTBを用意する

@@ -24,6 +24,8 @@ module memunit (
 		TranslateWait,
 		AccessWaitReady,
 		AccessWaitValid,
+		SplitAccessWaitReady,
+		SplitAccessWaitValid,
 		Fault
 	} State;
 
@@ -32,6 +34,7 @@ module memunit (
 	logic req_wen;
 	Addr req_vaddr;
 	Addr req_paddr;
+	UIntX req_rs2;
 	logic [MEMBUS_DATA_WIDTH-1:0] req_wdata;
 	logic [(MEMBUS_DATA_WIDTH/8)-1:0] req_wmask;
 	logic req_is_amo;
@@ -39,6 +42,11 @@ module memunit (
 	logic req_aq;
 	logic req_rl;
 	logic [2:0] req_funct3;
+	logic [2:0] req_offset;
+	logic [3:0] req_size;
+	logic req_crosses_word;
+	logic [MEMBUS_DATA_WIDTH-1:0] req_first_rdata;
+	UIntX load_result;
 
 	CsrCause ptw_fault_cause;
 
@@ -57,6 +65,55 @@ module memunit (
 	logic ptw_mem_valid;
 	Addr ptw_mem_addr;
 	PmpAccessType ptw_access_type;
+
+	function automatic logic [3:0] access_size_bytes(input logic [1:0] funct3_lo);
+		unique case (funct3_lo)
+			2'b00: access_size_bytes = 4'd1;
+			2'b01: access_size_bytes = 4'd2;
+			2'b10: access_size_bytes = 4'd4;
+			2'b11: access_size_bytes = 4'd8;
+			default: access_size_bytes = 4'd1;
+		endcase
+	endfunction
+
+	function automatic logic [7:0] byte_mask(input logic [3:0] bytes);
+		unique case (bytes)
+			4'd0: byte_mask = 8'h00;
+			4'd1: byte_mask = 8'h01;
+			4'd2: byte_mask = 8'h03;
+			4'd3: byte_mask = 8'h07;
+			4'd4: byte_mask = 8'h0f;
+			4'd5: byte_mask = 8'h1f;
+			4'd6: byte_mask = 8'h3f;
+			4'd7: byte_mask = 8'h7f;
+			default: byte_mask = 8'hff;
+		endcase
+	endfunction
+
+	function automatic UIntX extract_load_data(
+		input logic [127:0] data,
+		input logic [2:0] offset,
+		input logic [2:0] funct3
+	);
+		logic [127:0] shifted;
+		shifted = data >> {offset, 3'b000};
+		unique case (funct3[1:0])
+			2'b00: extract_load_data = {{(XLEN-8){~funct3[2] & shifted[7]}}, shifted[7:0]};
+			2'b01: extract_load_data = {{(XLEN-16){~funct3[2] & shifted[15]}}, shifted[15:0]};
+			2'b10: extract_load_data = {{(XLEN-32){~funct3[2] & shifted[31]}}, shifted[31:0]};
+			2'b11: extract_load_data = shifted[63:0];
+			default: extract_load_data = '0;
+		endcase
+	endfunction
+
+	function automatic logic [MEMBUS_DATA_WIDTH-1:0] split_store_second_wdata(
+		input UIntX data,
+		input logic [2:0] offset
+	);
+		logic [5:0] shift_bits;
+		shift_bits = (6'd8 - {3'b000, offset}) << 3;
+		split_store_second_wdata = data >> shift_bits;
+	endfunction
 
 	assign satp_sv39 = satp[63:60] == 4'd8;
 	assign need_translate = satp_sv39 && (priv_mode != M);
@@ -118,47 +175,34 @@ module memunit (
 			membus.aq     = req_aq;
 			membus.rl     = req_rl;
 			membus.funct3 = req_funct3;
+		end else if (state == SplitAccessWaitReady) begin
+			membus.valid  = 1'b1;
+			membus.addr   = {req_paddr[XLEN-1:3], 3'b000} + Addr'(8);
+			membus.wen    = req_wen;
+			membus.wdata  = req_wen ? split_store_second_wdata(req_rs2, req_offset) : '0;
+			membus.wmask  = req_wen ? byte_mask(req_size - (4'd8 - {1'b0, req_offset})) : '0;
+			membus.is_amo = 1'b0;
+			membus.amoop  = AMOOp'(0);
+			membus.aq     = 1'b0;
+			membus.rl     = 1'b0;
+			membus.funct3 = req_funct3;
 		end
 
-		case (ctrl.funct3[1:0])
-			2'b00: begin
-				case(addr[2:0])
-					3'd0: rdata = {{(W-8){sext & D[7]}}, D[7:0]};
-					3'd1: rdata = {{(W-8){sext & D[15]}}, D[15:8]};
-					3'd2: rdata = {{(W-8){sext & D[23]}}, D[23:16]};
-					3'd3: rdata = {{(W-8){sext & D[31]}}, D[31:24]};
-					3'd4: rdata = {{(W-8){sext & D[39]}}, D[39:32]};
-					3'd5: rdata = {{(W-8){sext & D[47]}}, D[47:40]};
-					3'd6: rdata = {{(W-8){sext & D[55]}}, D[55:48]};
-					3'd7: rdata = {{(W-8){sext & D[63]}}, D[63:56]};
-					default: rdata = 'x;
-				endcase
-			end
-			2'b01: begin
-				case(addr[2:0])
-					3'd0: rdata = {{(W-16){sext & D[15]}}, D[15:0]};
-					3'd2: rdata = {{(W-16){sext & D[31]}}, D[31:16]};
-					3'd4: rdata = {{(W-16){sext & D[47]}}, D[47:32]};
-					3'd6: rdata = {{(W-16){sext & D[63]}}, D[63:48]};
-					default: rdata = 'x;
-				endcase
-			end
-			2'b10: begin
-				case(addr[2:0])
-					3'd0: rdata = {{(W-32){sext & D[31]}}, D[31:0]};
-					3'd4: rdata = {{(W-32){sext & D[63]}}, D[63:32]};
-					default: rdata = 'x;
-				endcase
-			end
-			2'b11: rdata = D;
-			default: rdata = 'x;
-		endcase
+		if (req_crosses_word && state == SplitAccessWaitValid && membus.rvalid) begin
+			rdata = extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3);
+		end else if (req_crosses_word) begin
+			rdata = load_result;
+		end else begin
+			rdata = extract_load_data({64'b0, membus.rdata}, req_offset, req_funct3);
+		end
 
 		case (state)
 			Init:            stall = valid & (is_new && inst_is_memop(ctrl));
 			TranslateWait:   stall = valid;
 			AccessWaitReady: stall = valid;
-			AccessWaitValid: stall = valid & ~membus.rvalid;
+			AccessWaitValid: stall = valid & (~membus.rvalid || req_crosses_word);
+			SplitAccessWaitReady: stall = valid;
+			SplitAccessWaitValid: stall = valid & ~membus.rvalid;
 			Fault:           stall = 1'b0;
 			default:         stall = 1'b0;
 		endcase
@@ -183,6 +227,7 @@ module memunit (
 			req_wen <= 1'b0;
 			req_vaddr <= '0;
 			req_paddr <= '0;
+			req_rs2 <= '0;
 			req_wdata <= '0;
 			req_wmask <= '0;
 			req_is_amo <= 1'b0;
@@ -190,6 +235,11 @@ module memunit (
 			req_aq <= 1'b0;
 			req_rl <= 1'b0;
 			req_funct3 <= '0;
+			req_offset <= '0;
+			req_size <= '0;
+			req_crosses_word <= 1'b0;
+			req_first_rdata <= '0;
+			load_result <= '0;
 		end else begin
 			if (!valid) begin
 				state <= Init;
@@ -200,34 +250,22 @@ module memunit (
 							req_wen <= inst_is_store(ctrl);
 							req_vaddr <= addr;
 							req_paddr <= addr;
+							req_rs2 <= rs2;
 							req_wdata <= rs2 << {addr[2:0], 3'b0};
 							req_is_amo <= ctrl.is_amo;
 							req_amoop <= AMOOp'(ctrl.funct7[6:2]);
 							req_aq <= ctrl.funct7[1];
 							req_rl <= ctrl.funct7[0];
 							req_funct3 <= ctrl.funct3;
+							req_offset <= addr[2:0];
+							req_size <= access_size_bytes(ctrl.funct3[1:0]);
+							req_crosses_word <= ({1'b0, addr[2:0]} + access_size_bytes(ctrl.funct3[1:0])) > 4'd8;
 
-							case(ctrl.funct3[1:0])
-								2'b00: req_wmask <= 8'b00000001 << addr[2:0];
-								2'b01: begin
-									case (addr[2:0])
-										3'd6: req_wmask <= 8'b11000000;
-										3'd4: req_wmask <= 8'b00110000;
-										3'd2: req_wmask <= 8'b00001100;
-										3'd0: req_wmask <= 8'b00000011;
-										default: req_wmask <= 'x;
-									endcase
-								end
-								2'b10: begin
-									case (addr[2:0])
-										3'd0: req_wmask <= 8'b00001111;
-										3'd4: req_wmask <= 8'b11110000;
-										default: req_wmask <= 'x;
-									endcase
-								end
-								2'b11: req_wmask <= 8'b11111111;
-								default: req_wmask <= 'x;
-							endcase
+							if (({1'b0, addr[2:0]} + access_size_bytes(ctrl.funct3[1:0])) > 4'd8) begin
+								req_wmask <= byte_mask(4'd8 - {1'b0, addr[2:0]}) << addr[2:0];
+							end else begin
+								req_wmask <= byte_mask(access_size_bytes(ctrl.funct3[1:0])) << addr[2:0];
+							end
 
 							if (need_translate) begin
 								state <= TranslateWait;
@@ -256,6 +294,35 @@ module memunit (
 
 					AccessWaitValid: begin
 						if (membus.rvalid) begin
+							if (req_crosses_word) begin
+								req_first_rdata <= membus.rdata;
+								if ($test$plusargs("TRACE_MEMUNIT")) begin
+									$display("[MEMU] split first addr=%h data=%h offset=%0d size=%0d",
+										req_paddr, membus.rdata, req_offset, req_size);
+								end
+								state <= SplitAccessWaitReady;
+							end else begin
+								state <= Init;
+							end
+						end
+					end
+
+					SplitAccessWaitReady: begin
+						if (membus.ready) begin
+							state <= SplitAccessWaitValid;
+						end
+					end
+
+					SplitAccessWaitValid: begin
+						if (membus.rvalid) begin
+							load_result <= extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3);
+							if ($test$plusargs("TRACE_MEMUNIT")) begin
+								$display("[MEMU] split second addr=%h data=%h result=%h funct3=%b",
+									({req_paddr[XLEN-1:3], 3'b000} + Addr'(8)),
+									membus.rdata,
+									extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3),
+									req_funct3);
+							end
 							state <= Init;
 						end
 					end

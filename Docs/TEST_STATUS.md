@@ -2,12 +2,13 @@
 
 この文書は `core/test/share` にある riscv-tests 由来の test binary を、現在の simulator で実行した結果です。
 
-実行日: 2026-07-21
+実行日: 2026-07-24
 
 ## 実行方法
 
 ```sh
 make test-suite SUITE=<suite> TEST_TIMEOUT=20
+make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full
 ```
 
 例:
@@ -35,53 +36,36 @@ make test-rv64ui TEST_TIMEOUT=20
 | `rv32uc-p` | 1 / 1 | Pass |
 | `rv32mi-p` | 16 / 16 | Pass |
 | `rv32si-p` | 6 / 6 | Pass |
-| `rv32uf-p` | 11 / 11 | Pass, but not claimed as implemented |
-| `rv32ud-p` | 10 / 10 | Pass, but not claimed as implemented |
-| `rv32uzba-p` | 3 / 3 | Pass, but not claimed as implemented |
-| `rv32uzbb-p` | 18 / 18 | Pass, but not claimed as implemented |
-| `rv32uzbc-p` | 3 / 3 | Pass, but not claimed as implemented |
-| `rv32uzbs-p` | 8 / 8 | Pass, but not claimed as implemented |
-| `rv32uzfh-p` | 11 / 11 | Pass, but not claimed as implemented |
-| `rv64ui-p` | 53 / 54 | Partial |
+| `rv64ui-p` | 54 / 54 | Pass |
 | `rv64um-p` | 13 / 13 | Pass |
 | `rv64ua-p` | 19 / 19 | Pass |
 | `rv64uc-p` | 1 / 1 | Pass |
-| `rv64mi-p` | 14 / 17 | Partial |
-| `rv64si-p` | 3 / 7 | Partial |
-| `rv64uf-p` | 0 / 11 | Fail |
-| `rv64ud-p` | 0 / 12 | Fail |
-| `rv64uzba-p` | 0 / 8 | Fail |
-| `rv64uzbb-p` | 0 / 24 | Fail |
-| `rv64uzbc-p` | 0 / 3 | Fail |
-| `rv64uzbs-p` | 0 / 8 | Fail |
-| `rv64uzfh-p` | 0 / 11 | Fail |
-| `rv64mzicbo-p` | 0 / 1 | Fail |
-| `rv64ssvnapot-p` | 0 / 1 | Fail |
-| `rv64uziccid-p` | 0 / 1 | Fail |
+| `rv64mi-p` | 17 / 17 | Pass |
+| `rv64si-p` | 7 / 7 | Pass |
 
 ## Known Failures
 
-### `rv64ui-p`
+今回確認した `rv32/rv64 ui/um/ua/uc/mi/si` の `-p` suite に既知failはありません。
+
+直近で修正した既知fail:
 
 - `rv64ui-p-ma_data`
-
-### `rv64mi-p`
-
 - `rv64mi-p-illegal`
 - `rv64mi-p-instret_overflow`
-- `rv64mi-p-pmpaddr`
-
-### `rv64si-p`
-
 - `rv64si-p-csr`
 - `rv64si-p-dirty`
-- `rv64si-p-icache-alias`
-- `rv64si-p-scall`
 
 ### Unsupported / Not Claimed
 
-These suites currently fail on RV64 and are not claimed as supported:
+These suites are outside the currently claimed implementation scope and were not part of the latest `make test-riscv-all` core-suite run:
 
+- `rv32uf-p`
+- `rv32ud-p`
+- `rv32uzba-p`
+- `rv32uzbb-p`
+- `rv32uzbc-p`
+- `rv32uzbs-p`
+- `rv32uzfh-p`
 - `rv64uf-p`
 - `rv64ud-p`
 - `rv64uzba-p`
@@ -98,12 +82,12 @@ These suites currently fail on RV64 and are not claimed as supported:
 | Area | Support estimate |
 |---|---|
 | RV32I user tests | Good: all `rv32ui-p` pass |
-| RV64I user tests | Mostly working: one known failure |
+| RV64I user tests | Good: all `rv64ui-p` pass |
 | RV32M / RV64M | Good: all tested M extension cases pass |
 | RV32A / RV64A | Good: all tested A extension cases pass |
 | RVC | Basic support: `rv32uc-p` and `rv64uc-p` pass |
-| Machine privilege tests | rv32 good, rv64 partial |
-| Supervisor privilege tests | rv32 good, rv64 partial |
+| Machine privilege tests | Good for current `rv32mi-p` / `rv64mi-p` tests |
+| Supervisor privilege tests | Good for current `rv32si-p` / `rv64si-p` tests |
 | Floating point | Not claimed |
 | Bitmanip / Zb* | Not claimed |
 | Cache block / address translation extensions | Not claimed |

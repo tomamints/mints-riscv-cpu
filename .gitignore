@@ -4,6 +4,7 @@ result/
 .txt
 .log
 results/
+results-*/
 build/
 *.hex
 *.elf
@@ -14,6 +15,7 @@ build/
 __pycache__/
 *.pyc
 obj_dir/
+obj_dir_*/
 obj_dir_input/
 obj_dir_trace/
 whisper/

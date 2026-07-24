@@ -178,8 +178,8 @@ module core (
 	logic exs_mem_data_hazard, exs_wb_data_hazard, exs_data_hazard;
 
 
-	assign exs_mem_data_hazard = mems_valid && mems_ctrl.rwb_en && ((mems_rd_addr == exs_rs1_addr) || (mems_rd_addr == exs_rs2_addr));
-	assign exs_wb_data_hazard = wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr == exs_rs1_addr || wbs_rd_addr == exs_rs2_addr);
+	assign exs_mem_data_hazard = mems_valid && mems_ctrl.rwb_en && (mems_rd_addr != 5'd0) && ((mems_rd_addr == exs_rs1_addr) || (mems_rd_addr == exs_rs2_addr));
+	assign exs_wb_data_hazard = wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && (wbs_rd_addr == exs_rs1_addr || wbs_rd_addr == exs_rs2_addr);
 	assign exs_data_hazard = exs_mem_data_hazard || exs_wb_data_hazard;
 /*
 	always_ff @(posedge clk)begin
@@ -314,13 +314,16 @@ module core (
 		UIntX satp_value;
 		logic sstatus_sum;
 		logic sstatus_mxr;
-		logic pmp_data_allow;
-		PrivMode csru_priv_mode;
-		UIntX csru_rdata;
-		logic csru_raise_trap;
-		Addr csru_trap_vector;
-		logic csru_trap_return;
-		UInt64 minstret;
+			logic pmp_data_allow;
+			PrivMode csru_priv_mode;
+			PrivMode csru_mem_priv_mode;
+			UIntX csru_rdata;
+			logic csru_raise_trap;
+			Addr csru_trap_vector;
+			logic csru_trap_return;
+			UInt64 minstret;
+			logic minstret_wen;
+			UInt64 minstret_wdata;
 
 		function automatic UIntX mem_access_size(input logic [2:0] funct3);
 			unique case (funct3[1:0])
@@ -344,8 +347,8 @@ module core (
 		assign sstatus_sum_fetch_value = sstatus_sum;
 		assign sstatus_mxr_fetch_value = sstatus_mxr;
 
-		pmp_checker pmp_data_checker (
-			.priv_mode(csru_priv_mode),
+			pmp_checker pmp_data_checker (
+				.priv_mode(csru_mem_priv_mode),
 			.access_start(memaddr),
 			.access_size(loadstore_access_size),
 			.access_type((inst_is_store(exs_ctrl) || exs_ctrl.is_amo) ? PMP_ACCESS_WRITE : PMP_ACCESS_READ),
@@ -373,7 +376,7 @@ module core (
 		memq_wdata.jump_addr = (inst_is_br(exs_ctrl)) ? exs_pc + exs_imm : exs_alu_result & ~1;
 			// exception
 			instruction_address_misaligned = (IALIGN == 32 && memq_wdata.br_taken && memq_wdata.jump_addr[1:0] != 2'b00);
-			if (inst_is_memop(exs_ctrl)) begin
+			if (inst_is_memop(exs_ctrl) && exs_ctrl.is_amo) begin
 				unique case (exs_ctrl.funct3[1:0])
 					2'b00 : loadstore_address_misaligned = 1'b0;
 				2'b01 : loadstore_address_misaligned = (memaddr[0]   != 1'b0); //H
@@ -445,8 +448,8 @@ module core (
 			.rst    (rst),
 			.valid  (mems_valid && !csru_raise_trap && !mems_expt.valid),
 			.is_new (mems_is_new),
-			.ctrl   (mems_ctrl),
-			.priv_mode(csru_priv_mode),
+				.ctrl   (mems_ctrl),
+				.priv_mode(csru_mem_priv_mode),
 			.satp   (satp_value),
 			.sstatus_sum(sstatus_sum),
 			.sstatus_mxr(sstatus_mxr),
@@ -472,11 +475,14 @@ module core (
 		.rs1_data (memq_rdata.rs1_data),
 			.can_intr (mems_is_new),
 			.rdata    (csru_rdata),
-			.mode     (csru_priv_mode),
-			.raise_trap  (csru_raise_trap),
-			.trap_vector (csru_trap_vector),
-			.trap_return (csru_trap_return),
-			.pmpcfg0_value(pmpcfg0_value),
+				.mode     (csru_priv_mode),
+				.raise_trap  (csru_raise_trap),
+				.trap_vector (csru_trap_vector),
+				.trap_return (csru_trap_return),
+				.mem_priv_mode(csru_mem_priv_mode),
+				.minstret_wen(minstret_wen),
+				.minstret_wdata(minstret_wdata),
+				.pmpcfg0_value(pmpcfg0_value),
 			.pmpaddr0_value(pmpaddr0_value),
 			.pmpaddr1_value(pmpaddr1_value),
 			.pmpaddr2_value(pmpaddr2_value),
@@ -513,6 +519,8 @@ module core (
 
 	logic [4:0] wbs_rd_addr = wbs_inst_bits[11:7];
 	UIntX wbs_wb_data;
+	logic wbs_writes_minstret;
+	assign wbs_writes_minstret = wbs_ctrl.is_csr && (wbs_inst_bits[31:20] == MINSTRET) && (wbs_inst_bits[13:12] != 2'b00);
 
 	always_comb begin
 		if (wbs_ctrl.is_lui) begin
@@ -532,14 +540,16 @@ module core (
 		if(!rst)begin
 			minstret <= '0;
 		end else begin
-			if (wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap)begin
+			if (minstret_wen) begin
+				minstret <= minstret_wdata;
+			end else if (wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap && !wbs_writes_minstret)begin
 				minstret <= minstret + 1;
 			end
 		end
 	end
 
 	always_ff @(posedge clk)begin
-		if(wbs_valid && wbs_ctrl.rwb_en && !wbq_rdata.raise_trap)begin
+		if(wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && !wbq_rdata.raise_trap)begin
 			regfile[wbs_rd_addr] <= wbs_wb_data;
 		end
 	end

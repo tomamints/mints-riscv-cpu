@@ -38,7 +38,7 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | Sv39補完 | PTWメモリエラー方針、MPRV/effective privilege、将来TLB用の`sfence.vma`整理 |
+| 1 | Sv39補完 | PTWメモリエラー方針、将来TLB用の`sfence.vma`整理 |
 | 2 | Linux-oriented UART/DTB | early consoleとplatform記述に必要 |
 | 3 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 | 4 | OpenSBI/Linux bring-up | 実際のboot logから不足CSR/ISA/deviceを埋める |
@@ -47,7 +47,7 @@ M-mode trap
 
 | Area | Status | 確認済みテスト | 次にやること |
 |---|---|---|---|
-| RV64基本実行 | Partial | `make test-os2-min`, `make test-rv64um`, `make test-rv64ua` | `rv64ui-p-ma_data` など既知failを調査 |
+| RV32/RV64基本実行 | Pass / current core suites | `make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full` | Linux向けには未対応拡張、CSR、deviceを追加確認 |
 | debug MMIO output | Pass | `make test-output`, `make test-os2-min` | 標準UART互換デバイスへ寄せる |
 | debug MMIO input | Pass / bring-up用 | `make test-input INPUT_TEXT=A`, `make test-os2-min-input INPUT_TEXT=Z` | 標準UART互換デバイスへ寄せる |
 | DMA | Pass / experimental | `make test-dma` | interrupt連携、仕様整理、バスプロトコル整理 |
@@ -62,7 +62,7 @@ M-mode trap
 | U-mode transition | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。必要になったらU-mode stack分離やCSR faultを追加 |
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
-| Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、MPRV/effective privilege、TLB |
+| Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、TLB |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
 ## テスト一覧
@@ -83,6 +83,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` | Pass | PMP禁止TOR領域へのS-mode load/store/fetchで `scause=5/7/1`, `stval=fault address`。禁止storeでRAM値が変化しないこと、fetchがRではなくXを見ること、32-bit命令後半2byteのX禁止も確認 |
 | `make test-os2-min-sv39` | Pass | S-modeで`satp.MODE=8`を設定し、4KiB PTEの3-level page walkでdata load/store/fetchをidentity mapping。2MiB L1 / 1GiB L2 superpage、未map load、SUM=0/1、MXR=0/1、A=0 load、D=0 store、W=0 store、satp.PPN切り替え、X=0 fetch page faultを確認 |
+| `make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full` | Pass | `rv32/rv64 ui/um/ua/uc/mi/si` の全 `-p` suiteを確認。`rv64ui-p-ma_data`, `rv64mi-p-illegal`, `rv64mi-p-instret_overflow`, `rv64si-p-csr`, `rv64si-p-dirty` は修正済み |
 
 ### riscv-tests Summary
 
@@ -94,9 +95,9 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `rv32um-p` / `rv64um-p` | Pass |
 | `rv32ua-p` / `rv64ua-p` | Pass |
 | `rv32uc-p` / `rv64uc-p` | Pass |
-| `rv64ui-p` | Partial |
-| `rv64mi-p` | Partial, 14 / 17 |
-| `rv64si-p` | Partial |
+| `rv32mi-p` / `rv64mi-p` | Pass |
+| `rv32si-p` / `rv64si-p` | Pass |
+| `rv64ui-p` | Pass |
 | F/D/Zb/Zfh系 | Not claimed |
 
 ## 次の実装候補
@@ -208,4 +209,4 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 - SBI用途では `medeleg[9]=0` として、S-mode `ecall` をM-modeへ上げる
 - 本来のOS syscallは `medeleg[8]=1` として、U-mode `ecall` をS-modeへ上げる
 - Linuxへ行く前に、SBI / timer / PMP / U-mode / Sv39 を小さいテストで潰す
-- 現在のSv39はdata-sideとinstruction fetchの基本経路まで対応済み。Linux起動前にPTW error発生源、MPRV/effective privilege、TLB/sfence方針を整理する
+- 現在のSv39はdata-sideとinstruction fetchの基本経路まで対応済み。Linux起動前にPTW error発生源、TLB/sfence方針を整理する

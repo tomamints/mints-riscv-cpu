@@ -77,7 +77,7 @@ OS2_MIN_HEX = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin.hex
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
 
 
 
@@ -222,6 +222,33 @@ test-os2-min-sv39: OS2_MIN_DEFS=-DOS2_MIN_SV39
 test-os2-min-sv39: OS2_MIN_NAME=kernel_sv39
 test-os2-min-sv39: $(SIM) bootrom-build os2-min-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
+
+test-os2-min-pmp:
+	$(MAKE) test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=500000
+
+test-os2-min-user:
+	$(MAKE) test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=120000
+
+test-custom-all:
+	$(MAKE) test-output
+	$(MAKE) test-input
+	$(MAKE) test-dma
+	$(MAKE) test-mswi
+	$(MAKE) test-mtime
+	$(MAKE) test-os2-min
+	$(MAKE) test-os2-min-input
+	$(MAKE) test-os2-min-strap
+	$(MAKE) test-os2-min-pmp
+	$(MAKE) test-os2-min-user
+	$(MAKE) test-os2-min-sv39
+
+test-riscv-all:
+	@failed=0; \
+	for suite in rv32ui-p rv32um-p rv32ua-p rv32uc-p rv32mi-p rv32si-p rv64ui-p rv64um-p rv64ua-p rv64uc-p rv64mi-p rv64si-p; do \
+		echo "===== $$suite ====="; \
+		$(MAKE) test-suite SUITE=$$suite TEST_OUT=results-full || failed=1; \
+	done; \
+	exit $$failed
 
 trace-c-test: $(TRACE_SIM) bootrom-build c-test-build
 	DBG_ADDR=$(DBG_ADDR) $(TRACE_SIM) $(BOOTROM) $(C_TEST_HEX) $(CYCLES)

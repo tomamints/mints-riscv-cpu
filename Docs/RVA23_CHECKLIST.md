@@ -14,11 +14,11 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| RV64I | Partial | `rv64ui-p` は一部failあり |
+| RV64I | Pass current tests | `rv64ui-p` 54 / 54 pass。Linux/RVA23観点では追加確認が必要 |
 | M | Pass basic tests | `rv64um-p` pass |
 | A | Pass basic tests | `rv64ua-p` pass。LR/SC/AMOの詳細挙動は追加確認が必要 |
 | C | Basic | `rv64uc-p` pass |
-| Zicsr | Partial | CSR privilege checkを実装中 |
+| Zicsr | Basic pass | `rv64si-p-csr` pass。未実装CSRやLinux要求CSRは追加確認が必要 |
 | Zifencei | TODO | Linux/RVA23観点で要確認 |
 | F/D | Not claimed | test pass/failに関わらず実装としては未主張 |
 | Zb* | Not claimed | 専用decoder/unitとしては未整理 |
@@ -34,7 +34,7 @@
 | U-mode syscall | Basic pass | `medeleg[8]`, U-mode `ecall -> stvec`、戻り値とexitの最小確認 |
 | PMP | Basic pass | load/store R/W、fetch X、禁止storeのRAM副作用抑止を確認。MMIO副作用と部分重複の専用テストは未実装 |
 | Sv39 | Basic / data+fetch | `sv39_ptw.sv` にPTWを分離。`satp.MODE=8`、3-level page walk、4KiB leaf PTE、identity mapping、`satp.PPN`切り替え、2MiB L1 / 1GiB L2 superpage、load/store/instruction page fault、SUM、MXR、A/D fault方式、内部fault detailを確認。PTW PTE read errorはaccess faultへ分類するが、bus側のerror生成は未実装。TLB/ASID、A/D自動更新は未実装 |
-| Counters | Partial | `mcounteren/scounteren` の追加確認が必要 |
+| Counters | Basic pass | `rv64mi-p-instret_overflow` pass。`mcounteren/scounteren` とLinux要求は追加確認が必要 |
 | WFI | Partial | timer waitで使用。詳細仕様は未確認 |
 
 ## Platform / Linux
@@ -49,7 +49,7 @@
 
 ## 次に確認したい項目
 
-- PTW memory error発生源、MPRV/effective privilege、A/D bit hardware update要否
+- PTW memory error発生源、A/D bit hardware update要否
 - `sfence.vma` のTLB flush接続
 - `fence.i`, `wfi`, counter CSRの仕様差分
 - Linux最小起動要件とRVA23要件の差分

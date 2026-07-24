@@ -19,6 +19,9 @@ module csrunit (
 	output logic raise_trap,
 	output Addr  trap_vector,
 	output logic trap_return,
+	output PrivMode mem_priv_mode,
+	output logic minstret_wen,
+	output UInt64 minstret_wdata,
 	output UIntX pmpcfg0_value,
 	output UIntX pmpaddr0_value,
 	output UIntX pmpaddr1_value,
@@ -32,7 +35,7 @@ module csrunit (
 );
 
 //WMASK determines which bit can change or not. WARL can write anything but read legal.
-	localparam UIntX MSTATUS_WMASK = UIntX'('h0000_0000_006c_19aa) ;
+	localparam UIntX MSTATUS_WMASK = UIntX'('h0000_0000_007e_19aa) ;
 	localparam UIntX MTVEC_WMASK  = 'hffff_ffff_ffff_fffd; //MTVECは[1:0]はMODE設定
 	localparam UIntX MEDELEG_WMASK  = 'hffff_ffff_ffff_f7ff;
 	localparam UIntX MIDELEG_WMASK  = UIntX'('h0000_0000_0000_0222);
@@ -43,6 +46,8 @@ module csrunit (
 	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_02aa);
+	localparam UIntX MCYCLE_WMASK = 'hffff_ffff_ffff_ffff;
+	localparam UIntX MINSTRET_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_000c_0122);
 	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);
@@ -63,6 +68,9 @@ module csrunit (
 	logic is_wsc;
 	assign is_wsc = ctrl.is_csr && ctrl.funct3[1:0] != 0;
 
+	logic [4:0] csr_rs1_addr;
+	assign csr_rs1_addr = inst_bits[19:15];
+
 	logic is_mret;
 	assign is_mret = (inst_bits == 32'h30200073);
 
@@ -72,11 +80,19 @@ module csrunit (
 	logic is_wfi;
 	assign is_wfi = (inst_bits == 32'h10500073);
 
+	logic is_sfence_vma;
+	assign is_sfence_vma = inst_bits[6:0] == OP_SYSTEM &&
+	                       inst_bits[14:12] == 3'b000 &&
+	                       inst_bits[31:25] == 7'b0001001;
+
 	// will_not_write_csr: CSRRSI / CSRRCI で rs1=0 のとき → 読み取り専用動作
 	logic will_not_write_csr;
 	assign will_not_write_csr =
 		((ctrl.funct3[1:0] == 2'b10) || (ctrl.funct3[1:0] == 2'b11))
-		&& (rs1_addr == 5'd0);
+		&& (csr_rs1_addr == 5'd0);
+
+	logic csr_write_en;
+	assign csr_write_en = is_wsc && !will_not_write_csr;
 
 	// expt_write_readonly_csr: 書き込み系で、書き込み禁止CSRにアクセスしたとき
 	logic expt_write_readonly_csr;
@@ -106,8 +122,11 @@ module csrunit (
 		 (mode == U && (zicntr_denied_S || zicntr_denied_U)));
 
 	logic expt_trap_return_priv;
-	assign expt_trap_return_priv = (is_mret && mode < M) || (is_sret && mode < S || (mode == S && mstatus_tsr));
+	assign expt_trap_return_priv = (is_mret && mode < M) || (is_sret && (mode < S || (mode == S && mstatus_tsr)));
 	//attempt to execute trap return instruction in low privilege level
+
+	logic expt_tvm_priv;
+	assign expt_tvm_priv = mode == S && mstatus_tvm && (is_sfence_vma || (ctrl.is_csr && csr_addr == SATP));
 
 	//CSR register create
 	UIntX misa;
@@ -160,8 +179,15 @@ module csrunit (
 	logic mstatus_tsr;
 	assign mstatus_tsr = mstatus[22];
 
+	logic mstatus_tvm;
+	assign mstatus_tvm = mstatus[20];
+
+	logic mstatus_mprv;
+	assign mstatus_mprv = mstatus[17];
+
 	PrivMode mstatus_mpp;
 	assign mstatus_mpp = PrivMode'(mstatus[12:11]);
+	assign mem_priv_mode = (mode == M && mstatus_mprv) ? mstatus_mpp : mode;
 
 	PrivMode mstatus_spp;
 	assign mstatus_spp = (mstatus[8]) ? S : U;
@@ -229,7 +255,7 @@ module csrunit (
 
 	//Exception
 	logic raise_expt;
-	assign raise_expt = valid && (expt_info.valid || expt_write_readonly_csr || expt_csr_priv_violation || expt_zicntr_priv || expt_trap_return_priv);
+	assign raise_expt = valid && (expt_info.valid || expt_write_readonly_csr || expt_csr_priv_violation || expt_zicntr_priv || expt_trap_return_priv || expt_tvm_priv);
 	UIntX expt_cause ;
 	always_comb begin
 		if(expt_info.valid) begin
@@ -241,6 +267,8 @@ module csrunit (
 		end else if (expt_zicntr_priv) begin
 			expt_cause = ILLEGAL_INSTRUCTION;
 		end else if (expt_trap_return_priv) begin
+			expt_cause = ILLEGAL_INSTRUCTION;
+		end else if (expt_tvm_priv) begin
 			expt_cause = ILLEGAL_INSTRUCTION;
 		end else begin
 			expt_cause = '0;
@@ -301,6 +329,7 @@ module csrunit (
 
 	UIntX wdata;
 	UIntX wmask;
+	UInt64 minstret_next;
 
 	logic [XLEN-1:0] wsource; //always_comb の外で定義
 
@@ -331,6 +360,7 @@ module csrunit (
 			SSTATUS   : rdata = sstatus;
 			SCOUNTEREN : rdata = {{(XLEN - 32){1'b0}}, scounteren};
 			STVEC   : rdata = stvec;
+			SSCRATCH : rdata = sscratch;
 			SEPC    : rdata = sepc;
 			SCAUSE  : rdata = scause;
 			STVAL   : rdata = stval;
@@ -349,9 +379,11 @@ module csrunit (
 			MTVEC    : wmask = MTVEC_WMASK;
 			MEDELEG    : wmask = MEDELEG_WMASK;
 			MIDELEG    : wmask = MIDELEG_WMASK;
-			MIP      : wmask = MIP_WMASK;
-			MIE      : wmask = MIE_WMASK;
-			MCOUNTEREN : wmask = MCOUNTEREN_WMASK;
+				MIP      : wmask = MIP_WMASK;
+				MIE      : wmask = MIE_WMASK;
+				MCYCLE   : wmask = MCYCLE_WMASK;
+				MINSTRET : wmask = MINSTRET_WMASK;
+				MCOUNTEREN : wmask = MCOUNTEREN_WMASK;
 			PMPCFG0 : wmask = PMPCFG0_WMASK;
 			PMPADDR0 : wmask = PMPADDR_WMASK;
 			PMPADDR1 : wmask = PMPADDR_WMASK;
@@ -375,9 +407,9 @@ module csrunit (
 		endcase
 
 		// wsource
-		// (funct3[2] == 1 : immediate → rs1_addr is used)
+		// (funct3[2] == 1 : immediate → inst[19:15] is used as zimm)
 		if (ctrl.funct3[2]) begin
-			wsource = {{(XLEN-5){1'b0}}, rs1_addr};
+			wsource = {{(XLEN-5){1'b0}}, csr_rs1_addr};
 		end else begin
 			wsource = rs1_data;
 		end
@@ -392,7 +424,11 @@ module csrunit (
 
 		// apply write mask
 		wdata = (wdata & wmask) | (rdata & ~wmask);
+		minstret_next = UInt64'(wdata);
 	end
+
+	assign minstret_wen = valid && csr_write_en && !raise_trap && csr_addr == MINSTRET;
+	assign minstret_wdata = minstret_next;
 
 	UIntX setssip;
 	assign setssip = {{(XLEN - 2){1'b0}}, aclint.setssip, 1'b0 };
@@ -488,15 +524,16 @@ module csrunit (
 					end
 					mode <= trap_mode_next;
 				end else begin
-					if (is_wsc) begin
+						if (csr_write_en) begin
 						case (csr_addr) //これらはそれぞれのCSRレジスタにwdataを入れている。
 							MSTATUS  : mstatus  <= validate_mstatus(mstatus, wdata);
 							MTVEC    : mtvec    <= wdata;
 							MEDELEG    : medeleg    <= wdata;
 							MIDELEG   : mideleg    <= wdata;
-							MIP      : mip_reg    <= (wdata & MIP_WMASK) | set_s_interrupt_pending;
-							MIE      : mie      <= wdata & MIE_WMASK;
-							MCOUNTEREN : mcounteren <= wdata[31:0];
+								MIP      : mip_reg    <= (wdata & MIP_WMASK) | set_s_interrupt_pending;
+								MIE      : mie      <= wdata & MIE_WMASK;
+								MCYCLE   : mcycle   <= wdata;
+								MCOUNTEREN : mcounteren <= wdata[31:0];
 							PMPCFG0 : pmpcfg0 <= wdata & PMPCFG0_WMASK;
 							PMPADDR0 : pmpaddr0 <= wdata & PMPADDR_WMASK;
 							PMPADDR1 : pmpaddr1 <= wdata & PMPADDR_WMASK;
