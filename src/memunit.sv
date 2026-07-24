@@ -288,7 +288,11 @@ module memunit (
 
 					AccessWaitReady: begin
 						if (membus.ready) begin
-							state <= AccessWaitValid;
+							if (req_wen && !req_is_amo) begin
+								state <= req_crosses_word ? SplitAccessWaitReady : Init;
+							end else begin
+								state <= AccessWaitValid;
+							end
 						end
 					end
 
@@ -309,7 +313,7 @@ module memunit (
 
 					SplitAccessWaitReady: begin
 						if (membus.ready) begin
-							state <= SplitAccessWaitValid;
+							state <= req_wen ? Init : SplitAccessWaitValid;
 						end
 					end
 

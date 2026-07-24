@@ -144,6 +144,8 @@ package eei;
         // Supervisor Protection and Translation
         SATP = 12'h180,
 		//Machine Infomation Registers
+		MVENDORID = 12'hf11,
+		MARCHID  = 12'hf12,
 		MIMPID  = 12'hf13,
 		MHARTID = 12'hf14,
 		//Machine Trap Setup

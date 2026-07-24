@@ -87,12 +87,17 @@ BOOTARGS_CHECK_SRC ?= platform/bootargs_check.S
 BOOTARGS_CHECK_ELF = build/platform/bootargs_check.elf
 BOOTARGS_CHECK_BIN = build/platform/bootargs_check.bin
 BOOTARGS_CHECK_RAM_HEX = build/platform/bootargs_check_ram.hex
+OPENSBI_BIN ?=
+OPENSBI_RAM_HEX = build/platform/opensbi_ram.hex
+OPENSBI_CYCLES ?= 2000000
+LINUX_IMAGE_BIN ?=
+LINUX_IMAGE_OFFSET ?= 0x200000
 
 # =====================================================
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs opensbi-ram-image run-opensbi test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
 
 
 
@@ -210,6 +215,17 @@ $(BOOTARGS_CHECK_RAM_HEX): $(BOOTARGS_CHECK_BIN) $(DTB)
 test-linux-bootargs: CYCLES=20000
 test-linux-bootargs: $(SIM) linux-bootrom-build linux-ram-image
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(LINUX_BOOTROM_HEX) $(BOOTARGS_CHECK_RAM_HEX) $(CYCLES)
+
+opensbi-ram-image: $(DTB)
+	test -n "$(OPENSBI_BIN)" || (echo "Set OPENSBI_BIN=/path/to/fw_jump.bin"; exit 1)
+	if test -n "$(LINUX_IMAGE_BIN)"; then \
+		$(PYTHON) tools/make_linux_ram_hex.py --payload $(OPENSBI_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) --blob $(LINUX_IMAGE_OFFSET):$(LINUX_IMAGE_BIN) -o $(OPENSBI_RAM_HEX); \
+	else \
+		$(PYTHON) tools/make_linux_ram_hex.py --payload $(OPENSBI_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) -o $(OPENSBI_RAM_HEX); \
+	fi
+
+run-opensbi: $(SIM) linux-bootrom-build opensbi-ram-image
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(LINUX_BOOTROM_HEX) $(OPENSBI_RAM_HEX) $(OPENSBI_CYCLES)
 
 test-output: C_TEST=debug_output
 test-output: CYCLES=10000

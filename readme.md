@@ -198,6 +198,20 @@ make test-linux-bootargs
 
 `test-linux-bootargs` は、Linux boot ABIに合わせた最小bootromを使い、`a0=hartid=0`、`a1=0x87f00000` をRAM payloadへ渡せることを確認します。DTBはRAM image内の `0x87f00000` に配置します。
 
+OpenSBIを試す場合は、repo外で用意した `fw_jump.bin` を指定します。
+
+```sh
+make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin
+```
+
+現在はOpenSBI v1.3.1 `FW_JUMP` でUART banner表示まで確認済みです。OpenSBIからは `uart8250` console、`Next Address = 0x80200000`、`Next Arg1 = 0x87f00000`、`Next Mode = S-mode` まで見えています。一方、timer nodeはまだDTBに不足しているため、OpenSBI上では `Platform Timer Device : --- @ 0Hz` です。
+
+Linux Imageも同時に置く場合は、`0x80200000` に配置します。
+
+```sh
+make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
+```
+
 ### Custom C Tests
 
 `core/test/*.c` は、RISC-V cross compiler で ELF / binary / hex を生成して simulator で実行できます。default の compile option は compressed instruction を避けつつ CSR 命令を許可するため `-march=rv64ima_zicsr` です。
@@ -282,7 +296,7 @@ make test-os2-min-sv39
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはSv39の補完、PTWメモリエラー発生源、`sfence.vma` / TLB方針、NS16550A UARTのLinux向けレジスタ補完、DTBです。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはOpenSBIが認識できるACLINT timer DT binding、Linux Image投入、Linux earlycon確認です。補助タスクとして、PTWメモリエラー発生源、`sfence.vma` / TLB方針、`rv64mi-p-breakpoint` のfail調査も残っています。
 
 trace run:
 

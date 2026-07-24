@@ -153,7 +153,7 @@ module inst_fetcher (
                 // offset が 6 な 32ビット命令の場合、
                 // アドレスと上位16ビットを保存して FIFO を読み進める
                 if ((issue_pc_offset == 3'd6) && !rvcc_is_rvc && !issue_is_rdata_saved) begin
-                    if (fetch_fifo_rvalid) begin
+                    if (fetch_fifo_rready && fetch_fifo_rvalid) begin
                         issue_is_rdata_saved <= 1'b1;
                         issue_saved_addr     <= fetch_fifo_rdata.addr;
                         issue_saved_bits     <= fetch_fifo_rdata.bits[63:48];

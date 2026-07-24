@@ -122,6 +122,7 @@ These suites are outside the currently claimed implementation scope and were not
 |---|---|---:|---|
 | `make dtb` | `platform/riscv_cpu.dts` | Pass | 最小DTBを生成。RAM `0x80000000/0x08000000`、UART `serial@10000000`、`reg-shift=0`、`reg-io-width=1`、earlycon bootargsを記述 |
 | `make test-linux-bootargs` | `platform/bootrom_linux.S`, `platform/bootargs_check.S`, `platform/riscv_cpu.dts` | Pass | bootromが `a0=0`, `a1=0x87f00000` を設定して `0x80000000` へジャンプし、payloadが受け取れることを確認 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | external OpenSBI binary | Pass / banner | OpenSBI v1.3.1 `FW_JUMP` を `0x80000000`、DTBを `0x87f00000` に配置して起動。`uart8250` console認識、banner、`Next Address=0x80200000`、`Next Arg1=0x87f00000`、`Next Mode=S-mode` を確認。timer deviceは未認識 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

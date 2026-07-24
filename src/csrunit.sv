@@ -94,6 +94,12 @@ module csrunit (
 	logic csr_write_en;
 	assign csr_write_en = is_wsc && !will_not_write_csr;
 
+	logic csr_implemented;
+	assign csr_implemented = csr_is_implemented(csr_addr);
+
+	logic expt_unimplemented_csr;
+	assign expt_unimplemented_csr = ctrl.is_csr && !csr_implemented;
+
 	// expt_write_readonly_csr: 書き込み系で、書き込み禁止CSRにアクセスしたとき
 	logic expt_write_readonly_csr;
 	assign expt_write_readonly_csr =
@@ -255,11 +261,13 @@ module csrunit (
 
 	//Exception
 	logic raise_expt;
-	assign raise_expt = valid && (expt_info.valid || expt_write_readonly_csr || expt_csr_priv_violation || expt_zicntr_priv || expt_trap_return_priv || expt_tvm_priv);
+	assign raise_expt = valid && (expt_info.valid || expt_unimplemented_csr || expt_write_readonly_csr || expt_csr_priv_violation || expt_zicntr_priv || expt_trap_return_priv || expt_tvm_priv);
 	UIntX expt_cause ;
 	always_comb begin
 		if(expt_info.valid) begin
 			expt_cause = expt_info.cause;
+		end else if (expt_unimplemented_csr) begin
+			expt_cause = ILLEGAL_INSTRUCTION;
 		end else if (expt_write_readonly_csr) begin
 			expt_cause = ILLEGAL_INSTRUCTION;
 		end else if (expt_csr_priv_violation) begin
@@ -336,6 +344,8 @@ module csrunit (
 	always_comb begin
 		// read
 		case (csr_addr)
+			MVENDORID: rdata = '0;
+			MARCHID : rdata = '0;
 			MISA    : rdata = misa;
 			MIMPID  : rdata = MACHINE_IMPLEMENTATION_ID;
 			MHARTID : rdata = mhartid;
@@ -370,7 +380,7 @@ module csrunit (
 			CYCLE   : rdata = mcycle;
 			TIME    : rdata = aclint.mtime;
 			INSTRET : rdata = minstret;
-			default       : rdata = 'x;
+			default       : rdata = '0;
 		endcase
 
 		// write mask
@@ -574,5 +584,49 @@ module csrunit (
 		end
 
 		return result;
+	endfunction
+
+	function automatic logic csr_is_implemented(
+		input logic [11:0] addr
+	);
+		case (addr)
+			MVENDORID,
+			MARCHID,
+			MIMPID,
+			MHARTID,
+			MSTATUS,
+			MISA,
+			MEDELEG,
+			MIDELEG,
+			MIE,
+			MTVEC,
+			MCOUNTEREN,
+			PMPCFG0,
+			PMPADDR0,
+			PMPADDR1,
+			PMPADDR2,
+			PMPADDR3,
+			MSCRATCH,
+			MEPC,
+			MCAUSE,
+			MTVAL,
+			MIP,
+			MCYCLE,
+			MINSTRET,
+			SSTATUS,
+			SIE,
+			STVEC,
+			SCOUNTEREN,
+			SSCRATCH,
+			SEPC,
+			SCAUSE,
+			STVAL,
+			SIP,
+			SATP,
+			CYCLE,
+			TIME,
+			INSTRET: csr_is_implemented = 1'b1;
+			default: csr_is_implemented = 1'b0;
+		endcase
 	endfunction
 endmodule : csrunit

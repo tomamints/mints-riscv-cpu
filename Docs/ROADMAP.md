@@ -511,9 +511,11 @@ satp = 0
 
 - `platform/riscv_cpu.dts` を追加済み
 - `make dtb` で `build/platform/riscv_cpu.dtb` を生成できる
-- `platform/bootrom_linux.S` で `a0=hartid=0`, `a1=0x80070000` を設定して `0x80000000` へジャンプするboot pathを追加済み
+- `platform/bootrom_linux.S` で `a0=hartid=0`, `a1=0x87f00000` を設定して `0x80000000` へジャンプするboot pathを追加済み
 - `tools/make_linux_ram_hex.py` でpayloadとDTBを1つのRAM hexにまとめられる
 - `make test-linux-bootargs` でLinux boot ABIの `a0/a1` 受け渡しを確認済み
+- `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` で、repo外のOpenSBI `fw_jump.bin` を `0x80000000` へ配置して起動できるtargetを追加済み
+- `LINUX_IMAGE_BIN=/path/to/Image` を追加すると、Linux Imageを `0x80200000` へ配置できる
 - RAMは `RAM_ADDR_WIDTH=24`, `RAM_DATA_WIDTH=64` に合わせて `0x80000000..0x87ffffff` の128MiBとして記述
 - UARTは `serial@10000000`, `compatible = "ns16550a"`, `reg-shift = <0>`, `reg-io-width = <1>` として記述
 - CPU ISA文字列は現在確認済みの範囲に合わせて `rv64imac_zicsr`
@@ -521,9 +523,17 @@ satp = 0
 - Linux boot ABI用bootromは `a1=0x87f00000` を渡し、DTBはRAM末尾付近へ配置
 - PLIC未実装のため、UART interruptはまだ記述していない
 
+確認済み:
+
+- OpenSBI v1.3.1 `FW_JUMP` を `0x80000000` に配置し、UART banner表示まで到達
+- OpenSBI generic platformは現在のDTBから `uart8250` consoleを認識する
+- OpenSBIから見た次段は `Next Address = 0x80200000`, `Next Arg1 = 0x87f00000`, `Next Mode = S-mode`
+- 現在のDTBではtimer nodeが不足しているため、`Platform Timer Device : --- @ 0Hz`
+
 次:
 
-- OpenSBIまたはLinux ImageをRAM payloadとして置くtargetを用意する
+- OpenSBI generic platformが認識できるtimer DT bindingを追加し、ACLINT `mtime/mtimecmp` のMMIO配置と一致させる
+- Linux Imageを `0x80200000` に配置し、OpenSBIからLinux entryへ渡す
 - PLIC実装後にUART interrupt numberとDTBを一致させる
 
 注意:
@@ -560,10 +570,10 @@ shell
 
 直近でやる順番:
 
-1. OpenSBIまたはLinux ImageをRAM payloadとして置くtargetを用意する
-2. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
+1. OpenSBI generic platformが必要とするtimer DT bindingを確認し、ACLINT DTB/RTLを合わせる
+2. `rv64mi-p-breakpoint` のfailを調査し、例外/`mtval`/復帰PCを整理する
 3. PTWメモリエラー発生源とaccess fault経路を整理する
 4. `fence.i` / `zifencei` の正式確認を行い、DTB ISA文字列へ反映する
-5. Linux earlyconのログから不足device/CSRを埋める
+5. Linux Imageを `0x80200000` へ置き、OpenSBI経由でLinux earlycon出力を狙う
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

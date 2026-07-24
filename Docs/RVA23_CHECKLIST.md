@@ -45,11 +45,11 @@
 | UART | WIP | `0x10000000` にNS16550A互換の最小polling TXを追加。THR write、LSR THRE/TEMT、基本保持レジスタ、DLABは確認済み。RX/interrupt/PLIC連携は未実装 |
 | PLIC | TODO | 外部割り込み向け |
 | DTB | WIP | 最小DTS/DTBを追加。128MiB RAM/UARTは現RTLと一致。bootromから `a1=DTB physical address` を渡す経路は確認済み。PLIC/interrupt記述は未実装 |
-| OpenSBI compatibility | TODO | 現在は独自最小SBI |
+| OpenSBI compatibility | WIP | OpenSBI v1.3.1 `FW_JUMP` でUART banner表示まで到達。`uart8250` console、次段S-mode entry情報は確認済み。timer deviceは未認識 |
 
 ## 次に確認したい項目
 
-- OpenSBI/Linux payload target、Linux earlycon確認
+- OpenSBI timer DT binding、Linux Image投入、Linux earlycon確認
 - PTW memory error発生源、A/D bit hardware update要否
 - `sfence.vma` のTLB flush接続
 - `fence.i` / `zifencei`, `wfi`, counter CSRの仕様差分
