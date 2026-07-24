@@ -44,13 +44,13 @@
 | ACLINT timer | Basic pass | MTIPをM-mode handlerで受け、STIPを注入 |
 | UART | WIP | `0x10000000` にNS16550A互換の最小polling TXを追加。THR write、LSR THRE/TEMT、基本保持レジスタ、DLABは確認済み。RX/interrupt/PLIC連携は未実装 |
 | PLIC | TODO | 外部割り込み向け |
-| DTB | TODO | RAM/UART/ACLINT/PLICと一致させる |
+| DTB | WIP | 最小DTS/DTBを追加。128MiB RAM/UARTは現RTLと一致。bootromから `a1=DTB physical address` を渡す経路は確認済み。PLIC/interrupt記述は未実装 |
 | OpenSBI compatibility | TODO | 現在は独自最小SBI |
 
 ## 次に確認したい項目
 
-- DTB UART node、Linux earlycon確認
+- OpenSBI/Linux payload target、Linux earlycon確認
 - PTW memory error発生源、A/D bit hardware update要否
 - `sfence.vma` のTLB flush接続
-- `fence.i`, `wfi`, counter CSRの仕様差分
+- `fence.i` / `zifencei`, `wfi`, counter CSRの仕様差分
 - Linux最小起動要件とRVA23要件の差分

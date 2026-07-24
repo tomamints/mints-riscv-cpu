@@ -63,7 +63,7 @@ M-mode trap
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
 | Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、TLB |
-| Linux platform | WIP / UART TX + regs minimal | `make test-uart`, `make test-uart-regs` | DTB、OpenSBI/Linux earlycon、RX/interrupt/PLIC |
+| Linux platform | WIP / 128MiB RAM + UART TX + regs + DTB bootargs minimal | `make test-uart`, `make test-uart-regs`, `make dtb`, `make test-linux-bootargs` | OpenSBI/Linux payload target、earlycon、RX/interrupt/PLIC |
 
 ## テスト一覧
 
@@ -78,6 +78,8 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-dma` | Pass | DMA register設定とRAM-to-RAM copy |
 | `make test-uart` | Pass | NS16550A互換UARTの最小polling TX。`0x10000005`のLSR read、`0x10000000`のTHR byte write、Verilator標準出力への表示 |
 | `make test-uart-regs` | Pass | `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替え、`LSR/IIR/MSR`の最小固定値 |
+| `make dtb` | Pass | `platform/riscv_cpu.dts` から `build/platform/riscv_cpu.dtb` を生成。RAMは128MiB、UART nodeは `serial@10000000`, `reg-shift=0`, `reg-io-width=1` |
+| `make test-linux-bootargs` | Pass | Linux boot ABIの `a0=hartid=0`, `a1=0x87f00000` をpayloadへ渡し、RAM image内にDTBを配置 |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
 | `make test-os2-min` | Pass | S-mode遷移、SBI putchar、SBI set_timer、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回 |
@@ -124,6 +126,8 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 
 - `make test-uart` がPass
 - `make test-uart-regs` がPass
+- `make dtb` がPass
+- `make test-linux-bootargs` がPass
 - UART初期化コードが `DLL/DLM/LCR/IER/FCR/MCR/SCR` に触っても止まらない
 - DTBの `reg`, `reg-shift`, `reg-io-width` がRTLと一致する
 

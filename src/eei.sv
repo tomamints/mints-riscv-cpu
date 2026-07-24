@@ -49,7 +49,7 @@ package eei;
 	localparam int MEMBUS_DATA_WIDTH = 64;
 
 	//RAM
-	localparam int RAM_ADDR_WIDTH = 16;
+	localparam int RAM_ADDR_WIDTH = 24;
 	localparam int RAM_DATA_WIDTH = 64;
 	localparam Addr MMAP_RAM_BEGIN = Addr'('h8000_0000);
 

@@ -13,6 +13,7 @@ RISCV_PREFIX ?= /Users/shiraitouma/riscv/bin/riscv64-unknown-elf-
 RISCV_GCC ?= $(RISCV_PREFIX)gcc
 RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy
 RISCV_CFLAGS ?= -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany -nostdlib -nostartfiles
+DTC ?= dtc
 
 # Restrict environments may lack a working xargs, provide our shim.
 export PATH := $(abspath tools):$(PATH)
@@ -72,12 +73,26 @@ OS2_MIN_BUILD_DIR ?= build/os2_min
 OS2_MIN_ELF = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).elf
 OS2_MIN_BIN = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin
 OS2_MIN_HEX = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin.hex
+DTS ?= platform/riscv_cpu.dts
+DTB ?= build/platform/riscv_cpu.dtb
+LINUX_BOOTROM_ADDR ?= 0x80000000
+LINUX_DTB_ADDR ?= 0x87f00000
+LINUX_DTB_OFFSET ?= 0x7f00000
+LINUX_RAM_SIZE ?= 0x8000000
+LINUX_BOOTROM_SRC ?= platform/bootrom_linux.S
+LINUX_BOOTROM_OBJ = build/platform/bootrom_linux.o
+LINUX_BOOTROM_BIN = build/platform/bootrom_linux.bin
+LINUX_BOOTROM_HEX = build/platform/bootrom_linux.hex
+BOOTARGS_CHECK_SRC ?= platform/bootargs_check.S
+BOOTARGS_CHECK_ELF = build/platform/bootargs_check.elf
+BOOTARGS_CHECK_BIN = build/platform/bootargs_check.bin
+BOOTARGS_CHECK_RAM_HEX = build/platform/bootargs_check_ram.hex
 
 # =====================================================
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-regs test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
 
 
 
@@ -167,6 +182,34 @@ c-test-build:
 
 c-test: $(SIM) bootrom-build c-test-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(C_TEST_HEX) $(CYCLES)
+
+dtb: $(DTB)
+
+$(DTB): $(DTS)
+	mkdir -p $(dir $@)
+	$(DTC) -I dts -O dtb -o $@ $<
+
+linux-bootrom-build: $(LINUX_BOOTROM_HEX)
+
+$(LINUX_BOOTROM_HEX): $(LINUX_BOOTROM_SRC)
+	mkdir -p $(dir $@)
+	$(RISCV_GCC) $(RISCV_CFLAGS) -c $< -o $(LINUX_BOOTROM_OBJ)
+	$(RISCV_OBJCOPY) -O binary $(LINUX_BOOTROM_OBJ) $(LINUX_BOOTROM_BIN)
+	$(PYTHON) core/test/bin2hex.py 8 $(LINUX_BOOTROM_BIN) > $@
+
+$(BOOTARGS_CHECK_BIN): $(BOOTARGS_CHECK_SRC) core/test/link.ld
+	mkdir -p $(dir $@)
+	$(RISCV_GCC) $(RISCV_CFLAGS) -T core/test/link.ld $< -o $(BOOTARGS_CHECK_ELF)
+	$(RISCV_OBJCOPY) -O binary $(BOOTARGS_CHECK_ELF) $@
+
+linux-ram-image: $(BOOTARGS_CHECK_RAM_HEX)
+
+$(BOOTARGS_CHECK_RAM_HEX): $(BOOTARGS_CHECK_BIN) $(DTB)
+	$(PYTHON) tools/make_linux_ram_hex.py --payload $(BOOTARGS_CHECK_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) -o $@
+
+test-linux-bootargs: CYCLES=20000
+test-linux-bootargs: $(SIM) linux-bootrom-build linux-ram-image
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(LINUX_BOOTROM_HEX) $(BOOTARGS_CHECK_RAM_HEX) $(CYCLES)
 
 test-output: C_TEST=debug_output
 test-output: CYCLES=10000

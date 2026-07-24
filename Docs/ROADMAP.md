@@ -507,6 +507,25 @@ satp = 0
 - timer / ACLINT / CLINT
 - PLIC
 
+現在:
+
+- `platform/riscv_cpu.dts` を追加済み
+- `make dtb` で `build/platform/riscv_cpu.dtb` を生成できる
+- `platform/bootrom_linux.S` で `a0=hartid=0`, `a1=0x80070000` を設定して `0x80000000` へジャンプするboot pathを追加済み
+- `tools/make_linux_ram_hex.py` でpayloadとDTBを1つのRAM hexにまとめられる
+- `make test-linux-bootargs` でLinux boot ABIの `a0/a1` 受け渡しを確認済み
+- RAMは `RAM_ADDR_WIDTH=24`, `RAM_DATA_WIDTH=64` に合わせて `0x80000000..0x87ffffff` の128MiBとして記述
+- UARTは `serial@10000000`, `compatible = "ns16550a"`, `reg-shift = <0>`, `reg-io-width = <1>` として記述
+- CPU ISA文字列は現在確認済みの範囲に合わせて `rv64imac_zicsr`
+- `chosen.bootargs` は通常consoleを後回しにし、`earlycon=uart8250,mmio,0x10000000 ignore_loglevel`
+- Linux boot ABI用bootromは `a1=0x87f00000` を渡し、DTBはRAM末尾付近へ配置
+- PLIC未実装のため、UART interruptはまだ記述していない
+
+次:
+
+- OpenSBIまたはLinux ImageをRAM payloadとして置くtargetを用意する
+- PLIC実装後にUART interrupt numberとDTBを一致させる
+
 注意:
 
 - DTB の address map と RTL の address map を一致させる
@@ -541,10 +560,10 @@ shell
 
 直近でやる順番:
 
-1. 最小DTBを用意し、UART nodeをRTLのaddress mapと一致させる
+1. OpenSBIまたはLinux ImageをRAM payloadとして置くtargetを用意する
 2. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る
 3. PTWメモリエラー発生源とaccess fault経路を整理する
-4. `sfence.vma` と将来TLBの接続方針を整理する
+4. `fence.i` / `zifencei` の正式確認を行い、DTB ISA文字列へ反映する
 5. Linux earlyconのログから不足device/CSRを埋める
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

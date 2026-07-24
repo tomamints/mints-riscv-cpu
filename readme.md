@@ -185,6 +185,19 @@ rv64si-p  7 / 7
 
 より広い suite の結果は `Docs/TEST_STATUS.md` を参照してください。注意点として、`F`, `D`, `Zb*`, `Zfh` 系は現状の実装から正式サポートとは扱っていません。
 
+## Platform DTB
+
+Linux/OpenSBI bring-up向けの最小DTSは `platform/riscv_cpu.dts` です。現RTLのaddress mapに合わせて、RAMを `0x80000000` から128MiB、UARTを `0x10000000` に置いています。
+
+```sh
+make dtb
+make test-linux-bootargs
+```
+
+生成物は `build/platform/riscv_cpu.dtb` です。現時点ではPLICが未実装のため、UART interruptはDTBに書いていません。まずは `earlycon=uart8250,mmio,0x10000000` によるpolling出力の確認を狙います。
+
+`test-linux-bootargs` は、Linux boot ABIに合わせた最小bootromを使い、`a0=hartid=0`、`a1=0x87f00000` をRAM payloadへ渡せることを確認します。DTBはRAM image内の `0x87f00000` に配置します。
+
 ### Custom C Tests
 
 `core/test/*.c` は、RISC-V cross compiler で ELF / binary / hex を生成して simulator で実行できます。default の compile option は compressed instruction を避けつつ CSR 命令を許可するため `-march=rv64ima_zicsr` です。

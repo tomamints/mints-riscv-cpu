@@ -116,6 +116,13 @@ These suites are outside the currently claimed implementation scope and were not
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=120000` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c` | Pass | S-modeから`sstatus.SPP=U`、`sepc=user_entry`、`sret`でU-modeへ入り、U-mode `ecall` が`scause=8`でS-mode trapへ入ること、1回目のsyscall戻り値でU-modeへ復帰できること、2回目をexit syscallとして処理できることを確認 |
 | `make test-os2-min-sv39` | `core/test/os2_min/kernel.c`, `tests.c`, `trap.c` | Pass | S-modeで3段page tableを作成し、`satp.MODE=8`でdata-sideとfetch-sideのSv39を有効化。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM=0/1、MXR=0/1、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultを確認 |
 
+## Platform Build Tests
+
+| Target | Source | Result | Notes |
+|---|---|---:|---|
+| `make dtb` | `platform/riscv_cpu.dts` | Pass | 最小DTBを生成。RAM `0x80000000/0x08000000`、UART `serial@10000000`、`reg-shift=0`、`reg-io-width=1`、earlycon bootargsを記述 |
+| `make test-linux-bootargs` | `platform/bootrom_linux.S`, `platform/bootargs_check.S`, `platform/riscv_cpu.dts` | Pass | bootromが `a0=0`, `a1=0x87f00000` を設定して `0x80000000` へジャンプし、payloadが受け取れることを確認 |
+
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 
 S-mode `sepc` 更新失敗は、CSR write mask table に `SEPC` がなく `wmask=0` になっていたことが原因でした。現在は `SEPC_WMASK` を適用し、S-mode trap handler から `sepc` を更新できます。
