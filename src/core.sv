@@ -327,7 +327,7 @@ module core (
 			.priv_mode(csru_priv_mode),
 			.access_start(memaddr),
 			.access_size(loadstore_access_size),
-			.is_write(inst_is_store(exs_ctrl)),
+			.is_write(inst_is_store(exs_ctrl) || exs_ctrl.is_amo),
 			.pmpcfg0(pmpcfg0_value),
 			.pmpaddr0(pmpaddr0_value),
 			.pmpaddr1(pmpaddr1_value),
@@ -376,7 +376,7 @@ module core (
 				end else if (loadstore_address_misaligned) begin
 					memq_wdata.expt.valid = 1;
 					memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ADDRESS_MISALIGNED : STORE_AMO_ADDRESS_MISALIGNED;
-					memq_wdata.expt.value = exs_alu_result;
+					memq_wdata.expt.value = memaddr;
 				end else if (loadstore_pmp_fault) begin
 					memq_wdata.expt.valid = 1;
 					memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ACCESS_FAULT : STORE_AMO_ACCESS_FAULT;
