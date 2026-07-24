@@ -24,12 +24,15 @@ module csrunit (
 	output UIntX pmpaddr1_value,
 	output UIntX pmpaddr2_value,
 	output UIntX pmpaddr3_value,
+	output UIntX satp_value,
+	output logic sstatus_sum,
+	output logic sstatus_mxr,
 	input  UInt64  minstret,
 	aclint_if.slave aclint
 );
 
 //WMASK determines which bit can change or not. WARL can write anything but read legal.
-	localparam UIntX MSTATUS_WMASK = UIntX'('h0000_0000_0060_19aa) ;
+	localparam UIntX MSTATUS_WMASK = UIntX'('h0000_0000_006c_19aa) ;
 	localparam UIntX MTVEC_WMASK  = 'hffff_ffff_ffff_fffd; //MTVECは[1:0]はMODE設定
 	localparam UIntX MEDELEG_WMASK  = 'hffff_ffff_ffff_f7ff;
 	localparam UIntX MIDELEG_WMASK  = UIntX'('h0000_0000_0000_0222);
@@ -40,7 +43,7 @@ module csrunit (
 	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_02aa);
-	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_0000_0122);
+	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_000c_0122);
 	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
@@ -49,6 +52,7 @@ module csrunit (
 	localparam UIntX SEPC_WMASK   = 'hffff_ffff_ffff_fffe;
 	localparam UIntX SCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX STVAL_WMASK  = 'hffff_ffff_ffff_ffff;
+	localparam UIntX SATP_WMASK   = 'hffff_ffff_ffff_ffff;
 
 
 	//read masks
@@ -120,6 +124,7 @@ module csrunit (
 	UIntX mhartid = 0;
 	UIntX mstatus, mtvec, mideleg, mie, mip, mip_reg, mscratch, mepc, mcause, mtval;
 	UIntX pmpcfg0, pmpaddr0, pmpaddr1, pmpaddr2, pmpaddr3;
+	UIntX satp;
 	UInt32 mcounteren;
 	UInt64 mcycle, medeleg;
 
@@ -128,6 +133,9 @@ module csrunit (
 	assign pmpaddr1_value = pmpaddr1;
 	assign pmpaddr2_value = pmpaddr2;
 	assign pmpaddr3_value = pmpaddr3;
+	assign satp_value = satp;
+	assign sstatus_sum = mstatus[18];
+	assign sstatus_mxr = mstatus[19];
 
 	assign mip = mip_reg | {
 		{(XLEN - 12){1'b0}},
@@ -328,6 +336,7 @@ module csrunit (
 			STVAL   : rdata = stval;
 			SIP     : rdata = sip;
 			SIE     : rdata = sie & mideleg;
+			SATP    : rdata = satp;
 			CYCLE   : rdata = mcycle;
 			TIME    : rdata = aclint.mtime;
 			INSTRET : rdata = minstret;
@@ -361,6 +370,7 @@ module csrunit (
 			STVAL : wmask = STVAL_WMASK;
 			SIP : wmask = SIP_WMASK & mideleg;
 			SIE : wmask = SIE_WMASK & mideleg;
+			SATP : wmask = SATP_WMASK;
 			default       : wmask = '0;
 		endcase
 
@@ -407,6 +417,7 @@ module csrunit (
 			pmpaddr1 <= '0;
 			pmpaddr2 <= '0;
 			pmpaddr3 <= '0;
+			satp <= '0;
 			mcounteren <= '0;
 			mscratch <= '0;
 			mcycle   <= '0;
@@ -504,6 +515,7 @@ module csrunit (
 							STVAL : stval <= wdata;
 							SIP : mip_reg <= (mip_reg & ~(SIP_WMASK & mideleg)) | (wdata & (SIP_WMASK & mideleg)) | set_s_interrupt_pending;
 							SIE : sie <= wdata;
+							SATP : satp <= wdata;
 							default  : /* do nothing */ ;
 						endcase
 					end

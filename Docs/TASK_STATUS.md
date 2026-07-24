@@ -30,7 +30,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認まで到達済みです。Linux起動を優先するため、次はSv39 identity mappingへ進みます。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data-side identity mapping、SUM/MXR基本permissionまで到達済みです。Linux起動を優先するため、次は命令fetch側Sv39とpage fault確認へ進みます。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -38,9 +38,9 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | Sv39 MMU | Linux起動の必須要素。まずidentity mappingで変換経路だけ確認する |
-| 2 | instruction/data page fault | Linux bring-up前にfault causeと`stval`を確認する |
-| 3 | `sfence.vma` | 最初は全flush扱いでよいが、命令として必要 |
+| 1 | instruction fetch側Sv39 | Linux起動には命令fetchもVA->PA変換が必要 |
+| 2 | Sv39 page fault追加 | store/fetch page fault、instruction page faultを確認する |
+| 3 | Sv39補完 | L2 superpageテスト、PTWメモリエラー方針、将来TLB用の`sfence.vma`整理 |
 | 4 | Linux-oriented UART/DTB | early consoleとplatform記述に必要 |
 | 5 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
 
@@ -63,12 +63,12 @@ M-mode trap
 | U-mode transition | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。必要になったらU-mode stack分離やCSR faultを追加 |
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
-| Sv39 | Not started | none | `satp.MODE=8`, 3-level walk, 4KiB identity mapping |
+| Sv39 | Pass / data-side minimal | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideから利用中。identity load/store、2MiB L1 superpage、unmapped fault、SUM、MXRは確認済み。次は命令fetch側Sv39、store/fetch page fault、L2 superpageテスト、TLB |
 | Linux platform | Not started | none | UART, PLIC, DTB, OpenSBI/Linux image |
 
 ## テスト一覧
 
-Linux起動を大目標にするため、U-mode syscallは最小確認済みで一旦区切ります。次の主作業はSv39最小identity mappingです。
+Linux起動を大目標にするため、U-mode syscallは最小確認済みで一旦区切ります。Sv39はdata-side最小identity mapping、2MiB L1 superpage、SUM/MXRまで確認済みで、PTWは `sv39_ptw.sv` に分離済みです。次の主作業は命令fetch側Sv39です。
 
 ### Custom Tests
 
@@ -83,6 +83,7 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-os2-min-input INPUT_TEXT=Z` | Pass | SBI経由のdebug MMIO input |
 | `make test-os2-min-strap` | Pass | `medeleg[9]=1`, S-mode ecallがS-mode `stvec` へ入る |
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` | Pass | PMP禁止TOR領域へのS-mode load/store/fetchで `scause=5/7/1`, `stval=fault address`。禁止storeでRAM値が変化しないこと、fetchがRではなくXを見ること、32-bit命令後半2byteのX禁止も確認 |
+| `make test-os2-min-sv39` | Pass | S-modeで`satp.MODE=8`を設定し、4KiB PTEの3-level page walkでdata load/storeをidentity mapping。2MiB L1 superpage、未map load、SUM=0/1、MXR=0/1を確認 |
 
 ### riscv-tests Summary
 
@@ -208,3 +209,4 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 - SBI用途では `medeleg[9]=0` として、S-mode `ecall` をM-modeへ上げる
 - 本来のOS syscallは `medeleg[8]=1` として、U-mode `ecall` をS-modeへ上げる
 - Linuxへ行く前に、SBI / timer / PMP / U-mode / Sv39 を小さいテストで潰す
+- 現在のSv39はdata-sideのみ。命令fetch側はまだ物理PCのままなので、Linux起動前に必ず対応する

@@ -36,6 +36,8 @@ void supervisor_main(void) {
     test_pmp_data_fault();
 #elif defined(OS2_MIN_USER)
     test_umode_transition();
+#elif defined(OS2_MIN_SV39)
+    test_sv39_data_identity();
 #else
     test_smode_basic();
     test_sbi_putchar();
@@ -48,7 +50,7 @@ void supervisor_main(void) {
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-#if defined(OS2_MIN_INPUT) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_NO_INPUT) || defined(OS2_MIN_PMP) || defined(OS2_MIN_USER)
+#if defined(OS2_MIN_INPUT) || defined(OS2_MIN_STRAP) || defined(OS2_MIN_NO_INPUT) || defined(OS2_MIN_PMP) || defined(OS2_MIN_USER) || defined(OS2_MIN_SV39)
     printf("OS2 min S-mode test\n");
 #ifdef OS2_MIN_PMP
     uintptr_t protected_start = (uintptr_t) &pmp_protected_word;
@@ -68,6 +70,9 @@ void kernel_main(void) {
 #endif
 #ifdef OS2_MIN_USER
     WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << MCAUSE_ECALL_FROM_U));
+#endif
+#ifdef OS2_MIN_SV39
+    WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << LOAD_PAGE_FAULT) | (1UL << STORE_AMO_PAGE_FAULT));
 #endif
 #ifdef OS2_MIN_NO_INPUT
     WRITE_CSR(mideleg, READ_CSR(mideleg) | MIDELEG_STI);

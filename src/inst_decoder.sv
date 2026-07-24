@@ -92,7 +92,8 @@ module inst_decoder(
 						(bits == 32'h00100073)        || // EBREAK
 						(bits == 32'h30200073)        || // MRET
 						(bits == 32'h10200073)        || // SRET
-						(bits == 32'h10500073);  //WFI
+						(bits == 32'h10500073)        || //WFI
+						(f3 == 3'b000 && f7 == 7'b0001001); // SFENCE.VMA
 			end
 
 			OP_MISC_MEM: begin
@@ -193,8 +194,8 @@ module inst_decoder(
 		end
 		OP_SYSTEM:begin
 			ctrl.itype = INST_I;
-			ctrl.rwb_en = T;
-			ctrl.is_csr = T;
+			ctrl.rwb_en = (f3 != 3'b000);
+			ctrl.is_csr = (f3 != 3'b000);
 		end
 		OP_AMO:begin
 			ctrl.itype = INST_R;

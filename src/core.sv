@@ -308,6 +308,9 @@ module core (
 		UIntX pmpaddr1_value;
 		UIntX pmpaddr2_value;
 		UIntX pmpaddr3_value;
+		UIntX satp_value;
+		logic sstatus_sum;
+		logic sstatus_mxr;
 		logic pmp_data_allow;
 		PrivMode csru_priv_mode;
 		UIntX csru_rdata;
@@ -425,21 +428,29 @@ module core (
 
 		UIntX memu_rdata;
 		logic memu_stall;
+		ExceptionInfo memu_expt;
+		ExceptionInfo csru_expt_info;
 		Addr memu_addr;
 		assign memu_addr = mems_ctrl.is_amo ? memq_rdata.rs1_data : memq_rdata.alu_result;
+		assign csru_expt_info = mems_expt.valid ? mems_expt : memu_expt;
 
 		memunit memu (
 			.clk    (clk),
 			.rst    (rst),
 			.valid  (mems_valid && !csru_raise_trap && !mems_expt.valid),
 			.is_new (mems_is_new),
-		.ctrl   (mems_ctrl),
-		.addr   (memu_addr),
-		.rs2    (memq_rdata.rs2_data),
-		.rdata  (memu_rdata),
-		.stall  (memu_stall),
-		.membus (d_membus)
-	);
+			.ctrl   (mems_ctrl),
+			.priv_mode(csru_priv_mode),
+			.satp   (satp_value),
+			.sstatus_sum(sstatus_sum),
+			.sstatus_mxr(sstatus_mxr),
+			.addr   (memu_addr),
+			.rs2    (memq_rdata.rs2_data),
+			.rdata  (memu_rdata),
+			.stall  (memu_stall),
+			.expt   (memu_expt),
+			.membus (d_membus)
+		);
 
 		csrunit csru(
 		.clk      (clk),
@@ -448,7 +459,7 @@ module core (
 		.pc       (mems_pc),
 		.inst_bits(mems_inst_bits),
 		.ctrl     (mems_ctrl),
-		.expt_info(mems_expt),
+		.expt_info(csru_expt_info),
 		.rd_addr  (mems_rd_addr),
 		.csr_addr (mems_inst_bits[31:20]),
 		.rs1_addr (memq_rdata.rs1_addr),
@@ -464,6 +475,9 @@ module core (
 			.pmpaddr1_value(pmpaddr1_value),
 			.pmpaddr2_value(pmpaddr2_value),
 			.pmpaddr3_value(pmpaddr3_value),
+			.satp_value(satp_value),
+			.sstatus_sum(sstatus_sum),
+			.sstatus_mxr(sstatus_mxr),
 			.minstret (minstret),
 			.aclint(aclint)
 		);

@@ -78,6 +78,7 @@ void test_sbi_timer(void);
 void test_smode_trap(void);
 void test_pmp_data_fault(void);
 void test_umode_transition(void);
+void test_sv39_data_identity(void);
 
 extern volatile uint64_t pmp_protected_word;
 extern volatile int pmp_load_fault_seen;
@@ -88,6 +89,11 @@ void pmp_protected_exec_target(void);
 void pmp_cross_exec_target(void);
 extern volatile int umode_step;
 extern volatile int umode_ecall_seen;
+extern volatile int sv39_load_fault_seen;
+extern volatile int sv39_sum_fault_seen;
+extern volatile int sv39_mxr_fault_seen;
+extern volatile uint64_t sv39_user_page[512];
+extern volatile uint64_t sv39_exec_page[512];
 
 #define READ_CSR(reg)\
     ({\
@@ -135,6 +141,8 @@ struct process
 //S MODE
 #define SSTATUS_SPIE (1 << 5)
 #define SSTATUS_SPP (1UL << 8)
+#define SSTATUS_SUM (1UL << 18)
+#define SSTATUS_MXR (1UL << 19)
 
 #define SCAUSE_ECALL 8
 #define MSTATUS_MIE (1UL << 3)
@@ -158,6 +166,9 @@ struct process
 #define INSTRUCTION_ACCESS_FAULT 1
 #define LOAD_ACCESS_FAULT 5
 #define STORE_AMO_ACCESS_FAULT 7
+#define INSTRUCTION_PAGE_FAULT 12
+#define LOAD_PAGE_FAULT 13
+#define STORE_AMO_PAGE_FAULT 15
 
 #define SBI_SUCCESS 0
 #define SBI_ERR_NOT_SUPPORTED -2

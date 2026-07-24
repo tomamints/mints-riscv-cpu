@@ -21,6 +21,7 @@ src/alu.sv
 src/brunit.sv
 src/csrunit.sv
 src/pmp_checker.sv
+src/sv39_ptw.sv
 src/muldivunit.sv
 src/memunit.sv
 src/amounit.sv

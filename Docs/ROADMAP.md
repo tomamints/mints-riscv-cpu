@@ -14,6 +14,7 @@
 - S-mode `ecall` が M-mode の SBI dispatcher へ入り、debug console putchar/getchar が動く
 - SBI TIME `set_timer` が M-mode firmware経由で ACLINT `mtimecmp` を設定し、machine timer interrupt を発生できる
 - M-mode timer handlerがSTIPを注入し、S-mode `stvec` で supervisor timer interrupt を受けられる
+- `satp.MODE=8` を保持し、data-sideのSv39 3-level page table walkで4KiB identity mappingを確認できる
 
 注意点:
 
@@ -345,6 +346,30 @@ M-mode firmware
 - instruction/load/store page fault
 - `sfence.vma` は全flushまたはno-op相当から開始
 
+現在:
+
+- `satp` CSRをread/writeできる
+- `sv39_ptw.sv` に3-level page table walkerを分離し、data-side load/storeから利用している
+- 4KiB PTEだけを3-level walkする
+- 先頭2MiB RAMとdebug MMIO 1ページのidentity mappingでS-mode load/storeが成功する
+- 未map addressのloadで `LOAD_PAGE_FAULT`, `stval=fault VA` を確認済み
+- `SUM=0/1` によるS-modeからUページへのdata access制御を確認済み
+- `MXR=0/1` によるexecute-onlyページのload制御を確認済み
+- 非leaf PTEの予約bitとmisaligned superpageはpage faultにする
+- 2MiB L1 superpage aliasのloadを確認済み
+- 1GiB L2 superpageのPA合成はPTWに実装済み。ただし専用テストは未追加
+- `sfence.vma` はTLBなしのためno-op命令として受ける
+
+未対応:
+
+- instruction fetch側のSv39
+- store page fault / instruction page faultのSv39専用テスト
+- L2 superpage専用テスト
+- PTW中のPTE読み出しに対するbus/PMP error入力
+- TLB / ASID
+- A/D bitのhardware update
+- permissionの厳密な仕様準拠
+
 最初のテスト:
 
 ```text
@@ -353,7 +378,7 @@ VA 0x8000_0000
 PA 0x8000_0000
 ```
 
-最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。これにより、アドレス配置の変更ではなく、`satp`有効化、PTE walk、permission、page faultに集中できます。
+最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、2MiB L1 superpage、未map load page fault、SUM/MXRの基本permissionまで確認済みです。次は命令fetch側からも `sv39_ptw.sv` を使えるようにします。
 
 ## Phase 10: Linux-oriented Devices
 
@@ -493,9 +518,9 @@ shell
 
 直近でやる順番:
 
-1. Sv39の最小identity mappingへ進む
-2. instruction/load/store page faultを確認する
-3. `sfence.vma` を全flushまたはno-op相当で受ける
+1. instruction fetch側にもSv39変換を入れる
+2. Sv39のstore page faultとinstruction page faultを確認する
+3. L2 superpageテストとPTWメモリエラー方針を追加する
 4. NS16550A polling UARTを追加する
 5. 最小DTBを用意する
 6. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る

@@ -7,8 +7,86 @@ volatile int pmp_exec_fault_seen = -1;
 volatile int pmp_cross_exec_fault_seen = -1;
 volatile int umode_step = -1;
 volatile int umode_ecall_seen = -1;
+volatile int sv39_load_fault_seen = -1;
+volatile int sv39_sum_fault_seen = -1;
+volatile int sv39_mxr_fault_seen = -1;
 
 #define PMP_PROTECTED_WORD_INITIAL 0x1122334455667788ULL
+
+#ifdef OS2_MIN_SV39
+volatile uint64_t sv39_test_word __attribute__((aligned(8))) = 0x13579bdf2468ace0ULL;
+volatile uint64_t sv39_user_page[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0x123456789abcdef0ULL
+};
+volatile uint64_t sv39_exec_page[512] __attribute__((aligned(PAGE_SIZE))) = {
+    [0] = 0xfeedfacecafebeefULL
+};
+
+static uint64_t sv39_root_pt[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_ram_l1[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_ram_l0[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_debug_l1[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t sv39_debug_l0[512] __attribute__((aligned(PAGE_SIZE)));
+
+#define SV39_PTE_FLAGS (PAGE_V | PAGE_R | PAGE_W | PAGE_X | PAGE_A | PAGE_D)
+#define SV39_DEBUG_ADDR 0x40000000UL
+#define SV39_RAM_BASE 0x80000000UL
+#define SV39_SUPERPAGE_ALIAS (SV39_RAM_BASE + 0x200000UL)
+
+static uint64_t sv39_make_pte(uintptr_t pa, uint64_t flags) {
+    return ((pa >> 12) << 10) | flags;
+}
+
+static void sv39_map_page(uintptr_t va, uintptr_t pa, uint64_t flags) {
+    uint64_t vpn2 = (va >> 30) & 0x1ff;
+    uint64_t vpn1 = (va >> 21) & 0x1ff;
+    uint64_t vpn0 = (va >> 12) & 0x1ff;
+    uint64_t *l0;
+
+    if (va >= SV39_RAM_BASE && va < SV39_RAM_BASE + 0x200000UL) {
+        sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_ram_l1, PAGE_V);
+        sv39_ram_l1[vpn1] = sv39_make_pte((uintptr_t) sv39_ram_l0, PAGE_V);
+        l0 = sv39_ram_l0;
+    } else if (va >= SV39_DEBUG_ADDR && va < SV39_DEBUG_ADDR + PAGE_SIZE) {
+        sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_debug_l1, PAGE_V);
+        sv39_debug_l1[vpn1] = sv39_make_pte((uintptr_t) sv39_debug_l0, PAGE_V);
+        l0 = sv39_debug_l0;
+    } else {
+        PANIC("sv39_map_page unsupported va=%lx", va);
+    }
+
+    l0[vpn0] = sv39_make_pte(pa, flags);
+}
+
+static void sv39_build_identity_map(void) {
+    memset(sv39_root_pt, 0, sizeof(sv39_root_pt));
+    memset(sv39_ram_l1, 0, sizeof(sv39_ram_l1));
+    memset(sv39_ram_l0, 0, sizeof(sv39_ram_l0));
+    memset(sv39_debug_l1, 0, sizeof(sv39_debug_l1));
+    memset(sv39_debug_l0, 0, sizeof(sv39_debug_l0));
+
+    for (uintptr_t pa = SV39_RAM_BASE;
+         pa < SV39_RAM_BASE + 0x200000UL;
+         pa += PAGE_SIZE) {
+        sv39_map_page(pa, pa, SV39_PTE_FLAGS);
+    }
+    sv39_map_page(SV39_DEBUG_ADDR, SV39_DEBUG_ADDR, PAGE_V | PAGE_R | PAGE_W | PAGE_A | PAGE_D);
+}
+
+static void sv39_remap_page(uintptr_t va, uint64_t flags) {
+    sv39_map_page(va, va, flags);
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+}
+
+static void sv39_map_l1_superpage(uintptr_t va, uintptr_t pa, uint64_t flags) {
+    uint64_t vpn2 = (va >> 30) & 0x1ff;
+    uint64_t vpn1 = (va >> 21) & 0x1ff;
+
+    sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_ram_l1, PAGE_V);
+    sv39_ram_l1[vpn1] = sv39_make_pte(pa, flags);
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+}
+#endif
 
 __attribute__((noinline, aligned(8)))
 void pmp_protected_exec_target(void) {
@@ -156,4 +234,69 @@ void test_umode_transition(void) {
     WRITE_CSR(sepc, (uintptr_t) user_entry);
     __asm__ __volatile__("sret");
     PANIC("returned from U-mode test");
+}
+
+void test_sv39_data_identity(void) {
+#ifdef OS2_MIN_SV39
+    printf("Sv39 data identity test\n");
+    WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
+
+    sv39_build_identity_map();
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+    WRITE_CSR(satp, SATP_SV39 | ((uintptr_t) sv39_root_pt >> 12));
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+
+    uint64_t value = sv39_test_word;
+    if (value != 0x13579bdf2468ace0ULL)
+        PANIC("Sv39 load identity failed value=%lx", value);
+
+    sv39_test_word = 0x0badc0de12345678ULL;
+    if (sv39_test_word != 0x0badc0de12345678ULL)
+        PANIC("Sv39 store identity failed value=%lx", sv39_test_word);
+    printf("Sv39 identity load/store OK\n");
+
+    sv39_map_l1_superpage(SV39_SUPERPAGE_ALIAS, SV39_RAM_BASE, SV39_PTE_FLAGS);
+    uint64_t superpage_base_value = *(volatile uint64_t *) SV39_RAM_BASE;
+    uint64_t superpage_alias_value = *(volatile uint64_t *) SV39_SUPERPAGE_ALIAS;
+    if (superpage_alias_value != superpage_base_value)
+        PANIC("Sv39 L1 superpage failed value=%lx expected=%lx", superpage_alias_value, superpage_base_value);
+    printf("Sv39 L1 superpage OK\n");
+
+    sv39_load_fault_seen = 0;
+    __asm__ __volatile__("ld zero, 0(%0)" :: "r" (0x60000000UL) : "memory");
+    if (!sv39_load_fault_seen)
+        PANIC("Sv39 load page fault was not raised");
+    printf("Sv39 load page fault OK\n");
+
+    uintptr_t saved_sstatus = READ_CSR(sstatus);
+
+    sv39_remap_page((uintptr_t) sv39_user_page, PAGE_V | PAGE_R | PAGE_W | PAGE_U | PAGE_A | PAGE_D);
+    WRITE_CSR(sstatus, saved_sstatus & ~SSTATUS_SUM);
+    sv39_sum_fault_seen = 0;
+    __asm__ __volatile__("ld zero, 0(%0)" :: "r" (sv39_user_page) : "memory");
+    if (!sv39_sum_fault_seen)
+        PANIC("Sv39 SUM=0 fault was not raised");
+    WRITE_CSR(sstatus, saved_sstatus | SSTATUS_SUM);
+    value = sv39_user_page[0];
+    if (value != 0x123456789abcdef0ULL)
+        PANIC("Sv39 SUM=1 load failed value=%lx", value);
+    WRITE_CSR(sstatus, saved_sstatus);
+    printf("Sv39 SUM permission OK\n");
+
+    sv39_remap_page((uintptr_t) sv39_exec_page, PAGE_V | PAGE_X | PAGE_A | PAGE_D);
+    WRITE_CSR(sstatus, saved_sstatus & ~SSTATUS_MXR);
+    sv39_mxr_fault_seen = 0;
+    __asm__ __volatile__("ld zero, 0(%0)" :: "r" (sv39_exec_page) : "memory");
+    if (!sv39_mxr_fault_seen)
+        PANIC("Sv39 MXR=0 fault was not raised");
+    WRITE_CSR(sstatus, saved_sstatus | SSTATUS_MXR);
+    value = sv39_exec_page[0];
+    if (value != 0xfeedfacecafebeefULL)
+        PANIC("Sv39 MXR=1 load failed value=%lx", value);
+    WRITE_CSR(sstatus, saved_sstatus);
+    printf("Sv39 MXR permission OK\n");
+
+    WRITE_CSR(satp, 0);
+    __asm__ __volatile__("sfence.vma" ::: "memory");
+#endif
 }

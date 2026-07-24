@@ -96,6 +96,27 @@ void supervisor_trap_handler(struct trap_frame *f) {
     }
 #endif
 
+#ifdef OS2_MIN_SV39
+    if (scause == LOAD_PAGE_FAULT && stval == 0x60000000UL) {
+        printf("Sv39 load page fault stval=%lx\n", stval);
+        sv39_load_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
+    if (scause == LOAD_PAGE_FAULT && stval == (uintptr_t) sv39_user_page) {
+        printf("Sv39 SUM load page fault stval=%lx\n", stval);
+        sv39_sum_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
+    if (scause == LOAD_PAGE_FAULT && stval == (uintptr_t) sv39_exec_page) {
+        printf("Sv39 MXR load page fault stval=%lx\n", stval);
+        sv39_mxr_fault_seen = 1;
+        WRITE_CSR(sepc, sepc + 4);
+        return;
+    }
+#endif
+
     if (scause == SCAUSE_SUPERVISOR_TIMER_INTERRUPT) {
         printf("S timer interrupt\n");
         WRITE_CSR(sip, READ_CSR(sip) & ~SIP_STIP);

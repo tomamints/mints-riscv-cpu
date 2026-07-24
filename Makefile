@@ -77,7 +77,7 @@ OS2_MIN_HEX = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin.hex
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace run clean test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 trace-c-test trace-output trace-dma
 
 
 
@@ -200,7 +200,7 @@ os2-min-build:
 	$(RISCV_OBJCOPY) -O binary $(OS2_MIN_ELF) $(OS2_MIN_BIN)
 	$(PYTHON) core/test/bin2hex.py 8 $(OS2_MIN_BIN) > $(OS2_MIN_HEX)
 
-test-os2-min: CYCLES=120000
+test-os2-min: CYCLES=500000
 test-os2-min: OS2_MIN_DEFS=-DOS2_MIN_NO_INPUT
 test-os2-min: $(SIM) bootrom-build os2-min-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
@@ -215,6 +215,12 @@ test-os2-min-strap: CYCLES=50000
 test-os2-min-strap: OS2_MIN_DEFS=-DOS2_MIN_STRAP
 test-os2-min-strap: OS2_MIN_NAME=kernel_strap
 test-os2-min-strap: $(SIM) bootrom-build os2-min-build
+	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
+
+test-os2-min-sv39: CYCLES=3000000
+test-os2-min-sv39: OS2_MIN_DEFS=-DOS2_MIN_SV39
+test-os2-min-sv39: OS2_MIN_NAME=kernel_sv39
+test-os2-min-sv39: $(SIM) bootrom-build os2-min-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(OS2_MIN_HEX) $(CYCLES)
 
 trace-c-test: $(TRACE_SIM) bootrom-build c-test-build
