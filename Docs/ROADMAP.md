@@ -349,15 +349,16 @@ M-mode firmware
 現在:
 
 - `satp` CSRをread/writeできる
-- `sv39_ptw.sv` に3-level page table walkerを分離し、data-side load/storeから利用している
+- `sv39_ptw.sv` に3-level page table walkerを分離し、data-side load/storeとinstruction fetchから利用している
 - 4KiB PTEだけを3-level walkする
-- 先頭2MiB RAMとdebug MMIO 1ページのidentity mappingでS-mode load/storeが成功する
+- 先頭256KiB RAMとdebug MMIO 1ページのidentity mappingでS-mode load/store/fetchが成功する
 - 未map addressのloadで `LOAD_PAGE_FAULT`, `stval=fault VA` を確認済み
 - `SUM=0/1` によるS-modeからUページへのdata access制御を確認済み
 - `MXR=0/1` によるexecute-onlyページのload制御を確認済み
 - 非leaf PTEの予約bitとmisaligned superpageはpage faultにする
 - 2MiB L1 / 1GiB L2 superpage aliasのloadを確認済み
 - A/D bitは現時点ではhardware updateせず、A=0 loadとD=0 storeがpage faultになることを確認済み
+- X=0ページへのfetchで `INSTRUCTION_PAGE_FAULT`, `stval=fault VA` を確認済み
 - PTW中のPTE読み出し自体が失敗した場合はpage faultではなく、元アクセス種別に応じたinstruction/load/store access faultにする
 - PTWにPTE読み出しエラー用の `mem_error` 入力はあるが、現在のdata busにはerror応答がないため上位では常時0接続
 - `Sv39Fault` でPTW内部fault理由を保持し、architecturalな `scause=12/13/15` とは別に波形/debugで原因を追える
@@ -365,8 +366,7 @@ M-mode firmware
 
 未対応:
 
-- instruction fetch側のSv39
-- store page fault / instruction page faultのSv39専用テスト
+- W=0 store page faultのSv39専用テスト強化
 - PTW中のPTE読み出しに対するbus/PMP error生成
 - TLB / ASID
 - A/D bitのhardware update要否判断
@@ -380,7 +380,7 @@ VA 0x8000_0000
 PA 0x8000_0000
 ```
 
-最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permissionまで確認済みです。次は命令fetch側からも `sv39_ptw.sv` を使えるようにします。
+最初は仮想アドレスと物理アドレスを同じにして、既存S-modeコードがそのまま動くことを確認します。`make test-os2-min-sv39` ではdata-sideのload/store identity mapping、instruction fetch identity mapping、2MiB L1 / 1GiB L2 superpage、未map load page fault、SUM/MXRの基本permission、A/D fault、X=0 fetch faultまで確認済みです。
 
 ## Phase 10: Linux-oriented Devices
 
@@ -520,9 +520,9 @@ shell
 
 直近でやる順番:
 
-1. instruction fetch側にもSv39変換を入れる
-2. Sv39のstore page faultとinstruction page faultを確認する
-3. PTWメモリエラー方針とMPRV/effective privilegeを追加する
+1. W=0 store page faultのSv39専用テストを強める
+2. PTWメモリエラー方針とMPRV/effective privilegeを追加する
+3. `sfence.vma` と将来TLBの接続方針を整理する
 4. NS16550A polling UARTを追加する
 5. 最小DTBを用意する
 6. OpenSBIまたは独自SBI互換性を確認し、Linux early bootへ入る

@@ -80,6 +80,9 @@ module core_top #(
     UIntX pmpaddr1_fetch_value;
     UIntX pmpaddr2_fetch_value;
     UIntX pmpaddr3_fetch_value;
+    UIntX satp_fetch_value;
+    logic sstatus_sum_fetch_value;
+    logic sstatus_mxr_fetch_value;
 
     logic memarb_last_i;
 
@@ -322,6 +325,9 @@ module core_top #(
         .pmpaddr1  (pmpaddr1_fetch_value),
         .pmpaddr2  (pmpaddr2_fetch_value),
         .pmpaddr3  (pmpaddr3_fetch_value),
+        .satp      (satp_fetch_value),
+        .sstatus_sum(sstatus_sum_fetch_value),
+        .sstatus_mxr(sstatus_mxr_fetch_value),
         .core_if   (i_membus_core),
         .mem_if    (i_membus)
     );
@@ -339,6 +345,9 @@ module core_top #(
         .pmpaddr1_fetch_value(pmpaddr1_fetch_value),
         .pmpaddr2_fetch_value(pmpaddr2_fetch_value),
         .pmpaddr3_fetch_value(pmpaddr3_fetch_value),
+        .satp_fetch_value(satp_fetch_value),
+        .sstatus_sum_fetch_value(sstatus_sum_fetch_value),
+        .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
         .aclint   (aclint_core_bus)
     );
 

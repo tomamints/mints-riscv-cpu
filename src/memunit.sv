@@ -66,6 +66,7 @@ module memunit (
 	sv39_ptw ptw (
 		.clk(clk),
 		.rst(rst),
+		.flush(1'b0),
 		.start(ptw_start),
 		.ready(ptw_ready),
 		.va(req_vaddr),

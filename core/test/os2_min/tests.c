@@ -12,6 +12,7 @@ volatile int sv39_sum_fault_seen = -1;
 volatile int sv39_mxr_fault_seen = -1;
 volatile int sv39_accessed_fault_seen = -1;
 volatile int sv39_dirty_fault_seen = -1;
+volatile int sv39_fetch_fault_seen = -1;
 
 #define PMP_PROTECTED_WORD_INITIAL 0x1122334455667788ULL
 
@@ -39,6 +40,7 @@ static uint64_t sv39_debug_l0[512] __attribute__((aligned(PAGE_SIZE)));
 #define SV39_PTE_FLAGS (PAGE_V | PAGE_R | PAGE_W | PAGE_X | PAGE_A | PAGE_D)
 #define SV39_DEBUG_ADDR 0x40000000UL
 #define SV39_RAM_BASE 0x80000000UL
+#define SV39_IDENTITY_SIZE 0x40000UL
 #define SV39_SUPERPAGE_ALIAS (SV39_RAM_BASE + 0x200000UL)
 #define SV39_L2_SUPERPAGE_ALIAS 0xc0000000UL
 
@@ -52,7 +54,7 @@ static void sv39_map_page(uintptr_t va, uintptr_t pa, uint64_t flags) {
     uint64_t vpn0 = (va >> 12) & 0x1ff;
     uint64_t *l0;
 
-    if (va >= SV39_RAM_BASE && va < SV39_RAM_BASE + 0x200000UL) {
+    if (va >= SV39_RAM_BASE && va < SV39_RAM_BASE + SV39_IDENTITY_SIZE) {
         sv39_root_pt[vpn2] = sv39_make_pte((uintptr_t) sv39_ram_l1, PAGE_V);
         sv39_ram_l1[vpn1] = sv39_make_pte((uintptr_t) sv39_ram_l0, PAGE_V);
         l0 = sv39_ram_l0;
@@ -75,7 +77,7 @@ static void sv39_build_identity_map(void) {
     memset(sv39_debug_l0, 0, sizeof(sv39_debug_l0));
 
     for (uintptr_t pa = SV39_RAM_BASE;
-         pa < SV39_RAM_BASE + 0x200000UL;
+         pa < SV39_RAM_BASE + SV39_IDENTITY_SIZE;
          pa += PAGE_SIZE) {
         sv39_map_page(pa, pa, SV39_PTE_FLAGS);
     }
@@ -108,6 +110,20 @@ __attribute__((noinline, aligned(8)))
 void pmp_protected_exec_target(void) {
     __asm__ __volatile__("nop" ::: "memory");
 }
+
+#ifdef OS2_MIN_SV39
+__asm__(
+    ".section .text\n"
+    ".balign 4096\n"
+    ".globl sv39_noexec_target\n"
+    ".type sv39_noexec_target, @function\n"
+    "sv39_noexec_target:\n"
+    "nop\n"
+    "ret\n"
+    ".size sv39_noexec_target, .-sv39_noexec_target\n"
+    ".balign 4096\n"
+);
+#endif
 
 __asm__(
     ".section .text\n"
@@ -257,10 +273,13 @@ void test_sv39_data_identity(void) {
     printf("Sv39 data identity test\n");
     WRITE_CSR(stvec, (uintptr_t) supervisor_trap_entry);
 
+    printf("Sv39 build page table\n");
     sv39_build_identity_map();
+    printf("Sv39 enable satp\n");
     __asm__ __volatile__("sfence.vma" ::: "memory");
     WRITE_CSR(satp, SATP_SV39 | ((uintptr_t) sv39_root_pt >> 12));
     __asm__ __volatile__("sfence.vma" ::: "memory");
+    printf("Sv39 satp enabled\n");
 
     uint64_t value = sv39_test_word;
     if (value != 0x13579bdf2468ace0ULL)
@@ -333,6 +352,13 @@ void test_sv39_data_identity(void) {
     if (sv39_dirty_page[0] != 0x0d0d0d0d0d0d0d0dULL)
         PANIC("Sv39 D=0 store changed page value=%lx", sv39_dirty_page[0]);
     printf("Sv39 D bit page fault OK\n");
+
+    sv39_remap_page((uintptr_t) sv39_noexec_target, PAGE_V | PAGE_R | PAGE_A | PAGE_D);
+    sv39_fetch_fault_seen = 0;
+    sv39_noexec_target();
+    if (!sv39_fetch_fault_seen)
+        PANIC("Sv39 X=0 fetch fault was not raised");
+    printf("Sv39 fetch page fault OK\n");
 
     WRITE_CSR(satp, 0);
     __asm__ __volatile__("sfence.vma" ::: "memory");

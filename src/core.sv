@@ -13,6 +13,9 @@ module core (
 	output UIntX pmpaddr1_fetch_value,
 	output UIntX pmpaddr2_fetch_value,
 	output UIntX pmpaddr3_fetch_value,
+	output UIntX satp_fetch_value,
+	output logic sstatus_sum_fetch_value,
+	output logic sstatus_mxr_fetch_value,
 	aclint_if.slave aclint
 );
 
@@ -337,6 +340,9 @@ module core (
 		assign pmpaddr1_fetch_value = pmpaddr1_value;
 		assign pmpaddr2_fetch_value = pmpaddr2_value;
 		assign pmpaddr3_fetch_value = pmpaddr3_value;
+		assign satp_fetch_value = satp_value;
+		assign sstatus_sum_fetch_value = sstatus_sum;
+		assign sstatus_mxr_fetch_value = sstatus_mxr;
 
 		pmp_checker pmp_data_checker (
 			.priv_mode(csru_priv_mode),

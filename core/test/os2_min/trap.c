@@ -31,6 +31,18 @@ void supervisor_trap_handler(struct trap_frame *f) {
     uintptr_t sepc = READ_CSR(sepc);
     uintptr_t stval = READ_CSR(stval);
 
+#ifdef OS2_MIN_SV39
+    uintptr_t noexec_target = (uintptr_t) sv39_noexec_target;
+    uintptr_t noexec_page = noexec_target & ~(PAGE_SIZE - 1);
+    if (scause == INSTRUCTION_PAGE_FAULT &&
+        ((stval >= noexec_page && stval < noexec_page + PAGE_SIZE) ||
+         (sepc >= noexec_page && sepc < noexec_page + PAGE_SIZE))) {
+        sv39_fetch_fault_seen = 1;
+        WRITE_CSR(sepc, f->ra);
+        return;
+    }
+#endif
+
     printf("S trap scause=%lx sepc=%lx\n", scause, sepc);
     printf("saved a0=%lx sp=%lx\n", f->a0, f->sp);
 
@@ -88,7 +100,10 @@ void supervisor_trap_handler(struct trap_frame *f) {
         return;
     }
     uintptr_t cross_exec_target = (uintptr_t) pmp_cross_exec_target;
-    if (scause == INSTRUCTION_ACCESS_FAULT && stval >= cross_exec_target && stval < cross_exec_target + 4) {
+    uintptr_t cross_fetch_block = cross_exec_target & ~7UL;
+    if (scause == INSTRUCTION_ACCESS_FAULT &&
+        ((stval >= cross_fetch_block && stval < cross_fetch_block + 8) ||
+         (sepc >= cross_fetch_block && sepc < cross_fetch_block + 8))) {
         printf("PMP cross instruction access fault stval=%lx\n", stval);
         pmp_cross_exec_fault_seen = 1;
         WRITE_CSR(sepc, f->ra);

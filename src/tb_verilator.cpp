@@ -8,6 +8,7 @@
 #include <termios.h>
 #include <signal.h>
 #include <unistd.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -86,7 +87,14 @@ void set_nonblocking(void) {
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
 
-    if (argc < 3) {
+    std::vector<std::string> positional_args;
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i][0] != '+') {
+            positional_args.emplace_back(argv[i]);
+        }
+    }
+
+    if (positional_args.size() < 2) {
         std::cout << "Usage: " << argv[0] << " ROM_FILE_PATH RAM_FILE_PATH [CYCLE]" << std::endl;
         return 1;
     }
@@ -96,8 +104,8 @@ int main(int argc, char** argv) {
     #endif
 
     // メモリの初期値を格納しているファイル名
-    std::string rom_file_path = argv[1];
-    std::string ram_file_path = argv[2];
+    std::string rom_file_path = positional_args[0];
+    std::string ram_file_path = positional_args[1];
     try {
         // 絶対パスに変換する
         rom_file_path = fs::absolute(rom_file_path).string();
@@ -109,12 +117,12 @@ int main(int argc, char** argv) {
 
     // シミュレーションを実行するクロックサイクル数
     unsigned long long cycles = 0;
-    if (argc >= 4) {
-        std::string cycles_string = argv[3];
+    if (positional_args.size() >= 3) {
+        std::string cycles_string = positional_args[2];
         try {
             cycles = stoull(cycles_string);
         } catch (const std::exception& e) {
-            std::cerr << "Invalid number: " << argv[3] << std::endl;
+            std::cerr << "Invalid number: " << cycles_string << std::endl;
             return 1;
         }
     }

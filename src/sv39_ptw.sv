@@ -3,6 +3,7 @@ import eei::*;
 module sv39_ptw (
 	input logic clk,
 	input logic rst,
+	input logic flush,
 	input logic start,
 	output logic ready,
 	input Addr va,
@@ -221,7 +222,7 @@ module sv39_ptw (
 	endfunction
 
 	always_ff @(posedge clk or negedge rst) begin
-		if (!rst) begin
+		if (!rst || flush) begin
 			state <= Idle;
 			req_va <= '0;
 			req_access_type <= PMP_ACCESS_READ;

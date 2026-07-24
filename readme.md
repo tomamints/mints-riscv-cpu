@@ -30,6 +30,7 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 | Interrupts | WIP | ACLINT の software/timer interrupt を CSR unit に接続 |
 | Privilege modes | WIP | M/S/U mode、trap delegation、`MRET`/`SRET` を部分実装 |
 | PMP | WIP | 4 entries、TOR/NAPOT、data/fetch check。S-mode allow-all、禁止load/store/fetch faultを確認 |
+| Sv39 | WIP | `satp.MODE=8`、3-level PTW、data/fetch translation、basic page faultを確認 |
 
 ## U-mode / CSR Support
 
@@ -223,7 +224,7 @@ make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_USER OS2_MIN_NAME=kernel_user CYCLES=12
 make test-os2-min-sv39
 ```
 
-`core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、PMP、timer、最小U-mode entry/ecall、Sv39 data-side identity mapping、SUM/MXRの基本permissionを小さく確認しています。virtio-blk、本格的なU-mode process管理、命令fetch側のSv39はまだ戻していません。
+`core/test/os2_min/` は `/Users/shiraitouma/OS2` から `common.c` / `common.h` / `kernel.h` / `kernel.ld` をコピーし、このCPUで最初に動かすために `kernel.c` を最小化したものです。現時点では SBI、PMP、timer、最小U-mode entry/ecall、Sv39 data-side identity mapping、fetch-side identity mapping、SUM/MXRの基本permissionを小さく確認しています。virtio-blk、本格的なU-mode process管理はまだ戻していません。
 
 `os2_min` の生成物 `.elf` / `.bin` / `.bin.hex` は `build/os2_min/` に出力します。`core/test/os2_min/` にはソース、ヘッダ、リンカスクリプトだけを置く方針です。
 
@@ -241,13 +242,13 @@ make test-os2-min-sv39
 
 `OS2_MIN_USER` は最小U-modeテストです。S-modeで `stvec`、`medeleg[8]`、`sstatus.SPP=U`、`sepc=user_entry` を設定して `sret` し、U-modeへ入ります。U-mode側は1回目の `ecall` でS-mode trapへ入り、handlerが `a0=0x5678` と `sepc += 4` を設定してU-modeへ戻します。2回目の `ecall` はexit syscallとして扱い、S-mode handler側で `test success` を出します。
 
-`make test-os2-min-sv39` は最小Sv39 data-sideテストです。S-modeで3段page tableを作り、`satp.MODE=8` とroot PPNを設定します。CPU側は `sv39_ptw.sv` に分離したpage table walkerをdata-side load/storeから使います。現在はTLBがないため `sfence.vma` はno-opとして受けます。先頭2MiBのRAMとdebug MMIO 1ページを4KiB leaf PTEでidentity mapし、S-modeのload/storeがVA->PA変換後に成功すること、2MiB L1 / 1GiB L2 superpage aliasでloadできること、未mapの `0x60000000` loadが `scause=13`、`stval=0x60000000` のload page faultになることを確認します。加えて、S-modeからUページへのloadが `SUM=0` ではfault、`SUM=1` では成功すること、execute-onlyページへのloadが `MXR=0` ではfault、`MXR=1` では成功すること、`A=0` loadと `D=0` storeがpage faultになることも確認します。
+`make test-os2-min-sv39` は最小Sv39テストです。S-modeで3段page tableを作り、`satp.MODE=8` とroot PPNを設定します。CPU側は `sv39_ptw.sv` に分離したpage table walkerをdata-side load/storeとinstruction fetchの両方から使います。現在はTLBがないため `sfence.vma` はno-opとして受けます。先頭256KiBのRAMとdebug MMIO 1ページを4KiB leaf PTEでidentity mapし、S-modeのload/store/fetchがVA->PA変換後に成功すること、2MiB L1 / 1GiB L2 superpage aliasでloadできること、未mapの `0x60000000` loadが `scause=13`、`stval=0x60000000` のload page faultになることを確認します。加えて、S-modeからUページへのloadが `SUM=0` ではfault、`SUM=1` では成功すること、execute-onlyページへのloadが `MXR=0` ではfault、`MXR=1` では成功すること、`A=0` loadと `D=0` storeがpage faultになること、`X=0` ページへのfetchが `scause=12` のinstruction page faultになることも確認します。
 
 `sv39_ptw.sv` は architectural な `scause` とは別に `Sv39Fault` で内部fault理由も保持します。これはIOMMU側の `ptw_fault_e` と同じ位置づけで、波形や `+TRACE_SV39` でPTE invalid、W without R、reserved bit、permission、A/D不足、superpage misalignmentなどを切り分けるための情報です。A/D bitは現時点ではhardware updateせず、Svade相当のfault方式として扱います。PTW中のPTE読み出し自体が失敗した場合はpage faultではなく、元のアクセス種別に応じてinstruction/load/store access faultへ分類します。
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズは命令fetch側Sv39、store/fetch page fault、PTWメモリエラー発生源、NS16550A UARTです。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。次フェーズはSv39の補完、PTWメモリエラー発生源、MPRV/effective privilege、NS16550A UARTです。
 
 trace run:
 

@@ -327,28 +327,32 @@ debug MMIO output
 
 最低限のSv39テスト
 ID	テスト	期待結果
-VM-01	satp.MODE=Sv39	ページング有効化
-VM-02	identity mapping	仮想アドレス=物理アドレスで実行
-VM-03	4 KiB leaf mapping	正しい物理ページへ変換
-VM-04	read permission	R=1ページを読める
-VM-05	write permission	W=1ページへ書ける
-VM-06	execute permission	X=1ページを実行できる
-VM-07	invalid PTE	page fault
-VM-08	R=0 load	load page fault
-VM-09	W=0 store	store page fault
-VM-10	X=0 fetch	instruction page fault
-VM-11	U bit	U/Sアクセス制御
-VM-12	A bit	accessed bitの扱い
-VM-13	D bit	dirty bitの扱い
-VM-14	sfence.vma	TLBを正しく無効化
-VM-15	ASID変更	アドレス空間を切り替えられる
-VM-16	canonical address	不正Sv39アドレスでfault
-VM-17	SUM	S-modeからUページへのdata access制御
-VM-18	MXR	execute-onlyページのread制御
-VM-19	misaligned superpage	page fault
-VM-20	page table walk fault	正しいcauseとstval
+VM-01	satp.MODE=Sv39	ページング有効化	PASS
+VM-02	identity mapping	仮想アドレス=物理アドレスで実行	PASS
+VM-03	4 KiB leaf mapping	正しい物理ページへ変換	PASS
+VM-04	read permission	R=1ページを読める	PASS
+VM-05	write permission	W=1ページへ書ける	PASS
+VM-06	execute permission	X=1ページを実行できる	PASS
+VM-07	invalid / unmapped PTE	page fault	PASS
+VM-08	R=0 load	load page fault	PASS
+VM-09	W=0 store	store page fault	TODO: 専用permission test強化
+VM-10	X=0 fetch	instruction page fault	PASS
+VM-11	U bit	U/Sアクセス制御	PASS
+VM-12	A bit	accessed bitの扱い	PASS
+VM-13	D bit	dirty bitの扱い	PASS
+VM-14	sfence.vma	TLBを正しく無効化	WIP: TLBなしのためno-op
+VM-15	ASID変更	アドレス空間を切り替えられる	TODO
+VM-16	canonical address	不正Sv39アドレスでfault	PASS
+VM-17	SUM	S-modeからUページへのdata access制御	PASS
+VM-18	MXR	execute-onlyページのread制御	PASS
+VM-19	misaligned superpage	page fault	実装済み、専用テスト未整理
+VM-20	page table walk fault	正しいcauseとstval	WIP: PTE mem_errorはaccess fault方針、bus側error発生源は未実装
 
 SATPはSupervisor Address Translation and Protectionを設定し、Sv39などのページベース仮想記憶モードを選択します。SFENCE.VMAはページテーブル変更後のアドレス変換キャッシュ同期に使います。
+
+現在の `make test-os2-min-sv39` では、`satp.MODE=8` 設定後に `sv39_ptw.sv` をdata-side load/storeとinstruction fetchの両方から使います。fetch側では、S/U-modeかつSv39有効時にfetch PCを仮想アドレスとしてPTWへ渡し、返ってきた物理アドレスで命令メモリを読みます。`X=0` のページへ飛ぶと `scause=12` のinstruction page faultとしてS-mode `stvec` へ入り、handlerで復帰できることを確認しています。
+
+PTW中にPTE読み出しそのものが失敗した場合は、PTEの形式や権限違反ではないためpage faultではなく、元のアクセス種別に応じたinstruction/load/store access faultとして扱います。ただし、現在のbus側にはerror応答の発生源がないため、この経路は方針と入力だけが用意されている段階です。
 
 ただし、最初は以下だけで十分です。
 

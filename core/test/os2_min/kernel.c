@@ -72,7 +72,7 @@ void kernel_main(void) {
     WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << MCAUSE_ECALL_FROM_U));
 #endif
 #ifdef OS2_MIN_SV39
-    WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << LOAD_PAGE_FAULT) | (1UL << STORE_AMO_PAGE_FAULT));
+    WRITE_CSR(medeleg, READ_CSR(medeleg) | (1UL << INSTRUCTION_PAGE_FAULT) | (1UL << LOAD_PAGE_FAULT) | (1UL << STORE_AMO_PAGE_FAULT));
 #endif
 #ifdef OS2_MIN_NO_INPUT
     WRITE_CSR(mideleg, READ_CSR(mideleg) | MIDELEG_STI);
