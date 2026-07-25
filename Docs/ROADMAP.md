@@ -16,6 +16,15 @@
 - M-mode timer handlerがSTIPを注入し、S-mode `stvec` で supervisor timer interrupt を受けられる
 - `satp.MODE=8` を保持し、data-sideのSv39 3-level page table walkで4KiB identity mappingを確認できる
 - `0x10000000` にNS16550A互換の最小UARTを置き、polling TXでVerilator標準出力へ文字を出せる
+- OpenSBI v1.3.1 `FW_JUMP` が起動し、UART banner、ACLINT MSWI、ACLINT MTIMERを認識する
+- OpenSBIからS-mode payloadへhandoffできる
+- Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinux先頭命令へ入るところまで確認できた
+
+現在のLinux bring-up停止位置:
+
+- `arch/riscv/kernel/head.S` の `.Lsecondary_park`
+- 実行中の命令は `wfi; j .Lsecondary_park`
+- SMPは無効化しているため、まずは `setup_vm` / `relocate_enable_mmu` 周辺の早期trapまたはSv39切り替えを疑う
 
 注意点:
 
@@ -43,6 +52,7 @@ M-mode trap
   -> Sv39 MMU
   -> standard-ish devices
   -> DTB
+  -> OpenSBI
   -> Linux Image + initramfs
 ```
 
@@ -532,11 +542,18 @@ satp = 0
 - PMPを8 entriesへ拡張し、OpenSBIから `Boot HART PMP Count : 8` として認識済み
 - `make test-opensbi-payload OPENSBI_BIN=...` で、OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=DTB address`, SBI Base call、SBI legacy console putcharを確認済み
 
+確認済み:
+
+- Linux Imageを `0x80200000` に配置し、OpenSBIからLinux entryへ渡せる
+- `satp` WARLを修正し、未対応Sv57/Sv48を受理せずSv39へ降格できる
+- `satp` CSR access / `sfence.vma` でfetchをflushし、Linux `head.S` の高位アドレス遷移を正しく実行できる
+- Linux earlyconで `Linux version 6.12.97`、SBI extension、memory init、clocksource、`sched_clock` まで出力できる
+
 次:
 
-- Linux Imageを `0x80200000` に配置し、OpenSBIからLinux entryへ渡す
-- Linux earlyconで `Linux version ...` が出るか確認する
-- 止まった場合、不足CSR/ISA/deviceをログから埋める
+- boot logが止まる地点をtraceで特定する
+- PLIC実装前に、timer interrupt / SBI timer / WFI復帰がLinux上で進んでいるか確認する
+- initramfsなしで進める範囲と、initramfs投入が必要な地点を分ける
 - PLIC実装後にUART interrupt numberとDTBを一致させる
 
 注意:
@@ -573,10 +590,10 @@ shell
 
 直近でやる順番:
 
-1. Linux Imageを `0x80200000` へ置き、OpenSBI経由でLinux earlycon出力を狙う
-2. 止まった地点から、不足CSR/ISA/deviceを追加する
-3. PTWメモリエラー発生源とaccess fault経路を整理する
-4. `fence.i` / `zifencei` の正式確認を行い、DTB ISA文字列へ反映する
-5. PLIC / UART interruptを追加し、通常consoleへ進める
+1. Linux boot log停止地点を、trap/CSR/timer/MMIO traceで絞る
+2. initramfsなしでどこまで進むか確認し、必要なら最小initramfsを作る
+3. PLIC / UART interruptを追加し、通常consoleへ進める
+4. PTWメモリエラー発生源とaccess fault経路を整理する
+5. `fence.i` / `zifencei` の正式確認を行い、DTB ISA文字列へ反映する
 
 U-mode syscall cleanup、PMP MMIO副作用、PMP部分重複テストは重要ですが、Linux起動を優先する場合はSv39後の補助タスクとして扱います。

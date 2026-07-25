@@ -62,6 +62,8 @@ module csrunit (
 	localparam UIntX SCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX STVAL_WMASK  = 'hffff_ffff_ffff_ffff;
 	localparam UIntX SATP_WMASK   = 'hffff_ffff_ffff_ffff;
+	localparam logic [3:0] SATP_MODE_BARE = 4'd0;
+	localparam logic [3:0] SATP_MODE_SV39 = 4'd8;
 
 
 	//read masks
@@ -465,6 +467,18 @@ module csrunit (
 
 	Addr xepc;
 
+	//WARL: Write Any Read Legal対応
+	function automatic UIntX validate_satp(
+		input UIntX current,
+		input UIntX value
+	);
+		unique case (value[63:60])
+			SATP_MODE_BARE: validate_satp = '0;
+			SATP_MODE_SV39: validate_satp = value;
+			default:        validate_satp = current;
+		endcase
+	endfunction
+
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
 			mode     <=  M;
@@ -502,6 +516,22 @@ module csrunit (
 			mip_reg |= set_s_interrupt_pending;
 			if (valid) begin
 				if (raise_trap) begin
+					if ($test$plusargs("TRACE_TRAP")) begin
+						$display("[TRAP] pc=%h inst=%h mode=%0d expt=%b intr=%b ret=%b cause=%h tval=%h vector=%h next_mode=%0d satp=%h stvec=%h mtvec=%h",
+							pc,
+							inst_bits,
+							mode,
+							raise_expt,
+							raise_interrupt,
+							trap_return,
+							trap_cause,
+							expt_value,
+							trap_vector,
+							trap_mode_next,
+							satp,
+							stvec,
+							mtvec);
+					end
 					if (raise_expt || raise_interrupt) begin
 						if (raise_expt)begin
 							xepc = pc; //exception
@@ -554,7 +584,28 @@ module csrunit (
 					end
 					mode <= trap_mode_next;
 				end else begin
-						if (csr_write_en) begin
+					if (csr_write_en) begin
+						if ($test$plusargs("TRACE_CSR") && (
+							csr_addr == MSTATUS ||
+							csr_addr == SSTATUS ||
+							csr_addr == MTVEC ||
+							csr_addr == STVEC ||
+							csr_addr == MEDELEG ||
+							csr_addr == MIDELEG ||
+							csr_addr == MIE ||
+							csr_addr == SIE ||
+							csr_addr == MIP ||
+							csr_addr == SIP ||
+							csr_addr == SATP
+						)) begin
+							$display("[CSR] pc=%h mode=%0d csr=%03h old=%h new=%h inst=%h",
+								pc,
+								mode,
+								csr_addr,
+								rdata,
+								(csr_addr == SATP) ? validate_satp(satp, wdata) : wdata,
+								inst_bits);
+						end
 						case (csr_addr) //これらはそれぞれのCSRレジスタにwdataを入れている。
 							MSTATUS  : mstatus  <= validate_mstatus(mstatus, wdata);
 							MTVEC    : mtvec    <= wdata;
@@ -586,7 +637,7 @@ module csrunit (
 							STVAL : stval <= wdata;
 							SIP : mip_reg <= (mip_reg & ~(SIP_WMASK & mideleg)) | (wdata & (SIP_WMASK & mideleg)) | set_s_interrupt_pending;
 							SIE : sie <= wdata;
-							SATP : satp <= wdata;
+							SATP : satp <= validate_satp(satp, wdata);
 							default  : /* do nothing */ ;
 						endcase
 					end

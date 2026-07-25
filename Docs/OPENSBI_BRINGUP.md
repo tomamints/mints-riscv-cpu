@@ -1,6 +1,6 @@
 # OpenSBI Bring-up Notes
 
-この文書は、OpenSBI v1.3.1 `FW_JUMP` のUART banner表示と、OpenSBIからS-mode payloadへ到達するために行った変更と確認内容を残すためのメモです。
+この文書は、OpenSBI v1.3.1 `FW_JUMP` のUART banner表示、OpenSBIからS-mode payloadへ到達するために行った変更、Linux Image投入の初回結果を残すためのメモです。
 
 現在確認できている到達点:
 
@@ -43,6 +43,22 @@ SBI base spec=0x0000000001000000 error=0x0000000000000000
 test success!
 ```
 
+Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000` のLinux先頭へジャンプし、Linuxの命令実行が始まるところまでは確認できています。
+
+```text
+[PAYLOAD] pc=0000000080200000 inst=ff300a13 trap=0 expt=0
+[PAYLOAD] pc=0000000080200002 inst=0820106f trap=0 expt=0
+```
+
+現時点の停止位置はLinuxの `.Lsecondary_park` です。
+
+```text
+[PAYLOAD] pc=0000000080201068 inst=10500073  # wfi
+[PAYLOAD] pc=000000008020106c inst=ffdff06f  # jump back
+```
+
+`arch/riscv/kernel/head.S` 上では `.Lsecondary_park` は、早期trap、起動hartとして進めなかった場合、secondary hartが戻ってきた場合などに入る退避ループです。現在のbring-upではSMPを無効化しているため、まずは `setup_vm` / `relocate_enable_mmu` 周辺の早期trap、つまりSv39切り替え直後の命令fetch/page fault/trap-vector遷移を優先して調査します。
+
 ## 起動方法
 
 OpenSBIはrepo外でビルドした `fw_jump.bin` を指定します。
@@ -62,6 +78,43 @@ Linux Imageを同時に置く場合は、`0x80200000` へ配置します。
 ```sh
 make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
 ```
+
+ローカルmacOS環境ではLinux kernel buildに必要なhost toolとheaderが合わなかったため、Linux kernelはDocker内でビルドしています。macOS上のcloneをDockerへ直接mountすると、macOS用に生成された `scripts/kconfig/conf` をLinuxコンテナが実行して失敗したため、Docker volume上のLinux filesystemへcloneしてビルドします。
+
+```sh
+mkdir -p /private/tmp/linux-out
+
+docker run --rm \
+  -v linux612-src:/linux \
+  -v /private/tmp/linux-out:/out \
+  -w /linux \
+  debian:bookworm \
+  bash -lc 'set -e; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      build-essential bc bison flex libssl-dev libelf-dev \
+      ca-certificates git dwarves \
+      gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu; \
+    if [ ! -d .git ]; then \
+      git clone --depth 1 --branch linux-6.12.y \
+        https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git /linux; \
+    fi; \
+    make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- defconfig; \
+    scripts/config --disable SMP --disable NET --disable MODULES \
+      --enable SERIAL_8250 --enable SERIAL_8250_CONSOLE \
+      --enable SERIAL_EARLYCON --enable RISCV_SBI --enable PRINTK; \
+    make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- olddefconfig; \
+    make -j4 ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- Image; \
+    cp arch/riscv/boot/Image /out/Image-linux-6.12-riscv64'
+```
+
+生成済み:
+
+```text
+/private/tmp/linux-out/Image-linux-6.12-riscv64
+```
+
+初回に使ったImageは約25MiBです。`defconfig` ベースのためGPU、USB、SCSI、ACPIなど余分なdriverも多く、次回以降はbring-up用configとしてさらに削る方針です。
 
 RAM配置:
 
@@ -384,12 +437,27 @@ make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin
 - UART register testが通る
 - `rv64si` suiteが通る
 - OpenSBI v1.3.1のUART bannerが出る
+- Linux 6.12.y Imageを `0x80200000` に置き、OpenSBIからS-mode Linuxへhandoffできる
+- Linux earlyconで `Linux version 6.12.97` から `sched_clock` 付近までのboot logが出る
+
+## Linux earlycon到達時に直したこと
+
+Linux投入後、最初は `satp=a000...` になり、CPUが未実装のSv57を受け入れていました。`satp` はWARL CSRなので、現在の実装ではMODE=0(Bare)とMODE=8(Sv39)だけを受理し、Sv48/Sv57など未対応MODEのwriteは現在値を維持するようにしました。これによりLinuxのsatp mode probeが正しく失敗し、Sv39へ降格します。
+
+次に、`csrw satp` 後もfetch済みの物理アドレス命令を実行してしまい、Linux `head.S` の `load_global_pointer` が物理PCで実行され、`gp=0x81b39490` のまま高位kernelへ入っていました。この状態では `gp` 相対のglobal参照が `0x81b38eb8` などの低いVAになり、page faultからpanicへ進みます。
+
+そのため、MEM段で次の命令をtranslation hazardとして扱い、フロントエンドをflushして `pc+4` からfetchし直すようにしました。
+
+- `satp` CSR access
+- `sfence.vma`
+
+修正後は、trampoline `satp` write直後に `0x80201048` fetchがinstruction page faultとなり、Linuxが設定した `stvec=0xffffffff80001048` へ入ります。その後、`load_global_pointer` が高位PCで実行され、`gp=0xffffffff81939490` に更新されることを確認しました。
 
 既知の残件:
 
 - `rv64mi-p-breakpoint` は現在fail
-- Linux Image投入は次段階
+- Linuxはearlycon / memory init / clocksourceまでは到達。次はboot logが止まる地点の特定、PLIC、通常console、initramfs
 
 ## 次にやること
 
-次の主作業はLinux Image投入です。`0x80200000` にLinux Imageを置き、まずは `Linux version ...` がearlyconから出ることを狙います。
+次の主作業はLinux boot logが止まる地点の特定です。現時点では `Linux version ...` とearlycon出力は確認済みなので、timer interrupt、SBI call、PLIC不在、通常console初期化、initramfs未設定のどこで詰まるかを順番に切り分けます。

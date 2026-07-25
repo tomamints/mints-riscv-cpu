@@ -435,8 +435,23 @@ module core (
 	ExceptionInfo  mems_expt   = memq_rdata.expt;
 	logic[4:0]  mems_rd_addr       = mems_inst_bits[11:7];
 
-	assign control_hazard = mems_valid && (csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken);
-	assign control_hazard_pc_next = (csru_raise_trap) ? csru_trap_vector : memq_rdata.jump_addr;
+	logic mems_satp_access;
+	logic mems_sfence_vma;
+	logic mems_translation_hazard;
+	assign mems_satp_access =
+		mems_ctrl.is_csr &&
+		(mems_inst_bits[31:20] == SATP);
+	assign mems_sfence_vma =
+		(mems_inst_bits[6:0] == OP_SYSTEM) &&
+		(mems_inst_bits[14:12] == 3'b000) &&
+		(mems_inst_bits[31:25] == 7'b0001001);
+	assign mems_translation_hazard = mems_satp_access || mems_sfence_vma;
+
+	assign control_hazard = mems_valid && (csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken || mems_translation_hazard);
+	assign control_hazard_pc_next =
+		(csru_raise_trap) ? csru_trap_vector :
+		(mems_translation_hazard) ? mems_pc + Addr'(4) :
+		memq_rdata.jump_addr;
 
 
 	always_ff @(posedge clk or negedge rst) begin
@@ -584,9 +599,11 @@ module core (
 			$display("[COMMIT] pc=%h inst=%h trap=%b", wbs_pc, wbs_inst_bits, wbq_rdata.raise_trap);
 		end
 		if ($test$plusargs("TRACE_PAYLOAD") && wbs_valid && wbs_pc >= Addr'('h8020_0000)) begin
-			$display("[PAYLOAD] pc=%h inst=%h trap=%b expt=%b cause=%0d value=%h",
+			$display("[PAYLOAD] pc=%h inst=%h rd=%0d wdata=%h trap=%b expt=%b cause=%0d value=%h",
 				wbs_pc,
 				wbs_inst_bits,
+				wbs_rd_addr,
+				wbs_wb_data,
 				wbq_rdata.raise_trap,
 				mems_expt.valid,
 				mems_expt.cause,
