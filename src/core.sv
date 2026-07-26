@@ -239,6 +239,7 @@ module core (
 	logic exs_muldiv_ready;
 	logic exs_muldiv_rvalid;
 	UIntX exs_muldiv_result;
+	logic exs_muldiv_accept;
 
 
 	muldivunit mdu (
@@ -256,6 +257,7 @@ module core (
 
 
 	logic exs_muldiv_is_requested;
+	assign exs_muldiv_accept = exs_muldiv_valid && exs_muldiv_ready;
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
@@ -266,7 +268,7 @@ module core (
 				exs_muldiv_is_requested <= 1'b0;
 			end else begin
 				// muldivunit にリクエストしたか判定
-				if (exs_muldiv_valid && exs_muldiv_ready) begin
+				if (exs_muldiv_accept) begin
 					exs_muldiv_is_requested <= 1'b1;
 				end
 			end
@@ -276,7 +278,10 @@ module core (
 	logic exs_muldiv_rvalided;
 	logic exs_muldiv_stall;
 
-	assign exs_muldiv_stall = exs_ctrl.is_muldiv && !exs_muldiv_rvalid && !exs_muldiv_rvalided;
+	assign exs_muldiv_stall =
+		exs_valid &&
+		exs_ctrl.is_muldiv &&
+		(!exs_muldiv_is_requested || (!exs_muldiv_rvalid && !exs_muldiv_rvalided));
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
@@ -285,7 +290,7 @@ module core (
 			// 次のステージに遷移
 			if (exq_rvalid && exq_rready) begin
 				exs_muldiv_rvalided <= 1'b0;
-			end else begin
+			end else if (exs_muldiv_is_requested) begin
 				// muldivunitの処理が完了していたら1にする
 				exs_muldiv_rvalided <= exs_muldiv_rvalided | exs_muldiv_rvalid;
 			end
@@ -333,6 +338,8 @@ module core (
 			logic minstret_wen;
 			UInt64 minstret_wdata;
 			UInt64 debug_cycle;
+			UInt64 strsize_trace_count;
+			UInt64 strsize_muldiv_trace_count;
 
 		function automatic UIntX mem_access_size(input logic [2:0] funct3);
 			unique case (funct3[1:0])
@@ -576,8 +583,24 @@ module core (
 		if(!rst)begin
 			minstret <= '0;
 			debug_cycle <= '0;
+			strsize_trace_count <= '0;
+			strsize_muldiv_trace_count <= '0;
 		end else begin
 			debug_cycle <= debug_cycle + 1;
+			if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
+				wbs_valid &&
+				(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
+				(wbs_pc <= Addr'(64'hffff_ffff_803d_e032)) &&
+				(strsize_trace_count < UInt64'(200))) begin
+				strsize_trace_count <= strsize_trace_count + 1;
+			end
+			if ($test$plusargs("TRACE_STRSIZE_MULDIV") &&
+				(exs_valid || exs_muldiv_rvalid) &&
+				(exs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
+				(exs_pc <= Addr'(64'hffff_ffff_803d_e002)) &&
+				(strsize_muldiv_trace_count < UInt64'(80))) begin
+				strsize_muldiv_trace_count <= strsize_muldiv_trace_count + 1;
+			end
 			if (minstret_wen) begin
 				minstret <= minstret_wdata;
 			end else if (wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap && !wbs_writes_minstret)begin
@@ -632,7 +655,7 @@ module core (
 				d_membus.ready,
 				d_membus.rvalid);
 		end
-		if ($test$plusargs("TRACE_STRING_GET_SIZE") &&
+		if ($test$plusargs("TRACE_STRSIZE_LOOP") &&
 			wbs_valid &&
 			(wbs_pc >= Addr'(64'hffff_ffff_803d_e024)) &&
 			(wbs_pc <= Addr'(64'hffff_ffff_803d_e032))) begin
@@ -651,6 +674,57 @@ module core (
 				regfile[17],
 				regfile[18],
 				wbq_rdata.raise_trap);
+		end
+		if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
+			wbs_valid &&
+			(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
+			(wbs_pc <= Addr'(64'hffff_ffff_803d_e032)) &&
+			(strsize_trace_count < UInt64'(200))) begin
+			$display("[STRREDUCE] cycle=%h minstret=%h pc=%h inst=%h rd=%0d wdata=%h a0=%h a1=%h a3=%h a4=%h a5=%h a6=%h a7=%h s1=%h s2=%h s7=%h trap=%b",
+				debug_cycle,
+				minstret,
+				wbs_pc,
+				wbs_inst_bits,
+				wbs_rd_addr,
+				wbs_wb_data,
+				regfile[10],
+				regfile[11],
+				regfile[13],
+				regfile[14],
+				regfile[15],
+				regfile[16],
+				regfile[17],
+				regfile[9],
+				regfile[18],
+				regfile[23],
+				wbq_rdata.raise_trap);
+		end
+		if ($test$plusargs("TRACE_STRSIZE_MULDIV") &&
+			(exs_valid || exs_muldiv_rvalid) &&
+			(exs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
+			(exs_pc <= Addr'(64'hffff_ffff_803d_e002)) &&
+			(strsize_muldiv_trace_count < UInt64'(80))) begin
+			$display("[STRMULDIV] cycle=%h pc=%h inst=%h valid=%b stall=%b req=%b ready=%b rvalid=%b accept=%b requested=%b rvalided=%b funct3=%b op32=%b rs1=%0d rs1_data=%h rs2=%0d rs2_data=%h op1=%h op2=%h result=%h",
+				debug_cycle,
+				exs_pc,
+				exs_inst_bits,
+				exs_valid,
+				exs_stall,
+				exs_muldiv_valid,
+				exs_muldiv_ready,
+				exs_muldiv_rvalid,
+				exs_muldiv_accept,
+				exs_muldiv_is_requested,
+				exs_muldiv_rvalided,
+				exs_ctrl.funct3,
+				exs_ctrl.is_op32,
+				exs_rs1_addr,
+				exs_rs1_data,
+				exs_rs2_addr,
+				exs_rs2_data,
+				exs_op1,
+				exs_op2,
+				exs_muldiv_result);
 		end
 		if ($test$plusargs("TRACE_PAYLOAD") && wbs_valid && wbs_pc >= Addr'('h8020_0000)) begin
 			$display("[PAYLOAD] pc=%h inst=%h rd=%0d wdata=%h trap=%b expt=%b cause=%0d value=%h",

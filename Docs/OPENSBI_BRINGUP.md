@@ -52,7 +52,7 @@ Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000`
 [    0.000000] SBI IPI extension detected
 [    0.000000] SBI RFENCE extension detected
 [    0.000000] earlycon: uart8250 at MMIO 0x0000000010000000
-[    0.004184] sched_clock: 64 bits at 1000kHz, resolution 1000ns
+[    0.000083] sched_clock: 64 bits at 50MHz, resolution 20ns
 ```
 
 過去にはLinuxの `.Lsecondary_park` に入っていましたが、`satp` WARLと`satp/sfence.vma`時のfetch flushを直した後は、Sv39有効化後の高位仮想アドレス `ffffffff...` 側でLinux kernelを実行できています。
@@ -102,10 +102,10 @@ Verilator実行時間
 例:
 
 ```text
-[    0.004184] sched_clock: 64 bits at 1000kHz
+[    0.000083] sched_clock: 64 bits at 50MHz
 ```
 
-これはLinuxが認識している起動後時刻が `0.004184` 秒、つまり `4.184ms` という意味です。
+これはLinuxが認識している起動後時刻が `0.000083` 秒、つまり `83us` という意味です。
 
 一方、`cycle=0x2ef00000` は10進数で `787,480,576` cycleです。CPU clockを50MHzとみなすと、FPGA上のCPUクロック換算では約 `15.75` 秒分です。ただしVerilator上でこれを進めるには、実時間ではそれ以上かかります。
 
@@ -131,6 +131,47 @@ Linuxログだけ止まっている
 ```
 
 通常の長時間実行では `+TRACE_PIPE` を外します。`+TRACE_PIPE` は文字列出力が重く、Linux bootではシミュレーションを大きく遅くします。
+
+## 修正済み: string_get_size loop
+
+Linux boot中に `lib/string_helpers.c:string_get_size()` 付近で長時間進まない状態がありました。
+
+該当箇所では概ね次の計算をします。
+
+```text
+size = 0x200000
+blk_size = 1
+size * blk_size
+size / 1024 / 1024
+表示用に 10 倍しながら桁を整える
+```
+
+トレースでは、`mul a5,a1,a0` に対して `a0=0x200000`, `a1=1` なのに、修正前は `a5=0` になっていました。原因はMUL演算器そのものではなく、coreのEX stageと `muldivunit` のhandshakeでした。
+
+修正前:
+
+```text
+現在のMUL requestはまだacceptされていない
+  しかし前のmul/divのrvalid/resultが返る
+  その古いresultを現在のMUL結果として使う
+```
+
+修正後:
+
+```text
+exs_muldiv_accept = exs_muldiv_valid && exs_muldiv_ready
+requestがacceptされた命令だけrvalid/resultを待つ
+request前の古いrvalidは現在の命令の完了として扱わない
+```
+
+確認:
+
+```sh
+make c-test C_TEST=muldiv_string_size CYCLES=200000
+make test-rv64um
+```
+
+Linux側でも `mul a5,a1,a0` のwritebackが `0x200000` になり、その後 `divu` と表示用の10倍ループへ進むことを確認しました。
 
 ## 起動方法
 

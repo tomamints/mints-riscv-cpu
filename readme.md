@@ -243,6 +243,8 @@ Linuxログの `[    0.004184]` はLinuxが認識している起動後時刻で�
 
 現在のRTLでは `mtime` が毎CPUクロック増えるため、DTBの `timebase-frequency` も50MHzに合わせています。これが1MHzのままだと、Linux/OpenSBIからはtimerが50倍速に見え、timer interruptが過剰に発生する可能性があります。
 
+Linux boot中に `string_get_size()` で止まって見えた問題は、mul/div handshakeが古い `rvalid/result` を現在のMUL命令の結果として扱っていたことが原因でした。`src/core.sv` で `exs_muldiv_accept` を明示し、requestがacceptされた命令だけが `rvalid/result` を受け取るように修正しています。確認は `make c-test C_TEST=muldiv_string_size CYCLES=200000` と `make test-rv64um` です。
+
 ### Custom C Tests
 
 `core/test/*.c` は、RISC-V cross compiler で ELF / binary / hex を生成して simulator で実行できます。default の compile option は compressed instruction を避けつつ CSR 命令を許可するため `-march=rv64ima_zicsr` です。
