@@ -8,7 +8,7 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs = "earlycon=uart8250,mmio,0x10000000 ignore_loglevel";
+		bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 ignore_loglevel";
 	};
 
 	aliases {
@@ -51,11 +51,23 @@
 		uart0: serial@10000000 {
 			compatible = "ns16550a";
 			reg = <0x0 0x10000000 0x0 0x100>;
+			interrupt-parent = <&plic>;
+			interrupts = <10>;
 			clock-frequency = <0x00384000>;
 			current-speed = <115200>;
 			reg-shift = <0>;
 			reg-io-width = <1>;
 			status = "okay";
+		};
+
+		plic: interrupt-controller@c000000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0x0 0x0c000000 0x0 0x04000000>;
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			riscv,ndev = <32>;
+			interrupts-extended = <&cpu0_intc 11>,
+			                      <&cpu0_intc 9>;
 		};
 
 		clint: clint@2000000 {

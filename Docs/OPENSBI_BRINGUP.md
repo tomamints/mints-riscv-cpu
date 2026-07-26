@@ -34,6 +34,25 @@ Platform Timer Device     : aclint-mtimer
 
 このため、OpenSBI generic platformから見たmachine software interrupt / machine timer interruptのplatform device認識は通っています。
 
+PLICもLinux通常consoleへ進むために最小実装を追加しました。RTL単体では以下を確認済みです。
+
+```text
+UART IER[1]
+  -> UART THRE interrupt
+  -> PLIC source 10 pending
+  -> PLIC claim returns 10
+  -> mip.MEIP
+  -> M-mode external interrupt
+```
+
+確認コマンド:
+
+```sh
+make c-test C_TEST=plic_uart_irq CYCLES=200000
+```
+
+DTBには `interrupt-controller@c000000` とUARTの `interrupts = <10>` を追加済みです。PLIC付きDTBでもOpenSBI platform info表示とS-mode payload到達を確認済みです。Linux通常consoleは次の確認対象です。
+
 OpenSBIからS-mode payloadへ入る確認も通っています。
 
 ```text
@@ -53,6 +72,10 @@ Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000`
 [    0.000000] SBI RFENCE extension detected
 [    0.000000] earlycon: uart8250 at MMIO 0x0000000010000000
 [    0.000083] sched_clock: 64 bits at 50MHz, resolution 20ns
+[    0.374245] devtmpfs: initialized
+[    0.586990] pinctrl core: initialized pinctrl subsystem
+[    1.146383] HugeTLB: registered 2.00 MiB page size
+[    1.497943] raid6: int64x2  gen()     4 MB/s
 ```
 
 過去にはLinuxの `.Lsecondary_park` に入っていましたが、`satp` WARLと`satp/sfence.vma`時のfetch flushを直した後は、Sv39有効化後の高位仮想アドレス `ffffffff...` 側でLinux kernelを実行できています。
@@ -63,7 +86,7 @@ Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000`
 
 `sched_clock` 後も、`TRACE_PIPE` / `TRACE_HEARTBEAT` で `minstret` が増え続けることを確認しています。Linux側のPCは `timekeeping_advance`、`ktime_get_update_offsets_now`、`do_irq`、spinlock周辺へ進み、M-mode側ではOpenSBIの `_trap_handler`、`sbi_timer_event_start`、`mtimer_event_start` に入っています。
 
-つまり現時点の判断は、CPUが完全停止しているのではなく、Linuxのtimekeeping / IRQ初期化をVerilator上で非常に遅く進めている状態です。次の本当の修正点は、`minstret` が増えなくなる、panic/oops/illegal instruction/page faultが出る、または同一PCで長時間固定される箇所を見て決めます。
+つまり現時点の判断は、CPUが完全停止しているのではなく、Linux初期化をVerilator上で非常に遅く進めている状態です。PLIC付きDTBと `console=ttyS0,115200` を入れた後も、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまでは進みます。次の本当の修正点は、`minstret` が増えなくなる、panic/oops/illegal instruction/page faultが出る、または同一PCで長時間固定される箇所を見て決めます。
 
 ## 現在の出力経路
 
@@ -232,6 +255,38 @@ docker run --rm \
 
 初回に使ったImageは約25MiBです。`defconfig` ベースのためGPU、USB、SCSI、ACPIなど余分なdriverも多く、次回以降はbring-up用configとしてさらに削る方針です。
 
+その後、Verilator上でraid6 benchmarkやjitterentropy/crypto周辺が非常に遅いことを確認したため、`allnoconfig` ベースのbring-up用Imageも用意しました。
+
+```text
+/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup
+/private/tmp/linux-out/vmlinux-linux-6.12-riscv64-minbringup
+/private/tmp/linux-out/System.map-linux-6.12-riscv64-minbringup
+/private/tmp/linux-out/config-linux-6.12-riscv64-minbringup
+```
+
+このImageは約3MiBです。設定の意図は `platform/linux_minbringup.fragment` に残しています。残すものは、SBI、Device Tree、RISC-V timer、SiFive PLIC、8250 UART console、proc/sysfs/devtmpfs、ELF/initrd周辺です。削るものは、SCSI、ATA、MD/RAID6、USB、media、sound、PCI、ACPI、network、jitterentropyなど、最初のCPU/SoC bring-upには不要でシミュレーションを重くするsubsystemです。
+
+実行例:
+
+```sh
+make run-opensbi \
+  OPENSBI_BIN=/private/tmp/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup \
+  OPENSBI_CYCLES=0
+```
+
+確認済みログ:
+
+```text
+riscv-plic: interrupt-controller@c000000: mapped 32 interrupts with 1 handlers for 2 contexts.
+Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+10000000.serial: ttyS0 at MMIO 0x10000000 (irq = 1, base_baud = 230400) is a 16550A
+printk: legacy console [ttyS0] enabled
+Kernel panic - not syncing: VFS: Unable to mount root fs on "" or unknown-block(0,0)
+```
+
+このpanicはrootfs/initramfsをまだ渡していないための期待結果です。つまり、OpenSBIからLinuxへ入り、Sv39、timer、PLIC、通常8250 console登録までは通過しています。
+
 RAM配置:
 
 | Address | 内容 |
@@ -290,6 +345,7 @@ DBG_ADDR=0x40000000 obj_dir/sim build/platform/bootrom_linux.hex build/platform/
 
 - RAM: `0x80000000` から `128MiB`
 - UART: `0x10000000`
+- PLIC: `0x0c000000`
 - CLINT互換node: `0x02000000`
 - CPU ISA: `rv64imac_zicsr`
 - MMU: `riscv,sv39`
@@ -301,6 +357,8 @@ UART node:
 uart0: serial@10000000 {
 	compatible = "ns16550a";
 	reg = <0x0 0x10000000 0x0 0x100>;
+	interrupt-parent = <&plic>;
+	interrupts = <10>;
 	clock-frequency = <0x00384000>;
 	current-speed = <115200>;
 	reg-shift = <0>;
@@ -345,11 +403,48 @@ Platform Timer Device     : aclint-mtimer @ 50000000Hz
 - `LSR[5] = THRE`, `LSR[6] = TEMT` を常に1として返す
 - `LCR.DLAB` による `DLL/DLM` 切り替え
 - `IER`, `LCR`, `MCR`, `SCR` の保持
-- `IIR = 0x01`
+- interruptなしなら `IIR = 0x01`
+- THRE interrupt pending時は `IIR = 0x02`
 - `MSR = 0`
 - byte laneを見て、byte storeされた文字を取り出す
 
 MMIO decodeは `src/mmio_controller.sv` 側で、`0x10000000..0x100000ff` をUARTへ流します。
+
+### 最小PLIC
+
+`src/plic.sv` を追加し、SiFive PLIC互換に寄せた最小レジスタ配置を実装しました。
+
+```text
+base = 0x0c000000
+sources = 32
+UART IRQ = 10
+context 0 = M-mode external interrupt
+context 1 = S-mode external interrupt
+```
+
+実装済み:
+
+- `0x000000 + 4 * irq`: priority
+- `0x001000`: pending
+- `0x002000 + 0x80 * context`: enable
+- `0x200000 + 0x1000 * context`: threshold
+- `0x200004 + 0x1000 * context`: claim/complete
+
+CPU側ではPLICのcontext 0出力を `mip.MEIP`、context 1出力を `mip.SEIP` に接続しました。M-mode側の `mie.MEIE` もwrite可能にしています。
+
+現在確認済み:
+
+- priority / enable / threshold のreadback
+- UART `IER[1]` でTHRE interrupt pending
+- PLIC M-context claimでIRQ 10が返る
+- M-mode external interrupt `mcause=0x800000000000000b`
+- PLIC S-context claimでIRQ 10が返る
+- S-mode external interrupt `scause=0x8000000000000009`
+
+未確認/未完:
+
+- Linux通常consoleでの8250 interrupt動作
+- RX入力、FIFO、厳密なlevel gateway動作
 
 ### S-mode payload
 

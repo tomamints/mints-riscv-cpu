@@ -36,6 +36,7 @@ module core_top #(
     Membus mmio_dma_membus();
     Membus dbg_membus();
     Membus aclint_membus();
+    Membus plic_membus();
     Membus uart_membus();
     Membus dma_ram_membus();
 
@@ -88,8 +89,17 @@ module core_top #(
     UIntX satp_fetch_value;
     logic sstatus_sum_fetch_value;
     logic sstatus_mxr_fetch_value;
+    logic uart_irq;
+    logic plic_meip;
+    logic plic_seip;
+    logic [PLIC_NUM_SOURCES:0] plic_source_irq;
 
     logic memarb_last_i;
+
+    always_comb begin
+        plic_source_irq = '0;
+        plic_source_irq[PLIC_UART_IRQ] = uart_irq;
+    end
 
     always_ff @(posedge clk) begin
         // -----------------------------------------------------------
@@ -294,6 +304,7 @@ module core_top #(
         .rom_membus  (mmio_rom_membus),
         .dbg_membus  (dbg_membus),
         .aclint_membus  (aclint_membus),
+        .plic_membus (plic_membus),
         .dma_membus  (mmio_dma_membus),
         .uart_membus (uart_membus)
     );
@@ -315,7 +326,17 @@ module core_top #(
     uart_ns16550 uart0 (
         .clk    (clk),
         .rst    (rst),
-        .membus (uart_membus)
+        .membus (uart_membus),
+        .irq    (uart_irq)
+    );
+
+    plic plic0 (
+        .clk        (clk),
+        .rst        (rst),
+        .membus     (plic_membus),
+        .source_irq (plic_source_irq),
+        .meip       (plic_meip),
+        .seip       (plic_seip)
     );
 
     ram_arbiter_cpu_prio ram_arb (
@@ -368,6 +389,8 @@ module core_top #(
         .satp_fetch_value(satp_fetch_value),
         .sstatus_sum_fetch_value(sstatus_sum_fetch_value),
         .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
+        .external_meip(plic_meip),
+        .external_seip(plic_seip),
         .aclint   (aclint_core_bus)
     );
 

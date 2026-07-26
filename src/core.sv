@@ -20,6 +20,8 @@ module core (
 	output UIntX satp_fetch_value,
 	output logic sstatus_sum_fetch_value,
 	output logic sstatus_mxr_fetch_value,
+	input  logic external_meip,
+	input  logic external_seip,
 	aclint_if.slave aclint
 );
 
@@ -534,6 +536,8 @@ module core (
 			.sstatus_sum(sstatus_sum),
 			.sstatus_mxr(sstatus_mxr),
 			.minstret (minstret),
+			.external_meip(external_meip),
+			.external_seip(external_seip),
 			.aclint(aclint)
 		);
 

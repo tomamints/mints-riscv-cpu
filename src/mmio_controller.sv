@@ -310,6 +310,7 @@ module mmio_controller (
     Membus.master rom_membus,
     Membus.master dbg_membus,
     Membus.master aclint_membus,
+    Membus.master plic_membus,
     Membus.master dma_membus,
     Membus.master uart_membus
 );
@@ -320,6 +321,7 @@ module mmio_controller (
         ROM,
         DEBUG,
         ACLINT,
+        PLIC,
         DMA,
         UART
     } Device;
@@ -349,6 +351,7 @@ module mmio_controller (
         reset_membus_master(rom_membus.valid,    rom_membus.addr,    rom_membus.wen,    rom_membus.wdata,    rom_membus.wmask);
         reset_membus_master(dbg_membus.valid,    dbg_membus.addr,    dbg_membus.wen,    dbg_membus.wdata,    dbg_membus.wmask);
         reset_membus_master(aclint_membus.valid, aclint_membus.addr, aclint_membus.wen, aclint_membus.wdata, aclint_membus.wmask);
+        reset_membus_master(plic_membus.valid,   plic_membus.addr,   plic_membus.wen,   plic_membus.wdata,   plic_membus.wmask);
         reset_membus_master(dma_membus.valid,    dma_membus.addr,    dma_membus.wen,    dma_membus.wdata,    dma_membus.wmask);
         reset_membus_master(uart_membus.valid,   uart_membus.addr,   uart_membus.wen,   uart_membus.wdata,   uart_membus.wmask);
     endfunction
@@ -357,6 +360,7 @@ module mmio_controller (
         if (DBG_ADDR <= addr && addr <= DBG_ADDR + 64'd7) return DEBUG;
         if ((MMAP_ROM_BEGIN    <= addr) && (addr <= MMAP_ROM_END))   return ROM;
         if ((MMAP_ACLINT_BEGIN <= addr) && (addr <= MMAP_ACLINT_END))return ACLINT;
+        if ((MMAP_PLIC_BEGIN   <= addr) && (addr <= MMAP_PLIC_END))  return PLIC;
         if ((MMAP_DMA_BEGIN    <= addr) && (addr <= MMAP_DMA_END))   return DMA;
         if ((MMAP_UART_BEGIN   <= addr) && (addr <= MMAP_UART_END))  return UART;
         if (addr >= MMAP_RAM_BEGIN)                                  return RAM;
@@ -400,6 +404,13 @@ module mmio_controller (
                 aclint_membus.wmask = wmask;
                 aclint_membus.addr  = addr - MMAP_ACLINT_BEGIN;
             end
+            PLIC: begin
+                plic_membus.valid = valid;
+                plic_membus.wen   = wen;
+                plic_membus.wdata = wdata;
+                plic_membus.wmask = wmask;
+                plic_membus.addr  = addr - MMAP_PLIC_BEGIN;
+            end
             DMA: begin
                 dma_membus.valid = valid;
                 dma_membus.wen   = wen;
@@ -424,6 +435,7 @@ module mmio_controller (
             ROM:    return rom_membus.rvalid;
             DEBUG:  return dbg_membus.rvalid;
             ACLINT: return aclint_membus.rvalid;
+            PLIC:   return plic_membus.rvalid;
             DMA:    return dma_membus.rvalid;
             UART:   return uart_membus.rvalid;
             default:return 1'b0;
@@ -436,6 +448,7 @@ module mmio_controller (
             ROM:    return rom_membus.ready;
             DEBUG:  return dbg_membus.ready;
             ACLINT: return aclint_membus.ready;
+            PLIC:   return plic_membus.ready;
             DMA:    return dma_membus.ready;
             UART:   return uart_membus.ready;
             default:return 1'b0;
@@ -466,6 +479,10 @@ module mmio_controller (
             ACLINT: begin
                 rvalid = aclint_membus.rvalid;
                 rdata  = aclint_membus.rdata;
+            end
+            PLIC: begin
+                rvalid = plic_membus.rvalid;
+                rdata  = plic_membus.rdata;
             end
             DMA: begin
                 rvalid = dma_membus.rvalid;

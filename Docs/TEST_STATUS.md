@@ -92,7 +92,8 @@ These suites are outside the currently claimed implementation scope and were not
 | Bitmanip / Zb* | Not claimed |
 | Cache block / address translation extensions | Not claimed |
 | DMA | Implemented experimentally, basic C test passes |
-| UART | WIP: NS16550A compatible minimal polling TX, LSR, basic register hold, and DLAB pass |
+| UART | WIP: NS16550A compatible minimal polling TX, LSR, basic register hold, DLAB, and THRE interrupt pass |
+| PLIC | WIP: SiFive-compatible minimal PLIC, UART IRQ 10, claim/complete, M-mode external interrupt, and S-mode external interrupt pass |
 | PMP | WIP: 8 entries, allow-all, S-mode load/store/fetch access fault, blocked store side-effect, and OpenSBI PMP domain payload fetch tests pass |
 | Sv39 | WIP: data/fetch 3-level 4KiB identity mapping, satp.PPN switch, L1/L2 superpage, load/store/instruction page fault, SUM, MXR, A/D fault pass |
 
@@ -107,6 +108,8 @@ These suites are outside the currently claimed implementation scope and were not
 | `make test-dma` | `core/test/debug_dma.c` | Pass | DMA register 設定、RAM-to-RAM copy、結果検証、success まで到達 |
 | `make test-uart` | `core/test/uart_output.c` | Pass | NS16550A互換UARTの `LSR` をpollingし、`THR` へbyte writeして `A` とsuccessを出力。`0x10000000`のMMIO decode、byte lane read/write、Verilator標準出力を確認 |
 | `make test-uart-regs` | `core/test/uart_regs.c` | Pass | `LSR.THRE/TEMT`, `IIR=0x01`, `MSR=0`, `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替えを確認 |
+| `make c-test C_TEST=plic_uart_irq CYCLES=200000` | `core/test/plic_uart_irq.c` | Pass | PLIC priority/enable/threshold readback、UART `IER[1]` によるTHRE interrupt、PLIC claim=10、M-mode external interrupt `mcause=0x800000000000000b` を確認 |
+| `make c-test C_TEST=plic_seip CYCLES=300000` | `core/test/plic_seip.c` | Pass | M-modeでPMP allow-allと`mideleg.SEIP`を設定してS-modeへ入り、UART `IER[1]` によるTHRE interruptをPLIC S-contextでclaimし、S-mode external interrupt `scause=0x8000000000000009` を確認 |
 | `make test-mswi` | `core/test/mswi.c` | Pass | ACLINT machine software interrupt の handler 到達を確認 |
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
 | `make test-os2-min` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | 入力不要の統合テスト。PMP NAPOT allow-all設定後、S-mode遷移、SBI debug console putchar、SBI TIME `set_timer`、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回を確認 |
@@ -120,10 +123,11 @@ These suites are outside the currently claimed implementation scope and were not
 
 | Target | Source | Result | Notes |
 |---|---|---:|---|
-| `make dtb` | `platform/riscv_cpu.dts` | Pass | 最小DTBを生成。RAM `0x80000000/0x08000000`、UART `serial@10000000`、`reg-shift=0`、`reg-io-width=1`、earlycon bootargsを記述 |
+| `make dtb` | `platform/riscv_cpu.dts` | Pass | 最小DTBを生成。RAM `0x80000000/0x08000000`、UART `serial@10000000`、`reg-shift=0`、`reg-io-width=1`、PLIC `interrupt-controller@c000000`、UART IRQ 10、earlycon bootargsを記述 |
 | `make test-linux-bootargs` | `platform/bootrom_linux.S`, `platform/bootargs_check.S`, `platform/riscv_cpu.dts` | Pass | bootromが `a0=0`, `a1=0x87f00000` を設定して `0x80000000` へジャンプし、payloadが受け取れることを確認 |
-| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | external OpenSBI binary | Pass / platform info | OpenSBI v1.3.1 `FW_JUMP` を `0x80000000`、DTBを `0x87f00000` に配置して起動。`uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timer、`Next Address=0x80200000`、`Next Arg1=0x87f00000`、`Next Mode=S-mode` を確認 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | external OpenSBI binary | Pass / platform info | OpenSBI v1.3.1 `FW_JUMP` を `0x80000000`、DTBを `0x87f00000` に配置して起動。`uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 50000000Hz` timer、`Next Address=0x80200000`、`Next Arg1=0x87f00000`、`Next Mode=S-mode` を確認 |
 | `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | `platform/opensbi_payload_entry.S`, `platform/opensbi_payload.c` | Pass | OpenSBIから `0x80200000` のS-mode payloadへhandoffし、payload側で `hartid=0`, `dtb=0x87f00000`, SBI Base spec `0x01000000`, SBI legacy console putcharを確認。最後にdebug MMIOへsuccessを書いて終了 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup` | Linux 6.12.y minbringup Image | Pass / expected VFS panic | `riscv-plic` driverがPLICを認識、8250 driverが `ttyS0 at MMIO 0x10000000` を登録し、通常consoleを有効化。rootfs/initramfs未指定のため `VFS: Unable to mount root fs` で期待どおりpanic |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 

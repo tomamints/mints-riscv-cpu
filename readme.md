@@ -24,14 +24,15 @@ DMA は教材由来ではなく、このリポジトリで独自に追加して�
 | RV64A | Implemented | LR/SC, AMO 系 |
 | RVC | Implemented | `rvc_converter.sv` で 16-bit 命令を 32-bit 命令へ展開 |
 | Pipeline | Implemented | IF/ID/EX/MEM/WB 相当、FIFO と stall/flush 制御 |
-| MMIO | Implemented | RAM, ROM, debug I/O, ACLINT, DMA, NS16550A最小UARTへ decode |
+| MMIO | Implemented | RAM, ROM, debug I/O, ACLINT, PLIC, DMA, NS16550A最小UARTへ decode |
 | CSR | Implemented | Machine/Supervisor/User 関連 CSR を部分実装 |
 | Exceptions | WIP | illegal instruction, ECALL, EBREAK, misaligned access など |
-| Interrupts | WIP | ACLINT の software/timer interrupt を CSR unit に接続 |
+| Interrupts | WIP | ACLINT の software/timer interrupt とPLICのexternal interruptを CSR unit に接続 |
 | Privilege modes | WIP | M/S/U mode、trap delegation、`MRET`/`SRET` を部分実装 |
 | PMP | WIP | 8 entries、TOR/NAPOT、data/fetch check。S-mode allow-all、禁止load/store/fetch fault、OpenSBI PMP domain経由のS-mode payload fetchを確認 |
 | Sv39 | WIP | `satp.MODE=8`、3-level PTW、data/fetch translation、basic page faultを確認 |
-| UART | WIP | `0x10000000` にNS16550A互換の最小TX/LSRを追加。polling byte writeを確認 |
+| UART | WIP | `0x10000000` にNS16550A互換の最小TX/LSR/THRE interruptを追加。polling byte writeとPLIC経由IRQを確認 |
+| PLIC | WIP | `0x0c000000` にSiFive PLIC互換寄せの最小実装を追加。32 sources、UART IRQ 10、M/S context、claim/completeを確認 |
 
 ## U-mode / CSR Support
 
@@ -194,7 +195,7 @@ make dtb
 make test-linux-bootargs
 ```
 
-生成物は `build/platform/riscv_cpu.dtb` です。現時点ではPLICが未実装のため、UART interruptはDTBに書いていません。まずは `earlycon=uart8250,mmio,0x10000000` によるpolling出力の確認を狙います。
+生成物は `build/platform/riscv_cpu.dtb` です。現在はPLIC nodeとUART IRQ 10もDTBに記述しています。Linux earlyconは引き続き `earlycon=uart8250,mmio,0x10000000` のpolling出力で確認し、通常consoleはPLIC/UART interrupt経路の確認後に進めます。
 
 `test-linux-bootargs` は、Linux boot ABIに合わせた最小bootromを使い、`a0=hartid=0`、`a1=0x87f00000` をRAM payloadへ渡せることを確認します。DTBはRAM image内の `0x87f00000` に配置します。
 
@@ -224,6 +225,7 @@ make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
 
 ```text
 /private/tmp/linux-out/Image-linux-6.12-riscv64
+/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup
 ```
 
 例:
@@ -231,9 +233,25 @@ make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
 ```sh
 make run-opensbi \
   OPENSBI_BIN=/private/tmp/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64 \
+  LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup \
   OPENSBI_CYCLES=0
 ```
+
+`Image-linux-6.12-riscv64` は最初に試したdefconfig寄りのImageです。Linux bootは進みますが、raid6、jitterentropy、SCSI、USB、mediaなど余分な初期化が多く、Verilatorでは非常に遅くなります。
+
+`Image-linux-6.12-riscv64-minbringup` は `allnoconfig` ベースのbring-up用Imageです。設定の意図は `platform/linux_minbringup.fragment` に残しています。SBI、DTB、timer、PLIC、8250 UART console、proc/sysfs/devtmpfs、ELF実行に必要なものを残し、Linux起動確認に不要な重いsubsystemを削っています。
+
+このImageでは以下を確認済みです。
+
+```text
+riscv-plic: interrupt-controller@c000000: mapped 32 interrupts with 1 handlers for 2 contexts.
+Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+10000000.serial: ttyS0 at MMIO 0x10000000 (irq = 1, base_baud = 230400) is a 16550A
+printk: legacy console [ttyS0] enabled
+Kernel panic - not syncing: VFS: Unable to mount root fs on "" or unknown-block(0,0)
+```
+
+最後のpanicはrootfs/initramfs未指定による期待結果です。
 
 Linux boot logは、Linuxから見ると `0x10000000` のNS16550A互換UARTへ出ています。シミュレーション上では `uart_ns16550.sv` からVerilatorの標準出力へ流すため、`make run-opensbi` を実行しているterminalに表示されます。
 
@@ -285,6 +303,17 @@ make test-uart-regs
 
 `uart_regs.c` は `IER/MCR/SCR/LCR` の保持、`LCR.DLAB=1` 時の `DLL/DLM` 切り替え、`IIR=0x01`、`MSR=0`、`LSR.THRE/TEMT=1` を確認します。Linux earlyconやOpenSBIのUART初期化で触る可能性がある最小レジスタ群のbring-up確認です。
 
+PLIC / UART interrupt:
+
+```sh
+make c-test C_TEST=plic_uart_irq CYCLES=200000
+make c-test C_TEST=plic_seip CYCLES=300000
+```
+
+`plic_uart_irq.c` は `0x0c000000` のPLICでUART IRQ 10のpriority/enable/thresholdを設定し、UART `IER[1]` でTHRE interruptを発生させます。PLIC `claim` が10を返し、CPU側では `mip.MEIP` によりM-mode external interrupt `mcause=0x800000000000000b` へ入ることを確認します。
+
+`plic_seip.c` はM-modeでPMP allow-allと`mideleg.SEIP`を設定してS-modeへ入り、PLIC S-context経由でUART IRQ 10をclaimします。CPU側では `mip.SEIP` によりS-mode external interrupt `scause=0x8000000000000009` へ入ることを確認します。
+
 ACLINT interrupt tests:
 
 ```sh
@@ -329,7 +358,7 @@ make test-os2-min-sv39
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。Linux 6.12.y ImageはOpenSBI経由で起動し、earlyconで `Linux version 6.12.97`、SBI extension検出、memory init、SLUB、RCU、`riscv-intc`、clocksource、`sched_clock` まで出力できています。`TRACE_PIPE` 上では `sched_clock` 後も `minstret` が増え、timekeeping/IRQ処理とOpenSBI timer処理を継続しています。次フェーズはboot log停止地点の特定、PLIC、通常console、最小initramfsです。補助タスクとして、PTWメモリエラー発生源、TLB方針、UART RX/interruptが残っています。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。Linux 6.12.y ImageはOpenSBI経由で起動し、earlyconで `Linux version 6.12.97`、SBI extension検出、memory init、SLUB、RCU、`riscv-intc`、clocksource、`sched_clock`、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまで出力できています。PLIC付きDTBでのOpenSBI platform認識とS-mode `SEIP` の小さいテストは確認済みです。次フェーズはLinux通常console登録、最小initramfsです。補助タスクとして、PTWメモリエラー発生源、TLB方針、UART RX/FIFOが残っています。
 
 trace run:
 

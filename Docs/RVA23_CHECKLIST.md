@@ -8,7 +8,7 @@
 
 現時点ではRVA23準拠を主張しません。
 
-現在主張しやすい範囲は、RV64IMAC、CSR/trap/interruptの一部、ACLINT、最小SBI、PMP data/fetch access check、Sv39 data/fetch identity mapping、NS16550A互換UARTの最小polling TXのbring-upです。
+現在主張しやすい範囲は、RV64IMAC、CSR/trap/interruptの一部、ACLINT、最小SBI、PMP data/fetch access check、Sv39 data/fetch identity mapping、NS16550A互換UARTの最小polling TX、最小PLIC経由のUART外部割り込みbring-upです。
 
 ## ISA / Extension
 
@@ -42,9 +42,9 @@
 | Item | Status | Notes |
 |---|---|---|
 | ACLINT timer | Basic pass | MTIPをM-mode handlerで受け、STIPを注入 |
-| UART | WIP | `0x10000000` にNS16550A互換の最小polling TXを追加。THR write、LSR THRE/TEMT、基本保持レジスタ、DLABは確認済み。RX/interrupt/PLIC連携は未実装 |
-| PLIC | TODO | 外部割り込み向け |
-| DTB | WIP | 最小DTS/DTBを追加。128MiB RAM/UARTは現RTLと一致。bootromから `a1=DTB physical address` を渡す経路は確認済み。PLIC/interrupt記述は未実装 |
+| UART | WIP | `0x10000000` にNS16550A互換の最小polling TXを追加。THR write、LSR THRE/TEMT、基本保持レジスタ、DLAB、THRE interrupt pendingは確認済み。RX/FIFO/interrupt storm対策は未完 |
+| PLIC | WIP | SiFive PLIC互換寄せの最小実装。base `0x0c000000`、32 sources、UART IRQ 10、M context 0 / S context 1、priority/enable/threshold/claim-complete、M-mode external interrupt、S-mode external interruptは確認済み。Linux通常consoleは次 |
+| DTB | WIP | 最小DTS/DTBを追加。128MiB RAM/UART/ACLINT/PLICは現RTLと一致。bootromから `a1=DTB physical address` を渡す経路は確認済み。UARTには `interrupts=<10>` を記述 |
 | OpenSBI compatibility | WIP | OpenSBI v1.3.1 `FW_JUMP` でplatform情報表示まで到達。`uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timer、次段S-mode entry情報は確認済み |
 
 ## 次に確認したい項目

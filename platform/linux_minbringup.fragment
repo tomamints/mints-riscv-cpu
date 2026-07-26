@@ -1,0 +1,53 @@
+# Linux 6.12 RISC-V bring-up fragment for this simulator.
+#
+# This is intentionally smaller than riscv defconfig.  The goal is to reach
+# early boot, 8250 console registration, and the expected init/rootfs failure
+# quickly on a slow Verilator CPU model.
+
+CONFIG_64BIT=y
+CONFIG_MMU=y
+CONFIG_RISCV_SBI=y
+CONFIG_OF=y
+CONFIG_OF_EARLY_FLATTREE=y
+CONFIG_OF_FLATTREE=y
+CONFIG_OF_ADDRESS=y
+CONFIG_OF_IRQ=y
+
+CONFIG_IRQCHIP=y
+CONFIG_SIFIVE_PLIC=y
+CONFIG_CLINT_TIMER=y
+CONFIG_RISCV_TIMER=y
+
+CONFIG_TTY=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+CONFIG_SERIAL_OF_PLATFORM=y
+CONFIG_SERIAL_EARLYCON=y
+
+CONFIG_PRINTK=y
+CONFIG_EARLY_PRINTK=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_TMPFS=y
+CONFIG_BINFMT_ELF=y
+CONFIG_ELF_CORE=y
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_RD_GZIP=y
+CONFIG_RD_XZ=y
+CONFIG_FUTEX=y
+CONFIG_COMPAT=y
+
+# Slow or irrelevant for the first simulator boot target.
+# CONFIG_NET is not set
+# CONFIG_PCI is not set
+# CONFIG_ACPI is not set
+# CONFIG_USB_SUPPORT is not set
+# CONFIG_SOUND is not set
+# CONFIG_MEDIA_SUPPORT is not set
+# CONFIG_SCSI is not set
+# CONFIG_ATA is not set
+# CONFIG_MD is not set
+# CONFIG_RAID6_PQ is not set
+# CONFIG_CRYPTO_JITTERENTROPY is not set

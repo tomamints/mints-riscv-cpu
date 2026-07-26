@@ -598,9 +598,9 @@ shell
 
 直近でやる順番:
 
-1. Linux boot log停止地点を、trap/CSR/timer/MMIO traceで絞る
+1. Linux通常consoleでUART interruptを使えるか確認する
 2. initramfsなしでどこまで進むか確認し、必要なら最小initramfsを作る
-3. PLIC / UART interruptを追加し、通常consoleへ進める
+3. UART RX/FIFOを必要に応じて追加する
 4. PTWメモリエラー発生源とaccess fault経路を整理する
 5. `fence.i` / `zifencei` の正式確認を行い、DTB ISA文字列へ反映する
 

@@ -69,6 +69,19 @@ package eei;
 	localparam Addr MMAP_ACLINT_SETSTIP = Addr'('h8008);
 	localparam Addr MMAP_ACLINT_END = MMAP_ACLINT_BEGIN + Addr'('hbfff);
 
+	// PLIC (SiFive-compatible subset)
+	localparam int unsigned PLIC_NUM_SOURCES = 32;
+	localparam int unsigned PLIC_UART_IRQ = 10;
+	localparam Addr MMAP_PLIC_BEGIN = Addr'('h0c00_0000);
+	localparam Addr MMAP_PLIC_END   = MMAP_PLIC_BEGIN + Addr'('h03ff_ffff);
+	localparam Addr PLIC_PRIORITY_BASE = Addr'('h000000);
+	localparam Addr PLIC_PENDING_BASE = Addr'('h001000);
+	localparam Addr PLIC_ENABLE_BASE = Addr'('h002000);
+	localparam Addr PLIC_CONTEXT_BASE = Addr'('h200000);
+	localparam Addr PLIC_CONTEXT_STRIDE = Addr'('h001000);
+	localparam int unsigned PLIC_CONTEXT_M = 0;
+	localparam int unsigned PLIC_CONTEXT_S = 1;
+
 	//DMA
 	localparam Addr MMAP_DMA_BEGIN  = Addr'('h3000_0000);
 	localparam Addr MMAP_DMA_CTRL   = Addr'('h00); // 32-bitでも64-bitでもOK

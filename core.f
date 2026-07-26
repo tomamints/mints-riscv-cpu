@@ -17,6 +17,7 @@ src/rvc_converter.sv
 # major modules
 src/memory.sv
 src/aclint_memory.sv
+src/plic.sv
 src/alu.sv
 src/brunit.sv
 src/csrunit.sv

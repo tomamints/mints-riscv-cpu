@@ -3,7 +3,8 @@ import eei::*;
 module uart_ns16550 (
 	input logic clk,
 	input logic rst,
-	Membus.slave membus
+	Membus.slave membus,
+	output logic irq
 );
 
 	logic [7:0] lcr;
@@ -13,6 +14,9 @@ module uart_ns16550 (
 	logic [7:0] fcr;
 	logic [7:0] mcr;
 	logic [7:0] scr;
+	logic tx_irq_pending;
+
+	assign irq = tx_irq_pending && ier[1];
 
 	function automatic logic [7:0] write_byte(
 		input logic [MEMBUS_DATA_WIDTH-1:0] wdata,
@@ -37,7 +41,7 @@ module uart_ns16550 (
 		unique case (reg_addr)
 			UART_REG_RBR_THR_DLL[2:0]: read_reg = dlab ? dll : 8'h00;
 			UART_REG_IER_DLM[2:0]:     read_reg = dlab ? dlm : ier;
-			UART_REG_IIR_FCR[2:0]:     read_reg = 8'h01;
+			UART_REG_IIR_FCR[2:0]:     read_reg = irq ? 8'h02 : 8'h01;
 			UART_REG_LCR[2:0]:         read_reg = lcr;
 			UART_REG_MCR[2:0]:         read_reg = mcr;
 			UART_REG_LSR[2:0]:         read_reg = 8'b0110_0000;
@@ -64,6 +68,7 @@ module uart_ns16550 (
 			fcr <= 8'h00;
 			mcr <= 8'h00;
 			scr <= 8'h00;
+			tx_irq_pending <= 1'b0;
 		end else begin
 			membus.ready <= 1'b1;
 			membus.rvalid <= membus.valid;
@@ -86,6 +91,7 @@ module uart_ns16550 (
 							end else begin
 								$write("%c", wbyte);
 								$fflush();
+								tx_irq_pending <= 1'b0;
 							end
 						end
 						UART_REG_IER_DLM[2:0]: begin
@@ -93,6 +99,9 @@ module uart_ns16550 (
 								dlm <= wbyte;
 							end else begin
 								ier <= wbyte;
+								if (!ier[1] && wbyte[1]) begin
+									tx_irq_pending <= 1'b1;
+								end
 							end
 						end
 						UART_REG_IIR_FCR[2:0]: fcr <= wbyte;
@@ -101,6 +110,8 @@ module uart_ns16550 (
 						UART_REG_SCR[2:0]:     scr <= wbyte;
 						default: ;
 					endcase
+				end else if (reg_addr == UART_REG_IIR_FCR[2:0]) begin
+					tx_irq_pending <= 1'b0;
 				end
 			end
 		end

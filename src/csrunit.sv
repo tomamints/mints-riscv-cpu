@@ -35,6 +35,8 @@ module csrunit (
 	output logic sstatus_sum,
 	output logic sstatus_mxr,
 	input  UInt64  minstret,
+	input  logic external_meip,
+	input  logic external_seip,
 	aclint_if.slave aclint
 );
 
@@ -49,7 +51,7 @@ module csrunit (
 	localparam UIntX MCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0222);
-	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_02aa);
+	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_0aaa);
 	localparam UIntX MCYCLE_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MINSTRET_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_000c_0122);
@@ -174,9 +176,9 @@ module csrunit (
 
 	assign mip = mip_reg | {
 		{(XLEN - 12){1'b0}},
-		1'b0, // MEIP
+		external_meip, // MEIP
 		1'b0, // 0
-		1'b0, // SEIP
+		external_seip, // SEIP
 		1'b0, // 0
 		aclint.mtip, // MTIP
 		1'b0, // 0
@@ -232,6 +234,7 @@ module csrunit (
 
 	UIntX interrupt_cause_mmode;
 	assign interrupt_cause_mmode =
+		interrupt_pending_mmode[11] ? MACHINE_EXTERNAL_INTERRUPT :
 		interrupt_pending_mmode[3] ? MACHINE_SOFTWARE_INTERRUPT :
 		interrupt_pending_mmode[7] ? MACHINE_TIMER_INTERRUPT :
 		interrupt_pending_mmode[9] ? SUPERVISOR_EXTERNAL_INTERRUPT :
