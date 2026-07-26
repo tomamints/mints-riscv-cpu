@@ -332,6 +332,7 @@ module core (
 			UInt64 minstret;
 			logic minstret_wen;
 			UInt64 minstret_wdata;
+			UInt64 debug_cycle;
 
 		function automatic UIntX mem_access_size(input logic [2:0] funct3);
 			unique case (funct3[1:0])
@@ -574,7 +575,9 @@ module core (
 	always_ff @(posedge clk or negedge rst)begin
 		if(!rst)begin
 			minstret <= '0;
+			debug_cycle <= '0;
 		end else begin
+			debug_cycle <= debug_cycle + 1;
 			if (minstret_wen) begin
 				minstret <= minstret_wdata;
 			end else if (wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap && !wbs_writes_minstret)begin
@@ -597,6 +600,57 @@ module core (
 	always_ff @(posedge clk) begin
 		if ($test$plusargs("TRACE_COMMIT") && wbs_valid) begin
 			$display("[COMMIT] pc=%h inst=%h trap=%b", wbs_pc, wbs_inst_bits, wbq_rdata.raise_trap);
+		end
+		if ($test$plusargs("TRACE_HEARTBEAT") && wbs_valid && (minstret[19:0] == 20'h0)) begin
+			$display("[HEARTBEAT] minstret=%h pc=%h inst=%h mode=%0d satp=%h trap=%b",
+				minstret,
+				wbs_pc,
+				wbs_inst_bits,
+				csru_priv_mode,
+				satp_fetch_value,
+				wbq_rdata.raise_trap);
+		end
+		if ($test$plusargs("TRACE_PIPE") && debug_cycle[19:0] == 20'h0) begin
+			$display("[PIPE] cycle=%h minstret=%h mode=%0d satp=%h id_v=%b id_pc=%h ex_v=%b ex_pc=%h ex_stall=%b mem_v=%b mem_pc=%h mem_stall=%b wb_v=%b wb_pc=%h i_rvalid=%b i_rready=%b d_v=%b d_rdy=%b d_rvalid=%b",
+				debug_cycle,
+				minstret,
+				csru_priv_mode,
+				satp_fetch_value,
+				ids_valid,
+				ids_pc,
+				exs_valid,
+				exs_pc,
+				exs_stall,
+				mems_valid,
+				mems_pc,
+				memu_stall,
+				wbs_valid,
+				wbs_pc,
+				i_membus.rvalid,
+				i_membus.rready,
+				d_membus.valid,
+				d_membus.ready,
+				d_membus.rvalid);
+		end
+		if ($test$plusargs("TRACE_STRING_GET_SIZE") &&
+			wbs_valid &&
+			(wbs_pc >= Addr'(64'hffff_ffff_803d_e024)) &&
+			(wbs_pc <= Addr'(64'hffff_ffff_803d_e032))) begin
+			$display("[STRSIZE] cycle=%h minstret=%h pc=%h inst=%h rd=%0d wdata=%h a0=%h a1=%h a3=%h a5=%h a6=%h a7=%h s2=%h trap=%b",
+				debug_cycle,
+				minstret,
+				wbs_pc,
+				wbs_inst_bits,
+				wbs_rd_addr,
+				wbs_wb_data,
+				regfile[10],
+				regfile[11],
+				regfile[13],
+				regfile[15],
+				regfile[16],
+				regfile[17],
+				regfile[18],
+				wbq_rdata.raise_trap);
 		end
 		if ($test$plusargs("TRACE_PAYLOAD") && wbs_valid && wbs_pc >= Addr'('h8020_0000)) begin
 			$display("[PAYLOAD] pc=%h inst=%h rd=%0d wdata=%h trap=%b expt=%b cause=%0d value=%h",

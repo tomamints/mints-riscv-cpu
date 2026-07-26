@@ -10,6 +10,7 @@ module aclint_memory (
     logic msip0;
     UInt64 mtime;
     UInt64 mtimecmp0;
+    logic mtip_q;
 
 
     always_comb begin
@@ -42,15 +43,40 @@ module aclint_memory (
             msip0         <= 0;
             mtime         <= 0;
             mtimecmp0     <= '1;
+            mtip_q        <= 0;
         end else begin
             //count up mtime
             mtime += 1;
+            if ($test$plusargs("TRACE_TIMER") && aclint.mtip != mtip_q) begin
+                $display("[TIMER] mtip=%b mtime=%h mtimecmp=%h", aclint.mtip, mtime, mtimecmp0);
+            end
+            mtip_q <= aclint.mtip;
             membus.rvalid <= membus.valid;
             if (membus.valid) begin
                 addr = {membus.addr[XLEN-1 : 3], 3'b0};
                 if (membus.wen) begin
                     M = membus.wmask_expand(membus.wmask);
                     D = membus.wdata & M;
+                    if ($test$plusargs("TRACE_TIMER")) begin
+                        unique case(addr)
+                            MMAP_ACLINT_MSIP,
+                            MMAP_ACLINT_MTIME,
+                            MMAP_CLINT_MTIME,
+                            MMAP_ACLINT_MTIMECMP,
+                            MMAP_ACLINT_SETSSIP,
+                            MMAP_ACLINT_SETSTIP: begin
+                                $display("[TIMER-W] addr=%h data=%h mask=%h mtime=%h mtimecmp=%h msip=%b mtip=%b",
+                                    addr,
+                                    membus.wdata,
+                                    membus.wmask,
+                                    mtime,
+                                    mtimecmp0,
+                                    msip0,
+                                    aclint.mtip);
+                            end
+                            default: ;
+                        endcase
+                    end
                     case(addr)
                         MMAP_ACLINT_MSIP : msip0 <= D[0] | (msip0 & ~M[0]);
                         MMAP_ACLINT_MTIME,

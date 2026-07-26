@@ -18,13 +18,19 @@
 - `0x10000000` にNS16550A互換の最小UARTを置き、polling TXでVerilator標準出力へ文字を出せる
 - OpenSBI v1.3.1 `FW_JUMP` が起動し、UART banner、ACLINT MSWI、ACLINT MTIMERを認識する
 - OpenSBIからS-mode payloadへhandoffできる
-- Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinux先頭命令へ入るところまで確認できた
+- Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoffできる
+- Linux 6.12.97のearlycon boot logが出る
+- LinuxがSBI Base/Time/IPI/RFENCE、reserved memory、Sv39 virtual kernel memory layout、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock` まで到達する
 
-現在のLinux bring-up停止位置:
+現在のLinux bring-up観測点:
 
-- `arch/riscv/kernel/head.S` の `.Lsecondary_park`
-- 実行中の命令は `wfi; j .Lsecondary_park`
-- SMPは無効化しているため、まずは `setup_vm` / `relocate_enable_mmu` 周辺の早期trapまたはSv39切り替えを疑う
+- `sched_clock` 後も `minstret` は増え続けており、完全停止ではない
+- Linux側は `timekeeping_advance`、`ktime_get_update_offsets_now`、`do_irq`、spinlock周辺を実行している
+- M-mode側はOpenSBIの `_trap_handler`、`sbi_timer_event_start`、`mtimer_event_start` に入っている
+- `TRACE_TIMER` ではOpenSBIがACLINT `mtimecmp` を設定し、`MTIP` が発生してclearされるところまで確認済み
+- `TRACE_HEARTBEAT` ではLinuxが `mode=1`、`satp=8000...`、`pc=ffffffff...` で実行していることを確認済み
+- RTLでは `mtime` が毎CPUクロック増えるため、DTBの `timebase-frequency` はCPU clock想定の50MHzへ合わせる
+- 次は本当の停止点、通常console/PLIC/initramfsの順に切り分ける
 
 注意点:
 
@@ -33,6 +39,7 @@
 - `mideleg` は既に存在するpending bitの配送先を変える機構であり、`MTIP` を `STIP` に変換する機構ではない。現在はM-mode firmwareが明示的にSTIPを注入する
 - 今の debug MMIO は Linux 標準デバイスではなく、シミュレータ用の独自 console
 - Linux向けconsoleは、debug MMIOではなくNS16550A互換UARTへ寄せる
+- VerilatorではLinux bootが非常に遅い。`+TRACE_PIPE` はさらに遅くなるため、長時間確認では外す
 
 ## Target Direction
 
@@ -538,7 +545,7 @@ satp = 0
 - OpenSBI v1.3.1 `FW_JUMP` を `0x80000000` に配置し、UART banner表示まで到達
 - OpenSBI generic platformは現在のDTBから `uart8250` consoleを認識する
 - OpenSBIから見た次段は `Next Address = 0x80200000`, `Next Arg1 = 0x87f00000`, `Next Mode = S-mode`
-- 現在のDTBではCLINT互換nodeを追加し、OpenSBIから `Platform IPI Device : aclint-mswi`、`Platform Timer Device : aclint-mtimer @ 1000000Hz` として認識済み
+- 現在のDTBではCLINT互換nodeを追加し、OpenSBIから `Platform IPI Device : aclint-mswi`、`Platform Timer Device : aclint-mtimer @ 50000000Hz` として認識される想定
 - PMPを8 entriesへ拡張し、OpenSBIから `Boot HART PMP Count : 8` として認識済み
 - `make test-opensbi-payload OPENSBI_BIN=...` で、OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=DTB address`, SBI Base call、SBI legacy console putcharを確認済み
 
@@ -547,11 +554,12 @@ satp = 0
 - Linux Imageを `0x80200000` に配置し、OpenSBIからLinux entryへ渡せる
 - `satp` WARLを修正し、未対応Sv57/Sv48を受理せずSv39へ降格できる
 - `satp` CSR access / `sfence.vma` でfetchをflushし、Linux `head.S` の高位アドレス遷移を正しく実行できる
-- Linux earlyconで `Linux version 6.12.97`、SBI extension、memory init、clocksource、`sched_clock` まで出力できる
+- Linux earlyconで `Linux version 6.12.97`、SBI extension、memory init、SLUB、RCU、`riscv-intc`、clocksource、`sched_clock` まで出力できる
+- `TRACE_PIPE` 上では `sched_clock` 後も `minstret` が増え、timekeeping/IRQ処理とOpenSBI timer処理を継続している
 
 次:
 
-- boot logが止まる地点をtraceで特定する
+- traceなしで長時間実行し、最初のpanic/oops/停止点を特定する
 - PLIC実装前に、timer interrupt / SBI timer / WFI復帰がLinux上で進んでいるか確認する
 - initramfsなしで進める範囲と、initramfs投入が必要な地点を分ける
 - PLIC実装後にUART interrupt numberとDTBを一致させる

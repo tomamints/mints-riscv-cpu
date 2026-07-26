@@ -1,6 +1,6 @@
 # OpenSBI Bring-up Notes
 
-この文書は、OpenSBI v1.3.1 `FW_JUMP` のUART banner表示、OpenSBIからS-mode payloadへ到達するために行った変更、Linux Image投入の初回結果を残すためのメモです。
+この文書は、OpenSBI v1.3.1 `FW_JUMP` のUART banner表示、OpenSBIからS-mode payloadへ到達するために行った変更、Linux Image投入の現在地を残すためのメモです。
 
 現在確認できている到達点:
 
@@ -10,7 +10,7 @@ Boot ROM
   -> DTB at 0x87f00000
   -> UART banner output
   -> Next Address 0x80200000, Next Mode S-mode
-  -> S-mode payload at 0x80200000
+  -> S-mode payload or Linux Image at 0x80200000
 ```
 
 OpenSBIログ上では、以下まで確認済みです。
@@ -29,7 +29,7 @@ Boot HART PMP Count       : 8
 
 ```text
 Platform IPI Device       : aclint-mswi
-Platform Timer Device     : aclint-mtimer @ 1000000Hz
+Platform Timer Device     : aclint-mtimer
 ```
 
 このため、OpenSBI generic platformから見たmachine software interrupt / machine timer interruptのplatform device認識は通っています。
@@ -43,21 +43,94 @@ SBI base spec=0x0000000001000000 error=0x0000000000000000
 test success!
 ```
 
-Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000` のLinux先頭へジャンプし、Linuxの命令実行が始まるところまでは確認できています。
+Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000` のLinux先頭へジャンプし、Linux earlyconのboot logが出るところまで確認できています。
 
 ```text
-[PAYLOAD] pc=0000000080200000 inst=ff300a13 trap=0 expt=0
-[PAYLOAD] pc=0000000080200002 inst=0820106f trap=0 expt=0
+[    0.000000] Linux version 6.12.97 ...
+[    0.000000] Machine model: SystemVerilog RISC-V CPU
+[    0.000000] SBI TIME extension detected
+[    0.000000] SBI IPI extension detected
+[    0.000000] SBI RFENCE extension detected
+[    0.000000] earlycon: uart8250 at MMIO 0x0000000010000000
+[    0.004184] sched_clock: 64 bits at 1000kHz, resolution 1000ns
 ```
 
-現時点の停止位置はLinuxの `.Lsecondary_park` です。
+過去にはLinuxの `.Lsecondary_park` に入っていましたが、`satp` WARLと`satp/sfence.vma`時のfetch flushを直した後は、Sv39有効化後の高位仮想アドレス `ffffffff...` 側でLinux kernelを実行できています。
 
 ```text
-[PAYLOAD] pc=0000000080201068 inst=10500073  # wfi
-[PAYLOAD] pc=000000008020106c inst=ffdff06f  # jump back
+[HEARTBEAT] pc=ffffffff80108938 mode=1 satp=8000000000081005
 ```
 
-`arch/riscv/kernel/head.S` 上では `.Lsecondary_park` は、早期trap、起動hartとして進めなかった場合、secondary hartが戻ってきた場合などに入る退避ループです。現在のbring-upではSMPを無効化しているため、まずは `setup_vm` / `relocate_enable_mmu` 周辺の早期trap、つまりSv39切り替え直後の命令fetch/page fault/trap-vector遷移を優先して調査します。
+`sched_clock` 後も、`TRACE_PIPE` / `TRACE_HEARTBEAT` で `minstret` が増え続けることを確認しています。Linux側のPCは `timekeeping_advance`、`ktime_get_update_offsets_now`、`do_irq`、spinlock周辺へ進み、M-mode側ではOpenSBIの `_trap_handler`、`sbi_timer_event_start`、`mtimer_event_start` に入っています。
+
+つまり現時点の判断は、CPUが完全停止しているのではなく、Linuxのtimekeeping / IRQ初期化をVerilator上で非常に遅く進めている状態です。次の本当の修正点は、`minstret` が増えなくなる、panic/oops/illegal instruction/page faultが出る、または同一PCで長時間固定される箇所を見て決めます。
+
+## 現在の出力経路
+
+Linuxから見ると、consoleはDTBで指定したNS16550A互換UARTです。
+
+```text
+Linux
+  -> UART MMIO 0x10000000 にstore
+  -> CPU data path / Sv39 / PMP / MMIO decode
+  -> uart_ns16550.sv
+  -> Verilator C++ testbench stdout
+  -> make run-opensbiを実行しているterminal
+```
+
+今はFPGAの物理UARTではなく、Verilatorの標準出力へ文字を流しています。将来FPGAへ載せる場合は、同じUART MMIOをFPGA boardのUART TX pinへ接続し、USB serial経由でPC terminalに表示する形になります。
+
+## 時間の見方
+
+ログには3種類の時間があります。
+
+```text
+cycle
+  CPUクロック何回分進んだか。
+  DTB上の clock-frequency = 50MHz 想定なら cycle / 50,000,000 秒。
+
+mtime / Linux timestamp
+  Linuxがclocksourceとして見る時間。
+  `src/aclint_memory.sv` では mtime がCPUクロックごとに1増える。
+  現在はCPU clock 50MHz想定に合わせて、DTB上の timebase-frequency も50MHzにする。
+
+Verilator実行時間
+  macOS上でRTLを1cycleずつ評価する実時間。
+  FPGA実行時間よりかなり遅い。TRACEを出すとさらに遅い。
+```
+
+例:
+
+```text
+[    0.004184] sched_clock: 64 bits at 1000kHz
+```
+
+これはLinuxが認識している起動後時刻が `0.004184` 秒、つまり `4.184ms` という意味です。
+
+一方、`cycle=0x2ef00000` は10進数で `787,480,576` cycleです。CPU clockを50MHzとみなすと、FPGA上のCPUクロック換算では約 `15.75` 秒分です。ただしVerilator上でこれを進めるには、実時間ではそれ以上かかります。
+
+注意:
+
+過去のDTBでは `timebase-frequency = <1000000>` としていましたが、RTL実装では `mtime` が毎CPUクロック増えていました。CPU clockを50MHzと見なすと、Linux/OpenSBIへ1MHz timerと伝えるのは50倍速timerとして見えるため、timer interruptが過剰に発生する可能性があります。短期的にはDTBを実装実態に合わせて `timebase-frequency = <50000000>` とし、将来的に1MHz timerにしたい場合はRTL側で `mtime` を分周します。
+
+## 停止判定
+
+`minstret` はretireした命令数です。
+
+```text
+minstretが増えている
+  -> CPUは命令を完了し続けている
+  -> 少なくとも完全停止ではない
+
+minstretが長時間増えない
+  -> pipeline stall、WFI待ち、MMIO応答待ち、trap loopなどを疑う
+
+Linuxログだけ止まっている
+  -> printkが出ない処理中の可能性がある
+  -> TRACE_HEARTBEATでPC/minstretを見る
+```
+
+通常の長時間実行では `+TRACE_PIPE` を外します。`+TRACE_PIPE` は文字列出力が重く、Linux bootではシミュレーションを大きく遅くします。
 
 ## 起動方法
 
@@ -112,6 +185,8 @@ docker run --rm \
 
 ```text
 /private/tmp/linux-out/Image-linux-6.12-riscv64
+/private/tmp/linux-out/vmlinux-linux-6.12-riscv64
+/private/tmp/linux-out/System.map-linux-6.12-riscv64
 ```
 
 初回に使ったImageは約25MiBです。`defconfig` ベースのためGPU、USB、SCSI、ACPIなど余分なdriverも多く、次回以降はbring-up用configとしてさらに削る方針です。
@@ -216,7 +291,7 @@ OpenSBI v1.3.1では `riscv,clint0` がMSWI/IPI driverとMTIMER driverの両方�
 
 ```text
 Platform IPI Device       : aclint-mswi
-Platform Timer Device     : aclint-mtimer @ 1000000Hz
+Platform Timer Device     : aclint-mtimer @ 50000000Hz
 ```
 
 ### NS16550A互換UART
@@ -438,7 +513,7 @@ make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin
 - `rv64si` suiteが通る
 - OpenSBI v1.3.1のUART bannerが出る
 - Linux 6.12.y Imageを `0x80200000` に置き、OpenSBIからS-mode Linuxへhandoffできる
-- Linux earlyconで `Linux version 6.12.97` から `sched_clock` 付近までのboot logが出る
+- Linux earlyconで `Linux version 6.12.97` から memory init、SLUB、RCU、`riscv-intc`、clocksource、`sched_clock` までのboot logが出る
 
 ## Linux earlycon到達時に直したこと
 

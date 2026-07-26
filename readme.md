@@ -204,7 +204,7 @@ OpenSBIを試す場合は、repo外で用意した `fw_jump.bin` を指定しま
 make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin
 ```
 
-現在はOpenSBI v1.3.1 `FW_JUMP` でplatform情報表示と、`0x80200000` に置いた小さいS-mode payloadへのhandoffまで確認済みです。OpenSBIからは `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timer、`PMP Count = 8`、`Next Address = 0x80200000`、`Next Arg1 = 0x87f00000`、`Next Mode = S-mode` まで見えています。
+現在はOpenSBI v1.3.1 `FW_JUMP` でplatform情報表示と、`0x80200000` に置いた小さいS-mode payloadへのhandoffまで確認済みです。OpenSBIからは `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 50000000Hz` timer、`PMP Count = 8`、`Next Address = 0x80200000`、`Next Arg1 = 0x87f00000`、`Next Mode = S-mode` まで見えています。
 
 OpenSBI handoff確認用の最小payloadは以下で実行できます。
 
@@ -219,6 +219,29 @@ Linux Imageも同時に置く場合は、`0x80200000` に配置します。
 ```sh
 make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
 ```
+
+現在の確認済みLinux Image:
+
+```text
+/private/tmp/linux-out/Image-linux-6.12-riscv64
+```
+
+例:
+
+```sh
+make run-opensbi \
+  OPENSBI_BIN=/private/tmp/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64 \
+  OPENSBI_CYCLES=0
+```
+
+Linux boot logは、Linuxから見ると `0x10000000` のNS16550A互換UARTへ出ています。シミュレーション上では `uart_ns16550.sv` からVerilatorの標準出力へ流すため、`make run-opensbi` を実行しているterminalに表示されます。
+
+`OPENSBI_CYCLES` はシミュレータの最大実行サイクル数です。`0` は無制限実行用です。Linux起動の長時間確認では `SIM_EXTRA_ARGS` なしを推奨します。`+TRACE_PIPE` は大量のprintfを出すため、原因追跡時だけ使います。
+
+Linuxログの `[    0.004184]` はLinuxが認識している起動後時刻で、`0.004184` 秒、つまり `4.184ms` です。一方、`[PIPE] cycle=...` はCPUクロック数です。DTB上のCPU clockを50MHzとして見るなら `cycle / 50,000,000` 秒に相当します。ただしVerilator実行時間はFPGA実時間よりかなり遅くなります。
+
+現在のRTLでは `mtime` が毎CPUクロック増えるため、DTBの `timebase-frequency` も50MHzに合わせています。これが1MHzのままだと、Linux/OpenSBIからはtimerが50倍速に見え、timer interruptが過剰に発生する可能性があります。
 
 ### Custom C Tests
 
@@ -304,7 +327,7 @@ make test-os2-min-sv39
 
 今後の実装方針は `Docs/ROADMAP.md` に、機能ごとの進捗と次タスクは `Docs/TASK_STATUS.md` に整理しています。RVA23方向の棚卸しは `Docs/RVA23_CHECKLIST.md` に分けています。
 
-Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。Linux 6.12.y ImageはOpenSBI経由で起動し、earlyconで `Linux version 6.12.97`、SBI extension検出、memory init、clocksource、`sched_clock` まで出力できています。次フェーズはboot log停止地点の特定、PLIC、通常console、最小initramfsです。補助タスクとして、PTWメモリエラー発生源、TLB方針、UART RX/interruptが残っています。
+Linux起動を大目標にするため、U-mode syscallは最小確認で一旦区切っています。Linux 6.12.y ImageはOpenSBI経由で起動し、earlyconで `Linux version 6.12.97`、SBI extension検出、memory init、SLUB、RCU、`riscv-intc`、clocksource、`sched_clock` まで出力できています。`TRACE_PIPE` 上では `sched_clock` 後も `minstret` が増え、timekeeping/IRQ処理とOpenSBI timer処理を継続しています。次フェーズはboot log停止地点の特定、PLIC、通常console、最小initramfsです。補助タスクとして、PTWメモリエラー発生源、TLB方針、UART RX/interruptが残っています。
 
 trace run:
 

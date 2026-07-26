@@ -31,7 +31,7 @@ M-mode trap
   -> Linux-oriented platform
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page fault、NS16550A互換UARTの最小polling TX、OpenSBI UART banner表示、OpenSBIからS-mode payloadへのhandoff、OpenSBIからLinux 6.12.y `Image` 先頭へのhandoffまで到達済みです。現在はLinuxの `.Lsecondary_park` に入っており、次はLinux早期trapまたはSv39切り替え周辺の原因調査です。
+`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page fault、NS16550A互換UARTの最小polling TX、OpenSBI UART banner表示、OpenSBIからS-mode payloadへのhandoff、OpenSBIからLinux 6.12.y `Image` へのhandoffまで到達済みです。現在はLinux 6.12.97のearlyconでboot logが出ており、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock` まで確認済みです。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -64,11 +64,43 @@ M-mode trap
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
 | Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、TLB |
-| Linux platform | WIP / Linux earlycon reached | `make test-uart`, `make test-uart-regs`, `make dtb`, `make test-linux-bootargs`, `make run-opensbi OPENSBI_BIN=...`, `make test-opensbi-payload OPENSBI_BIN=...`, `make run-opensbi OPENSBI_BIN=... LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | `Linux version 6.12.97`、SBI Base/Time/IPI/RFENCE検出、earlycon、memory init、clocksource/sched_clockまで確認。次はboot log停止地点の特定、通常console/PLIC/initramfs |
+| Linux platform | WIP / Linux early boot progressing | `make test-uart`, `make test-uart-regs`, `make dtb`, `make test-linux-bootargs`, `make run-opensbi OPENSBI_BIN=...`, `make test-opensbi-payload OPENSBI_BIN=...`, `make run-opensbi OPENSBI_BIN=... LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | `Linux version 6.12.97`、SBI Base/Time/IPI/RFENCE検出、earlycon、memory init、SLUB、RCU、`riscv-intc`、clocksource/sched_clockまで確認。`TRACE_TIMER`でOpenSBI/ACLINT timerの`mtimecmp`設定と`MTIP`発生/clearも確認。RTLでは`mtime`が毎CPUクロック増えるため、DTBの`timebase-frequency`を50MHzへ合わせる。次は本当の停止点、通常console/PLIC/initramfsの順に切り分ける |
 
 ## テスト一覧
 
 Linux起動を大目標にするため、U-mode syscallは最小確認済みで一旦区切ります。Sv39はdata-sideとinstruction fetchの最小identity mapping、2MiB L1 / 1GiB L2 superpage、SUM/MXR、A/D fault、X=0 fetch faultまで確認済みで、PTWは `sv39_ptw.sv` に分離済みです。OpenSBIはUART console / ACLINT MSWI / ACLINT MTIMERを認識し、S-mode payloadへhandoffできます。Linux 6.12.y Image投入後、`satp` WARLと`satp/sfence.vma` fetch flushを修正し、Linux earlyconのboot logまで到達しました。
+
+Linux boot logの現在地:
+
+- OpenSBI v1.3.1 `FW_JUMP` 起動
+- `Platform Console Device : uart8250`
+- `Platform IPI Device : aclint-mswi`
+- `Platform Timer Device : aclint-mtimer @ 50000000Hz`
+- Linux 6.12.97へS-mode handoff
+- `SBI TIME/IPI/RFENCE extension detected`
+- `earlycon: uart8250 at MMIO 0x10000000`
+- reserved memory / zone setup / `riscv,isa` 認識
+- virtual kernel memory layout
+- `riscv-intc`
+- `clocksource: riscv_clocksource`
+- `sched_clock: 64 bits at 1000kHz`
+- `SLUB`
+- `RCU Tasks Trace`
+- `NR_IRQS`
+
+追加traceで分かったこと:
+
+- `+TRACE_TIMER`: Linuxのclocksource初期化後、OpenSBIがACLINT `mtimecmp` を設定し、`mtime >= mtimecmp` で `MTIP` が立つ。OpenSBIが `mtimecmp = -1` に戻すことで `MTIP` がclearされる。
+- `+TRACE_HEARTBEAT`: OpenSBIからLinuxへ移った後、`mode=1`、`satp=8000...`、`pc=ffffffff...` でLinux kernel textを実行している。
+- `+TRACE_PIPE`: `sched_clock` 後もcommitが進んでいる。Linux側では `timekeeping_advance`、`ktime_get_update_offsets_now`、`do_irq`、spinlock周辺を実行し、M-mode側ではOpenSBIの `_trap_handler`、`sbi_timer_event_start`、`mtimer_event_start` に入る。現時点では完全停止ではなく、Verilator上で遅く進んでいる状態。
+- timer frequency: `src/aclint_memory.sv` では `mtime` が毎CPUクロック増える。DTBが `timebase-frequency = 1000000` のままだと、50MHz想定CPUではLinux/OpenSBIから50倍速timerに見えるため、DTBを `50000000` へ合わせる。
+
+停止判定:
+
+- `minstret` が増え続けるならCPUは命令をretireしており、少なくとも完全停止ではない
+- Linuxログだけ止まる場合は、printkが出ない初期化中の可能性がある
+- `minstret` が長時間増えない、または同一PCに固定されたら、そのPCを `System.map` / OpenSBI ELFで関数名に対応させて次の修正対象を決める
+- 通常実行は `+TRACE_PIPE` なしを推奨する。`+TRACE_PIPE` はprintf量が多く、Linux起動を大きく遅くする
 
 ### Custom Tests
 
@@ -81,8 +113,8 @@ Linux起動を大目標にするため、U-mode syscallは最小確認済みで�
 | `make test-uart-regs` | Pass | `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替え、`LSR/IIR/MSR`の最小固定値 |
 | `make dtb` | Pass | `platform/riscv_cpu.dts` から `build/platform/riscv_cpu.dtb` を生成。RAMは128MiB、UART nodeは `serial@10000000`, `reg-shift=0`, `reg-io-width=1` |
 | `make test-linux-bootargs` | Pass | Linux boot ABIの `a0=hartid=0`, `a1=0x87f00000` をpayloadへ渡し、RAM image内にDTBを配置 |
-| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | Pass / OpenSBI platform info | OpenSBI `fw_jump.bin` を `0x80000000`、DTBを `0x87f00000`、任意Linux Imageを `0x80200000` に配置して起動するtarget。v1.3.1 `FW_JUMP` で `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 1000000Hz` timerを確認 |
-| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | WIP / Linux earlycon reached | Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoff。`Linux version 6.12.97`、Machine model、SBI Base/Time/IPI/RFENCE、`earlycon: uart8250`、memory init、`riscv_clocksource`、`sched_clock` まで確認 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | Pass / OpenSBI platform info | OpenSBI `fw_jump.bin` を `0x80000000`、DTBを `0x87f00000`、任意Linux Imageを `0x80200000` に配置して起動するtarget。v1.3.1 `FW_JUMP` で `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 50000000Hz` timerを確認 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | WIP / Linux early boot progressing | Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoff。`Linux version 6.12.97`、Machine model、SBI Base/Time/IPI/RFENCE、`earlycon: uart8250`、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock` まで確認。`TRACE_PIPE`上ではその後も`minstret`が増える |
 | `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | Pass | OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=0x87f00000`, SBI Base call、SBI legacy console putcharを確認。PMPは8 entriesとしてOpenSBIに認識される |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
