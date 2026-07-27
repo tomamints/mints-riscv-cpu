@@ -12,6 +12,12 @@ gcc="${RISCV_PREFIX}gcc"
 readelf="${RISCV_PREFIX}readelf"
 objdump="${RISCV_PREFIX}objdump"
 
+if command -v rg >/dev/null 2>&1; then
+  grep_cmd=(rg)
+else
+  grep_cmd=(grep -E)
+fi
+
 if [[ ! -x "$gcc" ]]; then
   echo "missing compiler: $gcc" >&2
   exit 1
@@ -51,9 +57,9 @@ LIST
 "$OUT_DIR/gen_init_cpio" "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.cpio"
 
 file "$OUT_DIR/init"
-"$readelf" -h "$OUT_DIR/init" | rg 'Class|Type|Machine|Flags'
+"$readelf" -h "$OUT_DIR/init" | "${grep_cmd[@]}" 'Class|Type|Machine|Flags'
 "$readelf" -A "$OUT_DIR/init" || true
-if "$objdump" -d "$OUT_DIR/init" | rg '\b(fld|fsd|flw|fsw|fadd|fsub|fmul|fdiv|c\.fld|c\.fsd)\b'; then
+if "$objdump" -d "$OUT_DIR/init" | "${grep_cmd[@]}" '\b(fld|fsd|flw|fsw|fadd|fsub|fmul|fdiv|c\.fld|c\.fsd)\b'; then
   echo "unexpected F/D instruction found" >&2
   exit 1
 fi

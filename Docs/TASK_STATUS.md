@@ -120,6 +120,9 @@ Linux boot logの現在地:
 | `make test-uart` | Pass | NS16550A互換UARTの最小polling TX。`0x10000005`のLSR read、`0x10000000`のTHR byte write、Verilator標準出力への表示 |
 | `make test-uart-input INPUT_TEXT=Z` | Pass | NS16550A互換UARTの最小polling RX。stdinから来た `Z` を `RBR` で読み、`THR` へechoして表示。`LSR[0]=DR` とRBR readでのRX clearを確認 |
 | `make test-uart-regs` | Pass | `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替え、`LSR/IIR/MSR`の最小固定値 |
+| `make test-uart-tx-irq` | Not run | UART `IER[1]` 有効化時の初回THRE IRQと、`THR` write後のTHRE IRQ再発火を確認するために追加。Linux 8250 driverが送信を継続できるかを見る |
+| `make test-uart-tx-seip` | Not run | S-mode PLIC contextで初回THRE IRQと `THR` write後のTHRE IRQ再発火を確認する。Linux通常consoleのTX interrupt経路に近い |
+| `make test-uart-rx-seip INPUT_TEXT=Z` | Not run | stdinから来た `Z` がUART RX interruptとしてPLIC S-context経由でS-modeへ届くことを確認する。Enter入力でLinux UART handlerが起きるかの切り分け用 |
 | `make c-test C_TEST=plic_uart_irq CYCLES=200000` | Pass | PLIC priority/enable/threshold readback、UART THRE interrupt、PLIC claim=10、M-mode external interrupt `mcause=0x800000000000000b` を確認 |
 | `make c-test C_TEST=plic_seip CYCLES=300000` | Pass | M-modeでPMP allow-allと`mideleg.SEIP`を設定してS-modeへ入り、UART THRE interruptをPLIC S-contextでclaimし、S-mode external interrupt `scause=0x8000000000000009` を確認 |
 | `make dtb` | Pass | `platform/riscv_cpu.dts` から `build/platform/riscv_cpu.dtb` を生成。RAMは128MiB、UART nodeは `serial@10000000`, `reg-shift=0`, `reg-io-width=1`。PLIC node `interrupt-controller@c000000` とUART IRQ 10も記述 |
@@ -128,6 +131,7 @@ Linux boot logの現在地:
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | WIP / Linux early boot progressing | Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoff。`Linux version 6.12.97`、Machine model、SBI Base/Time/IPI/RFENCE、`earlycon: uart8250`、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock`、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまで確認。`console=ttyS0,115200` はbootargsへ反映済み。通常console登録は次に継続確認 |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup` | Pass / expected VFS panic | `allnoconfig` ベースのLinux 6.12.y bring-up用Image。約3MiB。SBI、DTB、RISC-V timer、SiFive PLIC、8250 UART console、proc/sysfs/devtmpfs、ELF/initrd周辺を残し、SCSI/ATA/MD/RAID6/USB/media/sound/PCI/ACPI/network/jitterentropyを削除。Linuxで `riscv-plic: ... mapped 32 interrupts`, `Serial: 8250/16550 driver`, `ttyS0 at MMIO 0x10000000`, `legacy console [ttyS0] enabled` を確認。rootfs未指定のため `VFS: Unable to mount root fs` で期待どおりpanic |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs` | Pass / expected PID1 panic | libcなし最小 `/init` をinitramfsへ埋め込み、LinuxがU-mode PID 1を起動し、`write(2)` syscallでconsole出力できることを確認。`exit(0)` でPID1終了panicになるのは期待結果 |
+| `make run-opensbi-input OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs OPENSBI_CYCLES=0` | Pass / BusyBox shell | `rv64imac/lp64` soft-float static BusyBoxをinitramfsへ入れ、Linux PID 1 `/init` からBusyBox shell `~ #` まで到達。残課題は制御TTY整備によるjob control warningの解消 |
 | `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | Pass | OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=0x87f00000`, SBI Base call、SBI legacy console putcharを確認。PMPは8 entriesとしてOpenSBIに認識される |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
@@ -137,6 +141,29 @@ Linux boot logの現在地:
 | `make test-os2-min OS2_MIN_DEFS=-DOS2_MIN_PMP OS2_MIN_NAME=kernel_pmp CYCLES=300000` | Pass | PMP禁止TOR領域へのS-mode load/store/fetchで `scause=5/7/1`, `stval=fault address`。禁止storeでRAM値が変化しないこと、fetchがRではなくXを見ること、32-bit命令後半2byteのX禁止も確認 |
 | `make test-os2-min-sv39` | Pass | S-modeで`satp.MODE=8`を設定し、4KiB PTEの3-level page walkでdata load/store/fetchをidentity mapping。2MiB L1 / 1GiB L2 superpage、未map load、SUM=0/1、MXR=0/1、A=0 load、D=0 store、W=0 store、satp.PPN切り替え、X=0 fetch page faultを確認 |
 | `make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full` | Pass / current claimed suites | `rv64mi-p-illegal`, `rv64mi-p-instret_overflow`, `rv64si-p-csr`, `rv64si-p-dirty` などの既知failは修正済み。F/D/Zb/Zfh系は未claim |
+
+## Current Linux Bring-up Status
+
+現在の大きな到達点は、OpenSBI経由でLinux 6.12.yを起動し、initramfs内のBusyBox shellまで到達したことです。
+
+確認済み:
+
+- OpenSBI `fw_jump.bin` 起動
+- DTB handoff `a0=hartid`, `a1=DTB PA`
+- Linux Sv39有効化
+- ACLINT timer / MSWI
+- PLIC S-context
+- NS16550A UART earlycon / normal console
+- `rv64imac/lp64` soft-float static BusyBox
+- Linux U-mode `/init` 実行
+- BusyBox shell prompt
+
+残課題:
+
+- `/init` で制御TTYを設定し、`can't access tty; job control turned off` を解消する
+- UART RXの行編集、Backspace/Delete、端末制御の見え方を整える
+- BusyBox上で `uname -a`, `ls /`, `cat /proc/cpuinfo`, `dmesg` などを確認する
+- 長期的にはrootfs、ブロックデバイス、より標準的なconsole/interrupt動作へ進める
 
 ### riscv-tests Summary
 

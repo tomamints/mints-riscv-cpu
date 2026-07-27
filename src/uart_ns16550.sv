@@ -21,18 +21,11 @@ module uart_ns16550 (
 
 	assign irq = (rx_valid && ier[0]) || (tx_irq_pending && ier[1]);
 
-	function automatic logic [7:0] write_byte(
+	function automatic logic [7:0] get_write_byte(
 		input logic [MEMBUS_DATA_WIDTH-1:0] wdata,
-		input logic [(MEMBUS_DATA_WIDTH/8)-1:0] wmask,
 		input logic [2:0] addr_low
 	);
-		logic [2:0] lane;
-		lane = addr_low;
-		if (wmask[lane]) begin
-			write_byte = wdata[lane * 8 +: 8];
-		end else begin
-			write_byte = wdata[7:0];
-		end
+		get_write_byte = wdata[addr_low * 8 +: 8];
 	endfunction
 
 	function automatic logic [7:0] read_reg(input Addr addr);
@@ -76,12 +69,20 @@ module uart_ns16550 (
 			rx_valid <= 1'b0;
 			tx_irq_pending <= 1'b0;
 		end else begin
+			logic rbr_read;
+
+			rbr_read =
+				membus.valid &&
+				!membus.wen &&
+				!lcr[7] &&
+				(membus.addr[2:0] == UART_REG_RBR_THR_DLL[2:0]);
+
 			membus.ready <= 1'b1;
 			membus.rvalid <= membus.valid;
 			membus.rdata <= membus.valid ? read_lane_data(membus.addr) : '0;
 
 `ifdef ENABLE_DEBUG_INPUT
-			if (!rx_valid) begin
+			if (!rx_valid && !rbr_read) begin
 				longint input_value;
 				input_value = util::get_input();
 				if (input_value[63:44] == 20'h01010) begin
@@ -95,43 +96,49 @@ module uart_ns16550 (
 				logic [7:0] wbyte;
 				logic [2:0] reg_addr;
 				logic dlab;
+				logic byte_write_valid;
 
-				wbyte = write_byte(membus.wdata, membus.wmask, membus.addr[2:0]);
+				wbyte = get_write_byte(membus.wdata, membus.addr[2:0]);
 				reg_addr = membus.addr[2:0];
 				dlab = lcr[7];
+				byte_write_valid = membus.wmask[membus.addr[2:0]];
 
 				if (membus.wen) begin
-					unique case (reg_addr)
-						UART_REG_RBR_THR_DLL[2:0]: begin
-							if (dlab) begin
-								dll <= wbyte;
-							end else begin
-								$write("%c", wbyte);
-								$fflush();
-								tx_irq_pending <= 1'b0;
-							end
-						end
-						UART_REG_IER_DLM[2:0]: begin
-							if (dlab) begin
-								dlm <= wbyte;
-							end else begin
-								ier <= wbyte;
-								if (!ier[1] && wbyte[1]) begin
-									tx_irq_pending <= 1'b1;
+					if (byte_write_valid) begin
+						unique case (reg_addr)
+							UART_REG_RBR_THR_DLL[2:0]: begin
+								if (dlab) begin
+									dll <= wbyte;
+								end else begin
+									$write("%c", wbyte);
+									$fflush();
+									tx_irq_pending <= ier[1];
 								end
 							end
-						end
-						UART_REG_IIR_FCR[2:0]: begin
-							fcr <= wbyte;
-							if (wbyte[1]) begin
-								rx_valid <= 1'b0;
+							UART_REG_IER_DLM[2:0]: begin
+								if (dlab) begin
+									dlm <= wbyte;
+								end else begin
+									ier <= wbyte;
+									if (!wbyte[1]) begin
+										tx_irq_pending <= 1'b0;
+									end else if (!ier[1]) begin
+										tx_irq_pending <= 1'b1;
+									end
+								end
 							end
-						end
-						UART_REG_LCR[2:0]:     lcr <= wbyte;
-						UART_REG_MCR[2:0]:     mcr <= wbyte;
-						UART_REG_SCR[2:0]:     scr <= wbyte;
-						default: ;
-					endcase
+							UART_REG_IIR_FCR[2:0]: begin
+								fcr <= wbyte;
+								if (wbyte[1]) begin
+									rx_valid <= 1'b0;
+								end
+							end
+							UART_REG_LCR[2:0]:     lcr <= wbyte;
+							UART_REG_MCR[2:0]:     mcr <= wbyte;
+							UART_REG_SCR[2:0]:     scr <= wbyte;
+							default: ;
+						endcase
+					end
 				end else begin
 					if (!dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
 						rx_valid <= 1'b0;

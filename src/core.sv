@@ -569,6 +569,49 @@ module core (
 	logic wbs_writes_minstret;
 	assign wbs_writes_minstret = wbs_ctrl.is_csr && (wbs_inst_bits[31:20] == MINSTRET) && (wbs_inst_bits[13:12] != 2'b00);
 
+	function automatic string linux_syscall_name(input UIntX nr);
+		case (nr)
+			UIntX'(17):  return "getcwd";
+			UIntX'(29):  return "ioctl";
+			UIntX'(40):  return "mount";
+			UIntX'(56):  return "openat";
+			UIntX'(57):  return "close";
+			UIntX'(61):  return "getdents64";
+			UIntX'(62):  return "lseek";
+			UIntX'(63):  return "read";
+			UIntX'(64):  return "write";
+			UIntX'(66):  return "writev";
+			UIntX'(78):  return "readlinkat";
+			UIntX'(79):  return "newfstatat";
+			UIntX'(80):  return "fstat";
+			UIntX'(93):  return "exit";
+			UIntX'(94):  return "exit_group";
+			UIntX'(96):  return "set_tid_address";
+			UIntX'(98):  return "futex";
+			UIntX'(99):  return "set_robust_list";
+			UIntX'(101): return "nanosleep";
+			UIntX'(113): return "clock_gettime";
+			UIntX'(129): return "kill";
+			UIntX'(134): return "rt_sigaction";
+			UIntX'(135): return "rt_sigprocmask";
+			UIntX'(160): return "uname";
+			UIntX'(172): return "getpid";
+			UIntX'(173): return "getppid";
+			UIntX'(174): return "getuid";
+			UIntX'(175): return "geteuid";
+			UIntX'(176): return "getgid";
+			UIntX'(177): return "getegid";
+			UIntX'(214): return "brk";
+			UIntX'(215): return "munmap";
+			UIntX'(221): return "execve";
+			UIntX'(222): return "mmap";
+			UIntX'(226): return "mprotect";
+			UIntX'(260): return "wait4";
+			UIntX'(261): return "prlimit64";
+			default:     return "unknown";
+		endcase
+	endfunction
+
 	always_comb begin
 		if (wbs_ctrl.is_lui) begin
 			wbs_wb_data = wbs_imm;
@@ -636,6 +679,27 @@ module core (
 				csru_priv_mode,
 				satp_fetch_value,
 				wbq_rdata.raise_trap);
+		end
+		if ($test$plusargs("TRACE_SYSCALL") &&
+			wbs_valid &&
+			wbq_rdata.raise_trap &&
+			wbs_inst_bits == 32'h00000073 &&
+			csru_priv_mode == U) begin
+			$display("[SYSCALL] cycle=%h minstret=%h pc=%h nr=%0d(%s) a0=%h a1=%h a2=%h a3=%h a4=%h a5=%h sp=%h ra=%h satp=%h",
+				debug_cycle,
+				minstret,
+				wbs_pc,
+				regfile[17],
+				linux_syscall_name(regfile[17]),
+				regfile[10],
+				regfile[11],
+				regfile[12],
+				regfile[13],
+				regfile[14],
+				regfile[15],
+				regfile[2],
+				regfile[1],
+				satp_fetch_value);
 		end
 		if ($test$plusargs("TRACE_PIPE") && debug_cycle[19:0] == 20'h0) begin
 			$display("[PIPE] cycle=%h minstret=%h mode=%0d satp=%h id_v=%b id_pc=%h ex_v=%b ex_pc=%h ex_stall=%b mem_v=%b mem_pc=%h mem_stall=%b wb_v=%b wb_pc=%h i_rvalid=%b i_rready=%b d_v=%b d_rdy=%b d_rvalid=%b",

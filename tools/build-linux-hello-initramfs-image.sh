@@ -10,6 +10,21 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${IMAGE_NAME:=Image-linux-6.12-riscv64-hello-initramfs}"
 : "${JOBS:=8}"
 
+case "$LINUX_SRC" in
+  /*) ;;
+  *) LINUX_SRC="$repo_root/$LINUX_SRC" ;;
+esac
+
+case "$LINUX_OUT" in
+  /*) ;;
+  *) LINUX_OUT="$repo_root/$LINUX_OUT" ;;
+esac
+
+case "$KBUILD_OUT" in
+  /*) ;;
+  *) KBUILD_OUT="$repo_root/$KBUILD_OUT" ;;
+esac
+
 if [[ ! -d "$LINUX_SRC" ]]; then
   echo "missing Linux source: $LINUX_SRC" >&2
   exit 1

@@ -29,6 +29,9 @@ core/test/*
 !core/test/uart_input.c
 !core/test/uart_output.c
 !core/test/uart_regs.c
+!core/test/uart_rx_seip.c
+!core/test/uart_tx_seip.c
+!core/test/uart_tx_irq.c
 !core/test/hex/
 !core/test/hex/*.hex
 !core/test/os2_min/

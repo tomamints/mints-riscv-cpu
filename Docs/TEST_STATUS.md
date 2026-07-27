@@ -109,8 +109,12 @@ These suites are outside the currently claimed implementation scope and were not
 | `make test-uart` | `core/test/uart_output.c` | Pass | NS16550A互換UARTの `LSR` をpollingし、`THR` へbyte writeして `A` とsuccessを出力。`0x10000000`のMMIO decode、byte lane read/write、Verilator標準出力を確認 |
 | `make test-uart-input INPUT_TEXT=Z` | `core/test/uart_input.c` | Pass | `ENABLE_DEBUG_INPUT`付きsimulatorでstdinの `Z` をUART `RBR` から読み、`THR` へechoして `Z` とsuccessを出力。`LSR[0]=DR`、RBR readでのRX clearを確認 |
 | `make test-uart-regs` | `core/test/uart_regs.c` | Pass | `LSR.THRE/TEMT`, `IIR=0x01`, `MSR=0`, `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替えを確認 |
+| `make test-uart-tx-irq` | `core/test/uart_tx_irq.c` | Not run | UART `IER[1]` 有効化時の初回THRE IRQに加えて、`THR` へbyte writeした後にTHRE IRQが再発火することを確認する。Linux 8250 driverの送信継続に近い経路のテスト |
+| `make test-uart-tx-seip` | `core/test/uart_tx_seip.c` | Not run | S-mode PLIC contextで、初回THRE IRQと `THR` write後のTHRE IRQ再発火を確認する。Linux通常consoleのTX interrupt経路に近い |
+| `make test-uart-rx-seip INPUT_TEXT=Z` | `core/test/uart_rx_seip.c` | Not run | `ENABLE_DEBUG_INPUT`付きsimulatorでstdin `Z` を受け取り、UART RX interruptがPLIC S-context経由でS-mode external interruptへ届き、handlerで `IIR=0x04` と `RBR=Z` を確認する |
 | `make c-test C_TEST=plic_uart_irq CYCLES=200000` | `core/test/plic_uart_irq.c` | Pass | PLIC priority/enable/threshold readback、UART `IER[1]` によるTHRE interrupt、PLIC claim=10、M-mode external interrupt `mcause=0x800000000000000b` を確認 |
 | `make c-test C_TEST=plic_seip CYCLES=300000` | `core/test/plic_seip.c` | Pass | M-modeでPMP allow-allと`mideleg.SEIP`を設定してS-modeへ入り、UART `IER[1]` によるTHRE interruptをPLIC S-contextでclaimし、S-mode external interrupt `scause=0x8000000000000009` を確認 |
+| `make run-opensbi-input LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs OPENSBI_CYCLES=0` | Linux 6.12.y + BusyBox initramfs | Pass / shell prompt | `rv64imac/lp64` soft-float static BusyBoxをinitramfsへ埋め込み、LinuxがPID 1 `/init` を実行してBusyBox shell `~ #` まで到達。`can't access tty; job control turned off` は制御TTY未整備による残課題 |
 | `make test-mswi` | `core/test/mswi.c` | Pass | ACLINT machine software interrupt の handler 到達を確認 |
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
 | `make test-os2-min` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | 入力不要の統合テスト。PMP NAPOT allow-all設定後、S-mode遷移、SBI debug console putchar、SBI TIME `set_timer`、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回を確認 |
@@ -130,7 +134,11 @@ These suites are outside the currently claimed implementation scope and were not
 | `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | `platform/opensbi_payload_entry.S`, `platform/opensbi_payload.c` | Pass | OpenSBIから `0x80200000` のS-mode payloadへhandoffし、payload側で `hartid=0`, `dtb=0x87f00000`, SBI Base spec `0x01000000`, SBI legacy console putcharを確認。最後にdebug MMIOへsuccessを書いて終了 |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup` | Linux 6.12.y minbringup Image | Pass / expected VFS panic | `riscv-plic` driverがPLICを認識、8250 driverが `ttyS0 at MMIO 0x10000000` を登録し、通常consoleを有効化。rootfs/initramfs未指定のため `VFS: Unable to mount root fs` で期待どおりpanic |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs` | libcなし最小 `/init` | Pass / expected PID1 panic | `platform/linux_user_init.S` をinitramfsへ埋め込み、LinuxがPID 1としてU-mode `/init` を実行。`write(2)` で `Hello from userspace...` が出力され、`exit(0)` 後にPID1終了panicになることを確認 |
+| `tools/build-rv64imac-busybox.sh` | BusyBox 1.36.1 | Pass | `riscv64-unknown-linux-musl-gcc` でstatic BusyBoxを生成。`ELF64`, `RVC`, `soft-float ABI`, `statically linked` を確認し、F/D命令が混入していないことをobjdumpで確認 |
+| `tools/build-linux-busybox-initramfs-image.sh` | Linux source in Docker volume | Pass | macOS filesystemの `Kbuild/kbuild` 衝突を避けるため `LINUX_SRC_VOLUME=linux-6.12-src` を使用。BusyBox入り `Image-linux-6.12-riscv64-busybox-initramfs` を生成 |
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
+
+Linux通常consoleで `BusyBox userspac` の16文字だけ表示されて止まる問題は、16550のTHR empty interruptが再発行されず、Linux 8250 driverがFIFOサイズ分だけ送信して次のTX interrupt待ちになっていたことが原因でした。`src/uart_ns16550.sv` でTHR write後に `IER[1]` が有効なら `tx_irq_pending` を再度立てるように修正しています。
 
 S-mode `sepc` 更新失敗は、CSR write mask table に `SEPC` がなく `wmask=0` になっていたことが原因でした。現在は `SEPC_WMASK` を適用し、S-mode trap handler から `sepc` を更新できます。

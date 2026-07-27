@@ -287,21 +287,59 @@ Kernel panic - not syncing: VFS: Unable to mount root fs on "" or unknown-block(
 
 このpanicはrootfs/initramfsをまだ渡していないための期待結果です。つまり、OpenSBIからLinuxへ入り、Sv39、timer、PLIC、通常8250 console登録までは通過しています。
 
-BusyBox initramfsも次の段階として試行しました。ここで見えた問題は2つです。
+BusyBox initramfsも確認しました。ここで見えた初期問題は2つでした。
 
 1. `/init` をshell scriptとして実行するには `CONFIG_BINFMT_SCRIPT=y` が必要
 2. BusyBox本体が `double-float ABI` だと、`rv64imac/lp64` の現在のCPUではU-mode illegal instructionになる
 
-そのため、initramfsの次の作業はRTL変更ではなく、`rv64imac/lp64` soft-float向けのstatic BusyBoxを作ることです。既製の `riscv64/busybox:musl` imageも `double-float ABI` だったため、そのままでは使用しません。
+そのため、既製の `riscv64/busybox:musl` imageは使わず、`rv64imac/lp64` soft-float向けのstatic BusyBoxを作っています。
 
 補助スクリプト:
 
 ```sh
 tools/build-rv64imac-musl-toolchain.sh
 tools/build-rv64imac-busybox.sh
+tools/build-linux-busybox-initramfs-image.sh
 ```
 
-`tools/build-rv64imac-musl-toolchain.sh` はDocker上のUbuntu環境で `rv64imac/lp64` musl toolchainを `build/riscv-musl-lp64` に作ります。`tools/build-rv64imac-busybox.sh` はそのcompilerでstatic BusyBoxを作ります。
+`tools/build-rv64imac-musl-toolchain.sh` はDocker上のUbuntu環境で `rv64imac/lp64` musl toolchainを `build/riscv-musl-lp64` に作ります。`tools/build-rv64imac-busybox.sh` はそのcompilerでstatic BusyBoxを作ります。`tools/build-linux-busybox-initramfs-image.sh` はBusyBox入りinitramfsをbuilt-inしたLinux Imageを作ります。
+
+Linux sourceはDocker volume `linux-6.12-src` に置く運用を推奨します。macOSの通常filesystemでは `Documentation/Kbuild` と `Documentation/kbuild/` がcase-insensitiveに衝突し、kernel buildの `mrproper` やout-of-tree buildが壊れるためです。
+
+BusyBox入りImage作成:
+
+```sh
+LINUX_SRC_VOLUME=linux-6.12-src \
+LINUX_OUT=build/external/linux-out \
+KBUILD_OUT=build/linux-build-busybox-clean \
+JOBS=4 \
+tools/build-linux-busybox-initramfs-image.sh
+```
+
+BusyBox起動:
+
+```sh
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs \
+  OPENSBI_CYCLES=0
+```
+
+確認済み到達点:
+
+```text
+Run /init as init process
+BusyBox userspace on SystemVerilog RISC-V CPU
+Type commands. Example: uname -a
+/bin/sh: can't access tty; job control turned off
+~ #
+```
+
+ここまでで、Linux kernelからU-modeのPID 1を起動し、BusyBox shellまで到達しています。`can't access tty; job control turned off` は制御TTY未整備による残課題で、Linux + BusyBoxの起動失敗ではありません。
+
+Linux通常consoleで `BusyBox userspac` の16文字だけ表示されて止まる問題は、16550のTHR empty interruptが再発行されていないことが原因でした。Linux 8250 driverはFIFOサイズ分を送った後、次の送信をTHRE interruptで進めます。`src/uart_ns16550.sv` ではTHR write後に即時送信完了扱いとして、`IER[1]` が有効なら `tx_irq_pending` を再度立てるようにしています。
+
+入力表示については、Verilator host terminal側のechoとLinux側のechoが二重になると `^?` などが見えやすくなります。`src/tb_verilator.cpp` では `ICANON | ECHO` を無効化し、Ctrl-C用の `ISIG` は残す方針です。
 
 RAM配置:
 

@@ -224,16 +224,17 @@ make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
 現在の確認済みLinux Image:
 
 ```text
-/private/tmp/linux-out/Image-linux-6.12-riscv64
-/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup
+build/external/linux-out/Image-linux-6.12-riscv64
+build/external/linux-out/Image-linux-6.12-riscv64-minbringup
+build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs
 ```
 
 例:
 
 ```sh
 make run-opensbi \
-  OPENSBI_BIN=/private/tmp/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-minbringup \
   OPENSBI_CYCLES=0
 ```
 
@@ -253,20 +254,55 @@ Kernel panic - not syncing: VFS: Unable to mount root fs on "" or unknown-block(
 
 最後のpanicはrootfs/initramfs未指定による期待結果です。
 
-BusyBox initramfs投入も試行済みです。現在の未解決点はCPU/RTLではなくuserland側です。
+BusyBox initramfs投入も確認済みです。既製のBusyBoxではなく、現在のCPUに合わせた `rv64imac/lp64` soft-float static BusyBoxを作っています。
 
 - `/init` は `#!/bin/sh` スクリプトなので、Linux configに `CONFIG_BINFMT_SCRIPT=y` が必要です。
 - 既製の `riscv64/busybox:musl` とUbuntu cross toolchainで作ったBusyBoxは `double-float ABI` でした。現在のCPU/DTBは `rv64imac` でF/D拡張を公開していないため、このBusyBoxを実行するとU-modeでillegal instructionになります。
-- 次は `rv64imac/lp64` のsoft-float Linux userland toolchainを用意し、それでstatic BusyBoxを作る必要があります。
+- `tools/build-rv64imac-musl-toolchain.sh` で `rv64imac/lp64` のmusl Linux userland toolchainを作り、`tools/build-rv64imac-busybox.sh` でstatic BusyBoxを作る構成にしています。
+- macOSのcase-insensitive filesystemではLinux sourceの `Documentation/Kbuild` と `Documentation/kbuild/` が衝突するため、Linux sourceはDocker volume `linux-6.12-src` に置く運用を推奨します。
 
 補助スクリプト:
 
 ```sh
 tools/build-rv64imac-musl-toolchain.sh
 tools/build-rv64imac-busybox.sh
+tools/build-linux-busybox-initramfs-image.sh
 ```
 
-前者は `build/riscv-musl-lp64` に `riscv64-unknown-linux-musl-gcc` を作ります。後者はそのtoolchainでstatic BusyBoxを作ります。
+`tools/build-rv64imac-musl-toolchain.sh` は `build/riscv-musl-lp64` に `riscv64-unknown-linux-musl-gcc` を作ります。`tools/build-rv64imac-busybox.sh` はそのtoolchainでstatic BusyBoxを作ります。`tools/build-linux-busybox-initramfs-image.sh` はBusyBox入りinitramfsをbuilt-inしたLinux Imageを作ります。
+
+BusyBox Image作成:
+
+```sh
+LINUX_SRC_VOLUME=linux-6.12-src \
+LINUX_OUT=build/external/linux-out \
+KBUILD_OUT=build/linux-build-busybox-clean \
+JOBS=4 \
+tools/build-linux-busybox-initramfs-image.sh
+```
+
+BusyBox起動:
+
+```sh
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs \
+  OPENSBI_CYCLES=0
+```
+
+現在は以下まで確認済みです。
+
+```text
+Run /init as init process
+BusyBox userspace on SystemVerilog RISC-V CPU
+Type commands. Example: uname -a
+/bin/sh: can't access tty; job control turned off
+~ #
+```
+
+`can't access tty; job control turned off` は、`/init` が制御TTYをまだ整備していないためです。Linux + BusyBox shellの起動自体は成功しています。今後は `cttyhack` または `setsid` と `/dev/console` の扱いを整えます。
+
+Linux通常console移行後に `BusyBox userspac` で16文字だけ出て止まる問題がありました。これは16550の16-byte FIFO境界で、TX empty interruptが再発行されていないことが原因でした。`src/uart_ns16550.sv` ではTHR write後に即時送信完了扱いとして、`IER[1]` が有効なら `tx_irq_pending` を再度立てるようにしています。入力側はVerilator host terminalのechoを切り、Linux側のechoだけを見るため `src/tb_verilator.cpp` で `ICANON | ECHO` を無効化しています。
 
 BusyBoxの前段として、libcなしの最小 `/init` も用意しています。`platform/linux_user_init.S` は `write(2)` と `exit(2)` だけを直接呼ぶユーザーアプリで、LinuxがU-modeのPID 1を起動し、syscall writeでconsoleへ出力できることを確認するためのものです。`platform/linux_user_init_read.S` はさらに `/dev/console` から1文字 `read(2)` し、読み取った文字を表示してからU-modeで待機します。
 
@@ -332,6 +368,9 @@ UART polling output:
 make test-uart
 make test-uart-input INPUT_TEXT=Z
 make test-uart-regs
+make test-uart-tx-irq
+make test-uart-tx-seip
+make test-uart-rx-seip INPUT_TEXT=Z
 ```
 
 `uart_output.c` は NS16550A 互換UARTの `LSR` をpollingし、`THR` へbyte writeします。現在のUART baseは `0x10000000`、byte-spaced registerで、`LSR[5]=THRE` と `LSR[6]=TEMT` を常に1として返します。このテストで `A` と success まで到達することを確認済みです。
@@ -339,6 +378,12 @@ make test-uart-regs
 `uart_input.c` は `ENABLE_DEBUG_INPUT` 付き simulatorを使い、Verilator stdinから来た1文字をUARTの `RBR` で読み、同じ文字を `THR` へechoします。`INPUT_TEXT=Z` で `Z` と success まで到達することを確認済みです。RTL上は `LSR[0]=DR`、`IER[0]`、`IIR=0x04` の最小RX interrupt経路も持っています。
 
 `uart_regs.c` は `IER/MCR/SCR/LCR` の保持、`LCR.DLAB=1` 時の `DLL/DLM` 切り替え、`IIR=0x01`、`MSR=0`、`LSR.THRE/TEMT=1` を確認します。Linux earlyconやOpenSBIのUART初期化で触る可能性がある最小レジスタ群のbring-up確認です。
+
+`uart_tx_irq.c` は `IER[1]` 有効化で初回THRE interruptが来ることに加えて、`THR` へbyte writeした後にTHRE interruptが再発火することを確認します。Linux 8250 driverがUART送信を継続する時に近い経路です。
+
+`uart_tx_seip.c` は同じTX interrupt再発火をS-mode PLIC contextで確認します。Linux通常consoleはS-mode側でUART interruptを受けるため、`uart_tx_irq.c` よりLinuxに近い確認です。
+
+`uart_rx_seip.c` は `ENABLE_DEBUG_INPUT` 付きsimulatorでstdinから `Z` を受け取り、UART RX interruptがPLIC S-context経由でS-mode external interruptへ届くことを確認します。Enter入力でLinuxのUART handlerが起きるかを切り分けるためのテストです。
 
 PLIC / UART interrupt:
 
