@@ -1,4 +1,5 @@
 import eei::*;
+import util::*;
 
 module uart_ns16550 (
 	input logic clk,
@@ -14,9 +15,11 @@ module uart_ns16550 (
 	logic [7:0] fcr;
 	logic [7:0] mcr;
 	logic [7:0] scr;
+	logic [7:0] rx_data;
+	logic rx_valid;
 	logic tx_irq_pending;
 
-	assign irq = tx_irq_pending && ier[1];
+	assign irq = (rx_valid && ier[0]) || (tx_irq_pending && ier[1]);
 
 	function automatic logic [7:0] write_byte(
 		input logic [MEMBUS_DATA_WIDTH-1:0] wdata,
@@ -39,12 +42,13 @@ module uart_ns16550 (
 		dlab = lcr[7];
 
 		unique case (reg_addr)
-			UART_REG_RBR_THR_DLL[2:0]: read_reg = dlab ? dll : 8'h00;
+			UART_REG_RBR_THR_DLL[2:0]: read_reg = dlab ? dll : rx_data;
 			UART_REG_IER_DLM[2:0]:     read_reg = dlab ? dlm : ier;
-			UART_REG_IIR_FCR[2:0]:     read_reg = irq ? 8'h02 : 8'h01;
+			UART_REG_IIR_FCR[2:0]:     read_reg = (rx_valid && ier[0]) ? 8'h04 :
+			                                       (tx_irq_pending && ier[1]) ? 8'h02 : 8'h01;
 			UART_REG_LCR[2:0]:         read_reg = lcr;
 			UART_REG_MCR[2:0]:         read_reg = mcr;
-			UART_REG_LSR[2:0]:         read_reg = 8'b0110_0000;
+			UART_REG_LSR[2:0]:         read_reg = 8'h60 | {7'b0, rx_valid};
 			UART_REG_MSR[2:0]:         read_reg = 8'h00;
 			UART_REG_SCR[2:0]:         read_reg = scr;
 			default:                   read_reg = 8'h00;
@@ -68,11 +72,24 @@ module uart_ns16550 (
 			fcr <= 8'h00;
 			mcr <= 8'h00;
 			scr <= 8'h00;
+			rx_data <= 8'h00;
+			rx_valid <= 1'b0;
 			tx_irq_pending <= 1'b0;
 		end else begin
 			membus.ready <= 1'b1;
 			membus.rvalid <= membus.valid;
 			membus.rdata <= membus.valid ? read_lane_data(membus.addr) : '0;
+
+`ifdef ENABLE_DEBUG_INPUT
+			if (!rx_valid) begin
+				longint input_value;
+				input_value = util::get_input();
+				if (input_value[63:44] == 20'h01010) begin
+					rx_data <= input_value[7:0];
+					rx_valid <= 1'b1;
+				end
+			end
+`endif
 
 			if (membus.valid) begin
 				logic [7:0] wbyte;
@@ -104,14 +121,25 @@ module uart_ns16550 (
 								end
 							end
 						end
-						UART_REG_IIR_FCR[2:0]: fcr <= wbyte;
+						UART_REG_IIR_FCR[2:0]: begin
+							fcr <= wbyte;
+							if (wbyte[1]) begin
+								rx_valid <= 1'b0;
+							end
+						end
 						UART_REG_LCR[2:0]:     lcr <= wbyte;
 						UART_REG_MCR[2:0]:     mcr <= wbyte;
 						UART_REG_SCR[2:0]:     scr <= wbyte;
 						default: ;
 					endcase
-				end else if (reg_addr == UART_REG_IIR_FCR[2:0]) begin
-					tx_irq_pending <= 1'b0;
+				end else begin
+					if (!dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
+						rx_valid <= 1'b0;
+					end else if (reg_addr == UART_REG_IIR_FCR[2:0]) begin
+						if (!(rx_valid && ier[0]) && tx_irq_pending && ier[1]) begin
+							tx_irq_pending <= 1'b0;
+						end
+					end
 				end
 			end
 		end

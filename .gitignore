@@ -26,6 +26,7 @@ core/test/*
 !core/test/muldiv_string_size.c
 !core/test/plic_seip.c
 !core/test/plic_uart_irq.c
+!core/test/uart_input.c
 !core/test/uart_output.c
 !core/test/uart_regs.c
 !core/test/hex/

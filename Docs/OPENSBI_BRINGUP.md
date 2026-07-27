@@ -416,13 +416,25 @@ Platform Timer Device     : aclint-mtimer @ 50000000Hz
 対応済み:
 
 - `THR` writeでVerilator標準出力へ1文字出力
+- `RBR` readでVerilator stdinから取り込んだ1文字を返す
+- `LSR[0] = DR` で受信データありを示し、`RBR` readでclearする
 - `LSR[5] = THRE`, `LSR[6] = TEMT` を常に1として返す
 - `LCR.DLAB` による `DLL/DLM` 切り替え
 - `IER`, `LCR`, `MCR`, `SCR` の保持
 - interruptなしなら `IIR = 0x01`
+- RX interrupt pending時は `IIR = 0x04`
 - THRE interrupt pending時は `IIR = 0x02`
 - `MSR = 0`
 - byte laneを見て、byte storeされた文字を取り出す
+
+UART RXは `ENABLE_DEBUG_INPUT` 付きsimulatorで有効です。Linuxから対話入力を試す場合は通常の `run-opensbi` ではなく、入力対応simulatorを使う `run-opensbi-input` を使います。
+
+```sh
+make run-opensbi-input \
+  OPENSBI_BIN=/path/to/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs \
+  OPENSBI_CYCLES=0
+```
 
 MMIO decodeは `src/mmio_controller.sv` 側で、`0x10000000..0x100000ff` をUARTへ流します。
 

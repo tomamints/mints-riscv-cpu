@@ -118,6 +118,7 @@ Linux boot logの現在地:
 | `make test-input INPUT_TEXT=A` | Pass | debug MMIO input |
 | `make test-dma` | Pass | DMA register設定とRAM-to-RAM copy |
 | `make test-uart` | Pass | NS16550A互換UARTの最小polling TX。`0x10000005`のLSR read、`0x10000000`のTHR byte write、Verilator標準出力への表示 |
+| `make test-uart-input INPUT_TEXT=Z` | Pass | NS16550A互換UARTの最小polling RX。stdinから来た `Z` を `RBR` で読み、`THR` へechoして表示。`LSR[0]=DR` とRBR readでのRX clearを確認 |
 | `make test-uart-regs` | Pass | `IER/MCR/SCR/LCR`保持、`LCR.DLAB`による`DLL/DLM`切り替え、`LSR/IIR/MSR`の最小固定値 |
 | `make c-test C_TEST=plic_uart_irq CYCLES=200000` | Pass | PLIC priority/enable/threshold readback、UART THRE interrupt、PLIC claim=10、M-mode external interrupt `mcause=0x800000000000000b` を確認 |
 | `make c-test C_TEST=plic_seip CYCLES=300000` | Pass | M-modeでPMP allow-allと`mideleg.SEIP`を設定してS-modeへ入り、UART THRE interruptをPLIC S-contextでclaimし、S-mode external interrupt `scause=0x8000000000000009` を確認 |
@@ -126,6 +127,7 @@ Linux boot logの現在地:
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | Pass / OpenSBI platform info | OpenSBI `fw_jump.bin` を `0x80000000`、DTBを `0x87f00000`、任意Linux Imageを `0x80200000` に配置して起動するtarget。v1.3.1 `FW_JUMP` で `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 50000000Hz` timerを確認 |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | WIP / Linux early boot progressing | Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoff。`Linux version 6.12.97`、Machine model、SBI Base/Time/IPI/RFENCE、`earlycon: uart8250`、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock`、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまで確認。`console=ttyS0,115200` はbootargsへ反映済み。通常console登録は次に継続確認 |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup` | Pass / expected VFS panic | `allnoconfig` ベースのLinux 6.12.y bring-up用Image。約3MiB。SBI、DTB、RISC-V timer、SiFive PLIC、8250 UART console、proc/sysfs/devtmpfs、ELF/initrd周辺を残し、SCSI/ATA/MD/RAID6/USB/media/sound/PCI/ACPI/network/jitterentropyを削除。Linuxで `riscv-plic: ... mapped 32 interrupts`, `Serial: 8250/16550 driver`, `ttyS0 at MMIO 0x10000000`, `legacy console [ttyS0] enabled` を確認。rootfs未指定のため `VFS: Unable to mount root fs` で期待どおりpanic |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs` | Pass / expected PID1 panic | libcなし最小 `/init` をinitramfsへ埋め込み、LinuxがU-mode PID 1を起動し、`write(2)` syscallでconsole出力できることを確認。`exit(0)` でPID1終了panicになるのは期待結果 |
 | `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | Pass | OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=0x87f00000`, SBI Base call、SBI legacy console putcharを確認。PMPは8 entriesとしてOpenSBIに認識される |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |

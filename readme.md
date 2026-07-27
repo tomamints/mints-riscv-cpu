@@ -268,6 +268,25 @@ tools/build-rv64imac-busybox.sh
 
 前者は `build/riscv-musl-lp64` に `riscv64-unknown-linux-musl-gcc` を作ります。後者はそのtoolchainでstatic BusyBoxを作ります。
 
+BusyBoxの前段として、libcなしの最小 `/init` も用意しています。`platform/linux_user_init.S` は `write(2)` と `exit(2)` だけを直接呼ぶユーザーアプリで、LinuxがU-modeのPID 1を起動し、syscall writeでconsoleへ出力できることを確認するためのものです。`platform/linux_user_init_read.S` はさらに `/dev/console` から1文字 `read(2)` し、読み取った文字を表示してからU-modeで待機します。
+
+入力版のLinux Imageは次の流れで作ります。
+
+```sh
+INIT_SRC=platform/linux_user_init_read.S \
+  LINUX_SRC=build/linux-clean-src \
+  tools/build-linux-hello-initramfs-image.sh
+```
+
+起動時は入力対応simulatorを使います。
+
+```sh
+make run-opensbi-input \
+  OPENSBI_BIN=/path/to/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs \
+  OPENSBI_CYCLES=0
+```
+
 Linux boot logは、Linuxから見ると `0x10000000` のNS16550A互換UARTへ出ています。シミュレーション上では `uart_ns16550.sv` からVerilatorの標準出力へ流すため、`make run-opensbi` を実行しているterminalに表示されます。
 
 `OPENSBI_CYCLES` はシミュレータの最大実行サイクル数です。`0` は無制限実行用です。Linux起動の長時間確認では `SIM_EXTRA_ARGS` なしを推奨します。`+TRACE_PIPE` は大量のprintfを出すため、原因追跡時だけ使います。
@@ -311,10 +330,13 @@ UART polling output:
 
 ```sh
 make test-uart
+make test-uart-input INPUT_TEXT=Z
 make test-uart-regs
 ```
 
 `uart_output.c` は NS16550A 互換UARTの `LSR` をpollingし、`THR` へbyte writeします。現在のUART baseは `0x10000000`、byte-spaced registerで、`LSR[5]=THRE` と `LSR[6]=TEMT` を常に1として返します。このテストで `A` と success まで到達することを確認済みです。
+
+`uart_input.c` は `ENABLE_DEBUG_INPUT` 付き simulatorを使い、Verilator stdinから来た1文字をUARTの `RBR` で読み、同じ文字を `THR` へechoします。`INPUT_TEXT=Z` で `Z` と success まで到達することを確認済みです。RTL上は `LSR[0]=DR`、`IER[0]`、`IIR=0x04` の最小RX interrupt経路も持っています。
 
 `uart_regs.c` は `IER/MCR/SCR/LCR` の保持、`LCR.DLAB=1` 時の `DLL/DLM` 切り替え、`IIR=0x01`、`MSR=0`、`LSR.THRE/TEMT=1` を確認します。Linux earlyconやOpenSBIのUART初期化で触る可能性がある最小レジスタ群のbring-up確認です。
 
