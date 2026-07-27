@@ -287,6 +287,22 @@ Kernel panic - not syncing: VFS: Unable to mount root fs on "" or unknown-block(
 
 このpanicはrootfs/initramfsをまだ渡していないための期待結果です。つまり、OpenSBIからLinuxへ入り、Sv39、timer、PLIC、通常8250 console登録までは通過しています。
 
+BusyBox initramfsも次の段階として試行しました。ここで見えた問題は2つです。
+
+1. `/init` をshell scriptとして実行するには `CONFIG_BINFMT_SCRIPT=y` が必要
+2. BusyBox本体が `double-float ABI` だと、`rv64imac/lp64` の現在のCPUではU-mode illegal instructionになる
+
+そのため、initramfsの次の作業はRTL変更ではなく、`rv64imac/lp64` soft-float向けのstatic BusyBoxを作ることです。既製の `riscv64/busybox:musl` imageも `double-float ABI` だったため、そのままでは使用しません。
+
+補助スクリプト:
+
+```sh
+tools/build-rv64imac-musl-toolchain.sh
+tools/build-rv64imac-busybox.sh
+```
+
+`tools/build-rv64imac-musl-toolchain.sh` はDocker上のUbuntu環境で `rv64imac/lp64` musl toolchainを `build/riscv-musl-lp64` に作ります。`tools/build-rv64imac-busybox.sh` はそのcompilerでstatic BusyBoxを作ります。
+
 RAM配置:
 
 | Address | 内容 |

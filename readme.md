@@ -253,6 +253,21 @@ Kernel panic - not syncing: VFS: Unable to mount root fs on "" or unknown-block(
 
 最後のpanicはrootfs/initramfs未指定による期待結果です。
 
+BusyBox initramfs投入も試行済みです。現在の未解決点はCPU/RTLではなくuserland側です。
+
+- `/init` は `#!/bin/sh` スクリプトなので、Linux configに `CONFIG_BINFMT_SCRIPT=y` が必要です。
+- 既製の `riscv64/busybox:musl` とUbuntu cross toolchainで作ったBusyBoxは `double-float ABI` でした。現在のCPU/DTBは `rv64imac` でF/D拡張を公開していないため、このBusyBoxを実行するとU-modeでillegal instructionになります。
+- 次は `rv64imac/lp64` のsoft-float Linux userland toolchainを用意し、それでstatic BusyBoxを作る必要があります。
+
+補助スクリプト:
+
+```sh
+tools/build-rv64imac-musl-toolchain.sh
+tools/build-rv64imac-busybox.sh
+```
+
+前者は `build/riscv-musl-lp64` に `riscv64-unknown-linux-musl-gcc` を作ります。後者はそのtoolchainでstatic BusyBoxを作ります。
+
 Linux boot logは、Linuxから見ると `0x10000000` のNS16550A互換UARTへ出ています。シミュレーション上では `uart_ns16550.sv` からVerilatorの標準出力へ流すため、`make run-opensbi` を実行しているterminalに表示されます。
 
 `OPENSBI_CYCLES` はシミュレータの最大実行サイクル数です。`0` は無制限実行用です。Linux起動の長時間確認では `SIM_EXTRA_ARGS` なしを推奨します。`+TRACE_PIPE` は大量のprintfを出すため、原因追跡時だけ使います。
