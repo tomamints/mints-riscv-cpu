@@ -139,6 +139,6 @@ These suites are outside the currently claimed implementation scope and were not
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 
-Linux通常consoleで `BusyBox userspac` の16文字だけ表示されて止まる問題は、16550のTHR empty interruptが再発行されず、Linux 8250 driverがFIFOサイズ分だけ送信して次のTX interrupt待ちになっていたことが原因でした。`src/uart_ns16550.sv` でTHR write後に `IER[1]` が有効なら `tx_irq_pending` を再度立てるように修正しています。
+Linux通常consoleで `BusyBox userspac` の16文字だけ表示されて止まる問題は、16550のTHR empty interruptが再発行されず、Linux 8250 driverがFIFOサイズ分だけ送信して次のTX interrupt待ちになっていたことが原因でした。`src/uart_ns16550.sv` でTHR write後に `IER[1]` が有効なら `tx_irq_pending` を再度立てるように修正しています。`IER[1]` 無効化時はIRQ線だけ下がれば十分なので、内部pendingは消さない方針です。`+TRACE_UART` で `IER` / `IIR` / `THR` / `RX` / `RBR` accessを追跡できます。`INIT_SCRIPT_MODE=short` と `fifo15` ではshell prompt到達まで確認済みです。入力行がshellへ届くかは `INIT_SCRIPT_MODE=readloop` で確認します。
 
 S-mode `sepc` 更新失敗は、CSR write mask table に `SEPC` がなく `wmask=0` になっていたことが原因でした。現在は `SEPC_WMASK` を適用し、S-mode trap handler から `sepc` を更新できます。

@@ -680,15 +680,17 @@ module core (
 				satp_fetch_value,
 				wbq_rdata.raise_trap);
 		end
-		if ($test$plusargs("TRACE_SYSCALL") &&
+		if (($test$plusargs("TRACE_SYSCALL") || $test$plusargs("TRACE_ECALL")) &&
 			wbs_valid &&
-			wbq_rdata.raise_trap &&
-			wbs_inst_bits == 32'h00000073 &&
-			csru_priv_mode == U) begin
-			$display("[SYSCALL] cycle=%h minstret=%h pc=%h nr=%0d(%s) a0=%h a1=%h a2=%h a3=%h a4=%h a5=%h sp=%h ra=%h satp=%h",
+			wbs_inst_bits == 32'h00000073) begin
+			$display("[ECALL] cycle=%h minstret=%h pc=%h mode=%0d trap=%b expt=%b cause=%0d nr=%0d(%s) a0=%h a1=%h a2=%h a3=%h a4=%h a5=%h sp=%h ra=%h satp=%h",
 				debug_cycle,
 				minstret,
 				wbs_pc,
+				csru_priv_mode,
+				wbq_rdata.raise_trap,
+				mems_expt.valid,
+				mems_expt.cause,
 				regfile[17],
 				linux_syscall_name(regfile[17]),
 				regfile[10],

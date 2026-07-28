@@ -136,14 +136,17 @@ module plic (
 
 			if (membus.valid) begin
 				if ($test$plusargs("TRACE_PLIC")) begin
-					$display("[PLIC] %s addr=%h wdata=%h rdata=%h pending=%h enable_m=%h enable_s=%h meip=%b seip=%b",
+					$display("[PLIC] %s addr=%h wdata=%h rdata=%h source=%h pending=%h enable_m=%h enable_s=%h sel_m=%0d sel_s=%0d meip=%b seip=%b",
 						membus.wen ? "W" : "R",
 						membus.addr,
 						wword,
 						read_reg(membus.addr),
+						source_irq,
 						pending,
 						enable_m,
 						enable_s,
+						selected_m,
+						selected_s,
 						meip,
 						seip);
 				end

@@ -300,17 +300,48 @@ Type commands. Example: uname -a
 ~ #
 ```
 
-`can't access tty; job control turned off` は、`/init` が制御TTYをまだ整備していないためです。Linux + BusyBox shellの起動自体は成功しています。今後は `cttyhack` または `setsid` と `/dev/console` の扱いを整えます。
+`can't access tty; job control turned off` は、`/init` が制御TTYをまだ整備していない場合に出ます。`readloop-ttyS0` では `/dev/ttyS0` 直結で入力行が `INPUT=...` と返ることを確認しているため、UART RX / PLIC / Linux 8250 driver / `/dev/ttyS0` read は通っています。現在のBusyBox initramfsのdefaultは、`/dev/console` ではなく `/dev/ttyS0` をstdin/stdout/stderrへ接続し、`setsid + cttyhack + /bin/sh` で制御TTYを取る構成です。
 
-Linux通常console移行後に `BusyBox userspac` で16文字だけ出て止まる問題がありました。これは16550の16-byte FIFO境界で、TX empty interruptが再発行されていないことが原因でした。`src/uart_ns16550.sv` ではTHR write後に即時送信完了扱いとして、`IER[1]` が有効なら `tx_irq_pending` を再度立てるようにしています。入力側はVerilator host terminalのechoを切り、Linux側のechoだけを見るため `src/tb_verilator.cpp` で `ICANON | ECHO` を無効化しています。
+Linux通常console移行後に `BusyBox userspac` で16文字だけ出て止まる問題がありました。これは16550の16-byte FIFO境界で、TX empty interruptが再発行されていないことが原因でした。`src/uart_ns16550.sv` ではTHR write後に即時送信完了扱いとして、`IER[1]` が有効なら `tx_irq_pending` を再度立てるようにしています。`IER[1]` 無効化時はIRQ線だけ下がれば十分なので、内部pendingは消しません。入力側はVerilator host terminalのcanonical modeだけを切り、1文字ずつsimulatorへ渡します。host terminal echoは残しているため、入力文字はhost側でも見えます。UART状態の追跡には `SIM_EXTRA_ARGS='+TRACE_UART'` を使えます。入力デバッグ時は `TRACE_UART` で host から取り込んだ byte を `[UART RX]`、LinuxがRBRから読んだ byte を `[UART RBR]` として確認できます。
 
-BusyBoxの前段として、libcなしの最小 `/init` も用意しています。`platform/linux_user_init.S` は `write(2)` と `exit(2)` だけを直接呼ぶユーザーアプリで、LinuxがU-modeのPID 1を起動し、syscall writeでconsoleへ出力できることを確認するためのものです。`platform/linux_user_init_read.S` はさらに `/dev/console` から1文字 `read(2)` し、読み取った文字を表示してからU-modeで待機します。
+BusyBox initramfsの `/init` は `INIT_SCRIPT_MODE` で切り替えられます。
+
+```sh
+INIT_SCRIPT_MODE=short    # echo A/B/C のあと shell
+INIT_SCRIPT_MODE=fifo15   # 15文字+改行、NEXT、shell
+INIT_SCRIPT_MODE=fifo16   # 16文字+改行、NEXT、shell
+INIT_SCRIPT_MODE=console  # 古い /dev/console 経由の比較用
+INIT_SCRIPT_MODE=readloop # shell script の read builtin で入力行を確認
+INIT_SCRIPT_MODE=plainsh  # cttyhackを使わず /bin/sh -i
+INIT_SCRIPT_MODE=readloop-ttyS0 # /dev/ttyS0 直結で read builtin を確認
+INIT_SCRIPT_MODE=plainsh-ttyS0  # /dev/ttyS0 直結で /bin/sh -i
+INIT_SCRIPT_MODE=cttyhack-ttyS0 # /dev/ttyS0 直結で setsid + cttyhack + /bin/sh
+INIT_SCRIPT_MODE=debug    # /init の到達点を細かく表示
+```
+
+`fifo15` で `NEXT` と `~ #` が表示される場合、16-byte FIFO境界付近のTX再割り込みと `/init` からshell起動までは通っています。そこで入力しても反応しない場合は、次に `readloop` で `READ>` のあと `INPUT=...` が出るかを確認し、TTY line discipline / shell stdin / interactive shell 起動方式を切り分けます。`readloop` でUARTが `0a` をRBRから読んでいるのに `INPUT=...` が出ない場合は、`readloop-ttyS0` で `/dev/console` を避けて `/dev/ttyS0` を直接stdin/stdoutにします。
+
+BusyBoxの前段として、libcなしの最小 `/init` も用意しています。`platform/linux_user_init.S` は `write(2)` と `exit(2)` だけを直接呼ぶユーザーアプリで、LinuxがU-modeのPID 1を起動し、syscall writeでconsoleへ出力できることを確認するためのものです。`platform/linux_user_init_read.S` はさらに `/dev/console` から1文字 `read(2)` し、読み取った文字を表示してからU-modeで待機します。`platform/linux_user_init_line.S` は `/dev/console` に `read(fd, buf, 64)` を発行し、Enterで1行が確定してから `read line: ...` と表示されるかを見るTTY line discipline確認用です。
 
 入力版のLinux Imageは次の流れで作ります。
 
 ```sh
 INIT_SRC=platform/linux_user_init_read.S \
-  LINUX_SRC=build/linux-clean-src \
+  LINUX_SRC_VOLUME=linux-6.12-src \
+  LINUX_OUT=build/external/linux-out \
+  KBUILD_OUT=build/linux-build-hello-clean \
+  tools/build-linux-hello-initramfs-image.sh
+```
+
+TTY line discipline確認用:
+
+```sh
+INIT_SRC=platform/linux_user_init_line.S \
+  IMAGE_NAME=Image-linux-6.12-riscv64-line-initramfs \
+  LINUX_SRC_VOLUME=linux-6.12-src \
+  LINUX_OUT=build/external/linux-out \
+  KBUILD_OUT=build/linux-build-line-clean \
+  JOBS=4 \
   tools/build-linux-hello-initramfs-image.sh
 ```
 
@@ -318,8 +349,8 @@ INIT_SRC=platform/linux_user_init_read.S \
 
 ```sh
 make run-opensbi-input \
-  OPENSBI_BIN=/path/to/fw_jump.bin \
-  LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-hello-initramfs \
   OPENSBI_CYCLES=0
 ```
 

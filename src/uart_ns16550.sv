@@ -86,6 +86,9 @@ module uart_ns16550 (
 				longint input_value;
 				input_value = util::get_input();
 				if (input_value[63:44] == 20'h01010) begin
+					if ($test$plusargs("TRACE_UART")) begin
+						$display("[UART RX] char=%02x", input_value[7:0]);
+					end
 					rx_data <= input_value[7:0];
 					rx_valid <= 1'b1;
 				end
@@ -120,9 +123,7 @@ module uart_ns16550 (
 									dlm <= wbyte;
 								end else begin
 									ier <= wbyte;
-									if (!wbyte[1]) begin
-										tx_irq_pending <= 1'b0;
-									end else if (!ier[1]) begin
+									if (!ier[1] && wbyte[1]) begin
 										tx_irq_pending <= 1'b1;
 									end
 								end
@@ -146,6 +147,42 @@ module uart_ns16550 (
 						if (!(rx_valid && ier[0]) && tx_irq_pending && ier[1]) begin
 							tx_irq_pending <= 1'b0;
 						end
+					end
+				end
+
+				if ($test$plusargs("TRACE_UART")) begin
+					if (membus.wen && byte_write_valid) begin
+						if (!dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
+							if (ier[1] || tx_irq_pending || rx_valid) begin
+								$display("[UART THR] char=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+									wbyte,
+									ier,
+									tx_irq_pending,
+									rx_valid,
+									irq);
+							end
+						end else if (!dlab && reg_addr == UART_REG_IER_DLM[2:0]) begin
+							$display("[UART IER] old=%02x new=%02x txp=%0b rx=%0b irq=%0b",
+								ier,
+								wbyte,
+								tx_irq_pending,
+								rx_valid,
+								irq);
+						end
+					end else if (!membus.wen && reg_addr == UART_REG_IIR_FCR[2:0]) begin
+						$display("[UART IIR] value=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+							read_reg(membus.addr),
+							ier,
+							tx_irq_pending,
+							rx_valid,
+							irq);
+					end else if (!membus.wen && !dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
+						$display("[UART RBR] char=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+							rx_data,
+							ier,
+							tx_irq_pending,
+							rx_valid,
+							irq);
 					end
 				end
 			end
