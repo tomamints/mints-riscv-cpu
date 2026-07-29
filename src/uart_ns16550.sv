@@ -85,6 +85,13 @@ module uart_ns16550 (
 			membus.rdata <= membus.valid ? read_lane_data(membus.addr) : '0;
 
 			if (tx_empty_event) begin
+				if ($test$plusargs("TRACE_TXUART") && (ier[1] || tx_irq_pending)) begin
+					$display("[UART TX EMPTY] ier=%02x txp=%0b txe=%0b irq=%0b",
+						ier,
+						tx_irq_pending,
+						tx_empty_event,
+						irq);
+				end
 				tx_empty_event <= 1'b0;
 				if (ier[1]) begin
 					tx_irq_pending <= 1'b1;
@@ -164,50 +171,60 @@ module uart_ns16550 (
 					end
 				end
 
-				if ($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_RXUART")) begin
+				if ($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_RXUART") || $test$plusargs("TRACE_TXUART")) begin
 					if (membus.wen && byte_write_valid) begin
-						if ($test$plusargs("TRACE_UART") && !dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
+						if (($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_TXUART")) &&
+						    !dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
 							if (ier[1] || tx_irq_pending || rx_valid) begin
-								$display("[UART THR] char=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+								$display("[UART THR] char=%02x ier=%02x txp=%0b txe=%0b rx=%0b irq=%0b",
 									wbyte,
 									ier,
 									tx_irq_pending,
+									tx_empty_event,
 									rx_valid,
 									irq);
 							end
-						end else if ($test$plusargs("TRACE_UART") && !dlab && reg_addr == UART_REG_IER_DLM[2:0]) begin
-							$display("[UART IER] old=%02x new=%02x txp=%0b rx=%0b irq=%0b",
+						end else if (($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_TXUART")) &&
+						             !dlab && reg_addr == UART_REG_IER_DLM[2:0]) begin
+							$display("[UART IER] old=%02x new=%02x txp=%0b txe=%0b rx=%0b irq=%0b",
 								ier,
 								wbyte,
 								tx_irq_pending,
+								tx_empty_event,
 								rx_valid,
 								irq);
 						end
 					end else if (!membus.wen && reg_addr == UART_REG_IIR_FCR[2:0]) begin
 						if ($test$plusargs("TRACE_UART") ||
-						    (read_reg(membus.addr) == 8'h04)) begin
-							$display("[UART IIR] value=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+						    (read_reg(membus.addr) == 8'h04) ||
+						    ($test$plusargs("TRACE_TXUART") && read_reg(membus.addr) == 8'h02)) begin
+							$display("[UART IIR] value=%02x ier=%02x txp=%0b txe=%0b rx=%0b irq=%0b",
 								read_reg(membus.addr),
 								ier,
 								tx_irq_pending,
+								tx_empty_event,
 								rx_valid,
 								irq);
 						end
 					end else if (!membus.wen && !dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
 						if ($test$plusargs("TRACE_UART") || rx_valid) begin
-							$display("[UART RBR] char=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+							$display("[UART RBR] char=%02x ier=%02x txp=%0b txe=%0b rx=%0b irq=%0b",
 								rx_data,
 								ier,
 								tx_irq_pending,
+								tx_empty_event,
 								rx_valid,
 								irq);
 						end
 					end else if (!membus.wen && reg_addr == UART_REG_LSR[2:0]) begin
-						if ($test$plusargs("TRACE_UART") || rx_valid) begin
-							$display("[UART LSR] value=%02x ier=%02x txp=%0b rx=%0b irq=%0b",
+						if ($test$plusargs("TRACE_UART") ||
+						    rx_valid ||
+						    ($test$plusargs("TRACE_TXUART") && (ier[1] || tx_irq_pending || tx_empty_event))) begin
+							$display("[UART LSR] value=%02x ier=%02x txp=%0b txe=%0b rx=%0b irq=%0b",
 								read_reg(membus.addr),
 								ier,
 								tx_irq_pending,
+								tx_empty_event,
 								rx_valid,
 								irq);
 						end

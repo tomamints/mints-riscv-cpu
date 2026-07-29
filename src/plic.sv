@@ -11,10 +11,15 @@ module plic (
 
 	logic [2:0] irq_priority [PLIC_NUM_SOURCES:0];
 	logic [PLIC_NUM_SOURCES:0] pending;
+	logic [PLIC_NUM_SOURCES:0] in_service;
 	logic [PLIC_NUM_SOURCES:0] enable_m;
 	logic [PLIC_NUM_SOURCES:0] enable_s;
 	logic [2:0] threshold_m;
 	logic [2:0] threshold_s;
+	logic trace_prev_uart_source;
+	logic trace_prev_uart_pending;
+	logic trace_prev_uart_in_service;
+	logic trace_prev_seip;
 
 	localparam logic [5:0] PLIC_LAST_IRQ = 6'(PLIC_NUM_SOURCES);
 	localparam Addr PLIC_ENABLE_CONTEXT_STRIDE = Addr'('h80);
@@ -110,10 +115,15 @@ module plic (
 			membus.rvalid <= 1'b0;
 			membus.rdata <= '0;
 			pending <= '0;
+			in_service <= '0;
 			enable_m <= '0;
 			enable_s <= '0;
 			threshold_m <= '0;
 			threshold_s <= '0;
+			trace_prev_uart_source <= 1'b0;
+			trace_prev_uart_pending <= 1'b0;
+			trace_prev_uart_in_service <= 1'b0;
+			trace_prev_seip <= 1'b0;
 			for (int i = 0; i <= PLIC_NUM_SOURCES; i++) begin
 				irq_priority[i] <= '0;
 			end
@@ -126,13 +136,35 @@ module plic (
 			membus.ready <= 1'b1;
 			membus.rvalid <= membus.valid;
 			membus.rdata <= membus.valid ? word_to_bus(read_reg(membus.addr), membus.addr) : '0;
-			pending <= pending | source_irq;
+			pending <= pending | (source_irq & ~in_service);
 			pending[0] <= 1'b0;
+			in_service[0] <= 1'b0;
 
 			wword = word_from_bus(membus.wdata, membus.addr);
 			irq_index = membus.addr[7:2];
 			claim_m = select_irq(enable_m, threshold_m);
 			claim_s = select_irq(enable_s, threshold_s);
+
+			if ($test$plusargs("TRACE_PLIC_UART")) begin
+				if ((source_irq[PLIC_UART_IRQ] != trace_prev_uart_source) ||
+				    (pending[PLIC_UART_IRQ] != trace_prev_uart_pending) ||
+				    (in_service[PLIC_UART_IRQ] != trace_prev_uart_in_service) ||
+				    (seip != trace_prev_seip)) begin
+					$display("[PLIC UART] source=%0b pending=%0b in_service=%0b enable_s=%0b prio=%0d threshold_s=%0d sel_s=%0d seip=%0b",
+						source_irq[PLIC_UART_IRQ],
+						pending[PLIC_UART_IRQ],
+						in_service[PLIC_UART_IRQ],
+						enable_s[PLIC_UART_IRQ],
+						irq_priority[PLIC_UART_IRQ],
+						threshold_s,
+						selected_s,
+						seip);
+				end
+			end
+			trace_prev_uart_source <= source_irq[PLIC_UART_IRQ];
+			trace_prev_uart_pending <= pending[PLIC_UART_IRQ];
+			trace_prev_uart_in_service <= in_service[PLIC_UART_IRQ];
+			trace_prev_seip <= seip;
 
 			if (membus.valid) begin
 				if ($test$plusargs("TRACE_PLIC")) begin
@@ -166,21 +198,50 @@ module plic (
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_M * PLIC_CONTEXT_STRIDE)) begin
 						threshold_m <= wword[2:0];
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_M * PLIC_CONTEXT_STRIDE) + 4) begin
+						if ($test$plusargs("TRACE_PLIC_UART") && wword[5:0] == PLIC_UART_IRQ[5:0]) begin
+							$display("[PLIC UART COMPLETE-M] irq=%0d source=%0b pending=%0b in_service=%0b sel_m=%0d meip=%0b",
+								wword[5:0],
+								source_irq[PLIC_UART_IRQ],
+								pending[PLIC_UART_IRQ],
+								in_service[PLIC_UART_IRQ],
+								selected_m,
+								meip);
+						end
 						if (wword[5:0] <= PLIC_LAST_IRQ) begin
-							pending[wword[5:0]] <= 1'b0;
+							in_service[wword[5:0]] <= 1'b0;
 						end
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_S * PLIC_CONTEXT_STRIDE)) begin
 						threshold_s <= wword[2:0];
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_S * PLIC_CONTEXT_STRIDE) + 4) begin
+						if ($test$plusargs("TRACE_PLIC_UART") && wword[5:0] == PLIC_UART_IRQ[5:0]) begin
+							$display("[PLIC UART COMPLETE] irq=%0d source=%0b pending=%0b in_service=%0b sel_s=%0d seip=%0b",
+								wword[5:0],
+								source_irq[PLIC_UART_IRQ],
+								pending[PLIC_UART_IRQ],
+								in_service[PLIC_UART_IRQ],
+								selected_s,
+								seip);
+						end
 						if (wword[5:0] <= PLIC_LAST_IRQ) begin
-							pending[wword[5:0]] <= 1'b0;
+							in_service[wword[5:0]] <= 1'b0;
 						end
 					end
 				end else begin
 					if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_M * PLIC_CONTEXT_STRIDE) + 4 && claim_m != 6'd0) begin
 						pending[claim_m] <= 1'b0;
+						in_service[claim_m] <= 1'b1;
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_S * PLIC_CONTEXT_STRIDE) + 4 && claim_s != 6'd0) begin
+						if ($test$plusargs("TRACE_PLIC_UART") && claim_s == PLIC_UART_IRQ[5:0]) begin
+							$display("[PLIC UART CLAIM] irq=%0d source=%0b pending=%0b in_service=%0b sel_s=%0d seip=%0b",
+								claim_s,
+								source_irq[PLIC_UART_IRQ],
+								pending[PLIC_UART_IRQ],
+								in_service[PLIC_UART_IRQ],
+								selected_s,
+								seip);
+						end
 						pending[claim_s] <= 1'b0;
+						in_service[claim_s] <= 1'b1;
 					end
 				end
 			end
