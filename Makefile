@@ -32,6 +32,7 @@ TB        = $(SRC_DIR)/tb_verilator.cpp
 
 # ソースリスト
 FILELIST  = core.f
+RTL_SRCS  = $(shell sed '/^\#/d;/^$$/d' $(FILELIST))
 
 # 実行バイナリ名
 SIM       = $(OBJ_DIR)/sim
@@ -109,13 +110,13 @@ LINUX_IMAGE_OFFSET ?= 0x200000
 run: $(SIM)
 	$(SIM) $(ROM) $(RAM) $(CYCLES)
 
-$(SIM):
+$(SIM): $(RTL_SRCS) $(TB) $(FILELIST)
 	$(MAKE) build
 
-$(INPUT_SIM):
+$(INPUT_SIM): $(RTL_SRCS) $(TB) $(FILELIST)
 	$(MAKE) build-input
 
-$(TRACE_SIM):
+$(TRACE_SIM): $(RTL_SRCS) $(TB) $(FILELIST)
 	$(MAKE) build-trace
 
 # 単体テスト実行

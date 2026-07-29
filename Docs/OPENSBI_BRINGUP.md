@@ -309,9 +309,9 @@ Linux sourceはDocker volume `linux-6.12-src` に置く運用を推奨します�
 BusyBox入りImage作成:
 
 ```sh
+INIT_SCRIPT_MODE=cmdloop-ttyS0 \
 LINUX_SRC_VOLUME=linux-6.12-src \
 LINUX_OUT=build/external/linux-out \
-KBUILD_OUT=build/linux-build-busybox-clean \
 JOBS=4 \
 tools/build-linux-busybox-initramfs-image.sh
 ```
@@ -321,7 +321,7 @@ BusyBox起動:
 ```sh
 make run-opensbi-input \
   OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-initramfs \
   OPENSBI_CYCLES=0
 ```
 

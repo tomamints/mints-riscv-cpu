@@ -226,7 +226,7 @@ make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/path/to/Image
 ```text
 build/external/linux-out/Image-linux-6.12-riscv64
 build/external/linux-out/Image-linux-6.12-riscv64-minbringup
-build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs
+build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-initramfs
 ```
 
 例:
@@ -269,14 +269,16 @@ tools/build-rv64imac-busybox.sh
 tools/build-linux-busybox-initramfs-image.sh
 ```
 
+Linux bring-upの達成条件と、対話shell後に確認するコマンド群は `Docs/LINUX_MILESTONES.md` に整理しています。このプロジェクトでは、Linux kernel logが出るだけではなく、BusyBox shellから `uname -a`, `ls`, `cat`, `mkdir` などを実行できる段階を最初の「Linuxが動いた」基準にします。
+
 `tools/build-rv64imac-musl-toolchain.sh` は `build/riscv-musl-lp64` に `riscv64-unknown-linux-musl-gcc` を作ります。`tools/build-rv64imac-busybox.sh` はそのtoolchainでstatic BusyBoxを作ります。`tools/build-linux-busybox-initramfs-image.sh` はBusyBox入りinitramfsをbuilt-inしたLinux Imageを作ります。
 
 BusyBox Image作成:
 
 ```sh
+INIT_SCRIPT_MODE=cmdloop-ttyS0 \
 LINUX_SRC_VOLUME=linux-6.12-src \
 LINUX_OUT=build/external/linux-out \
-KBUILD_OUT=build/linux-build-busybox-clean \
 JOBS=4 \
 tools/build-linux-busybox-initramfs-image.sh
 ```
@@ -286,7 +288,7 @@ BusyBox起動:
 ```sh
 make run-opensbi-input \
   OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-initramfs \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-initramfs \
   OPENSBI_CYCLES=0
 ```
 
@@ -300,13 +302,16 @@ Type commands. Example: uname -a
 ~ #
 ```
 
-`can't access tty; job control turned off` は、`/init` が制御TTYをまだ整備していない場合に出ます。`readloop-ttyS0` では `/dev/ttyS0` 直結で入力行が `INPUT=...` と返ることを確認しているため、UART RX / PLIC / Linux 8250 driver / `/dev/ttyS0` read は通っています。現在のBusyBox initramfsのdefaultは、`/dev/console` ではなく `/dev/ttyS0` をstdin/stdout/stderrへ接続し、`setsid + cttyhack + /bin/sh` で制御TTYを取る構成です。
+`can't access tty; job control turned off` は、`/init` が制御TTYをまだ整備していない場合に出ます。`readloop-ttyS0` では `/dev/ttyS0` 直結で入力行が `INPUT=[...] status=0` と返ることを確認しているため、UART RX / PLIC / Linux 8250 driver / `/dev/ttyS0` read は通っています。現在のBusyBox initramfsのdefaultは、`/dev/console` ではなく `/dev/ttyS0` をstdin/stdout/stderrへ接続し、`setsid + cttyhack + /bin/sh` で制御TTYを取る構成です。
 
-Linux通常console移行後に `BusyBox userspac` で16文字だけ出て止まる問題がありました。これは16550の16-byte FIFO境界で、TX empty interruptが再発行されていないことが原因でした。`src/uart_ns16550.sv` ではTHR write後に即時送信完了扱いとして、`IER[1]` が有効なら `tx_irq_pending` を再度立てるようにしています。`IER[1]` 無効化時はIRQ線だけ下がれば十分なので、内部pendingは消しません。入力側はVerilator host terminalのcanonical modeだけを切り、1文字ずつsimulatorへ渡します。host terminal echoは残しているため、入力文字はhost側でも見えます。UART状態の追跡には `SIM_EXTRA_ARGS='+TRACE_UART'` を使えます。入力デバッグ時は `TRACE_UART` で host から取り込んだ byte を `[UART RX]`、LinuxがRBRから読んだ byte を `[UART RBR]` として確認できます。
+Linux通常console移行後に `BusyBox userspac` で16文字だけ出て止まる問題がありました。これは16550の16-byte FIFO境界で、TX empty interruptが再発行されていないことが原因でした。`src/uart_ns16550.sv` ではTHR write後に即時送信完了扱いとして、`IER[1]` が有効なら `tx_irq_pending` を再度立てるようにしています。`IER[1]` 無効化時はIRQ線だけ下がれば十分なので、内部pendingは消しません。入力側はVerilator host terminalのcanonical modeだけを切り、1文字ずつsimulatorへ渡します。host terminal echoは残しているため、入力文字はhost側でも見えます。UART状態の追跡には `SIM_EXTRA_ARGS='+TRACE_UART'` を使えます。入力デバッグ時は `SIM_EXTRA_ARGS='+TRACE_RXUART'` を使うと、hostから取り込んだbyteを `[UART RX]`、Linuxが見る受信状態を `[UART IIR] value=04` / `[UART LSR]`、LinuxがRBRから読んだbyteを `[UART RBR]` としてTXログを抑えて確認できます。`+TRACE_UART_RX` は `+TRACE_UART` に前方一致してしまうため使いません。
 
-BusyBox initramfsの `/init` は `INIT_SCRIPT_MODE` で切り替えられます。
+BusyBox initramfsの `/init` は `INIT_SCRIPT_MODE` で切り替えられます。`/init` の生成元は `tools/build-busybox-initramfs.sh` に集約しており、Linux Image生成側の `tools/build-linux-busybox-initramfs-image.sh` はこのスクリプトを呼び出すだけです。
+
+`OUT_DIR` と `KBUILD_OUT` はmodeごとに分かれます。`IMAGE_NAME` を指定しない場合も、`Image-linux-6.12-riscv64-busybox-$INIT_SCRIPT_MODE-initramfs` になります。これで `cmdloop-ttyS0`、`plainsh-ttyS0`、`cttyhack-ttyS0` などの成果物を上書きせずに比較できます。
 
 ```sh
+INIT_SCRIPT_MODE=default  # candidate: ttyS0 + setsid + cttyhack。対話shell経路は検証中
 INIT_SCRIPT_MODE=short    # echo A/B/C のあと shell
 INIT_SCRIPT_MODE=fifo15   # 15文字+改行、NEXT、shell
 INIT_SCRIPT_MODE=fifo16   # 16文字+改行、NEXT、shell
@@ -316,10 +321,45 @@ INIT_SCRIPT_MODE=plainsh  # cttyhackを使わず /bin/sh -i
 INIT_SCRIPT_MODE=readloop-ttyS0 # /dev/ttyS0 直結で read builtin を確認
 INIT_SCRIPT_MODE=plainsh-ttyS0  # /dev/ttyS0 直結で /bin/sh -i
 INIT_SCRIPT_MODE=cttyhack-ttyS0 # /dev/ttyS0 直結で setsid + cttyhack + /bin/sh
+INIT_SCRIPT_MODE=cttyhack-only-ttyS0 # /dev/ttyS0 直結で cttyhack + /bin/sh -i
+INIT_SCRIPT_MODE=setsid-ttyS0   # /dev/ttyS0 直結で setsid + /bin/sh -i
+INIT_SCRIPT_MODE=cmdloop-ttyS0  # read戻り値と既知コマンドを確認する診断loop
+INIT_SCRIPT_MODE=cmdloop-stty-ttyS0 # sttyでTTY状態を表示・固定してからcmdloop
+INIT_SCRIPT_MODE=cmdloop-exec-ttyS0 # read後に /bin/sh -c も試す診断loop
 INIT_SCRIPT_MODE=debug    # /init の到達点を細かく表示
 ```
 
-`fifo15` で `NEXT` と `~ #` が表示される場合、16-byte FIFO境界付近のTX再割り込みと `/init` からshell起動までは通っています。そこで入力しても反応しない場合は、次に `readloop` で `READ>` のあと `INPUT=...` が出るかを確認し、TTY line discipline / shell stdin / interactive shell 起動方式を切り分けます。`readloop` でUARTが `0a` をRBRから読んでいるのに `INPUT=...` が出ない場合は、`readloop-ttyS0` で `/dev/console` を避けて `/dev/ttyS0` を直接stdin/stdoutにします。
+`cmdloop-ttyS0` の期待ログは次です。
+
+```text
+CMDLOOP-TTYS0
+MARK-A: before loop
+MARK-B: before read
+```
+
+ここで止まるのは正常な入力待ちです。`echo OK` + Enter 後に `MARK-C: read returned`、`line=[echo OK]`、`OK`、次の `MARK-B: before read` が出れば、TTY input、shell builtin `read`、script内分岐、stdoutへの返信が通っています。
+
+`echo OK` + EnterでUARTの `[UART RX]` と `[UART RBR]` に `0a` まで出るのに `MARK-C` が出ない場合は、Linux 8250 driverがRBRから読んだ後、TTY line disciplineまたはread待ちtaskのwake-upで止まっています。その場合は `cmdloop-stty-ttyS0` を使い、`stty -a`、`stty sane`、`icrnl icanon echo` のどこまで進むかを確認します。
+
+RX調査時の期待ログは次です。
+
+```text
+[UART RX] char=65
+[UART IIR] value=04
+[UART LSR] value=61
+[UART RBR] char=65
+```
+
+Enterでも `[UART RX] char=0a` と `[UART RBR] char=0a` まで出るのに `MARK-C` が出ない場合、UART byte消失ではなく、LinuxのTTY/read wake-up以降を疑います。
+
+`fifo15` で `NEXT` と `~ #` が表示される場合、16-byte FIFO境界付近のTX再割り込みと `/init` からshell起動までは通っています。そこで入力しても反応しない場合は、`readloop-ttyS0`、`cmdloop-ttyS0`、`cmdloop-stty-ttyS0` で `/dev/ttyS0` を直接stdin/stdoutにして、TTY line discipline / shell stdin / interactive shell起動方式を切り分けます。
+
+生成されたinitramfs用 `/init` の中身をビルド時に確認したい場合は、`DUMP_INIT=1` を付けます。
+
+```sh
+DUMP_INIT=1 INIT_SCRIPT_MODE=cmdloop-ttyS0 \
+  tools/build-linux-busybox-initramfs-image.sh
+```
 
 BusyBoxの前段として、libcなしの最小 `/init` も用意しています。`platform/linux_user_init.S` は `write(2)` と `exit(2)` だけを直接呼ぶユーザーアプリで、LinuxがU-modeのPID 1を起動し、syscall writeでconsoleへ出力できることを確認するためのものです。`platform/linux_user_init_read.S` はさらに `/dev/console` から1文字 `read(2)` し、読み取った文字を表示してからU-modeで待機します。`platform/linux_user_init_line.S` は `/dev/console` に `read(fd, buf, 64)` を発行し、Enterで1行が確定してから `read line: ...` と表示されるかを見るTTY line discipline確認用です。
 
