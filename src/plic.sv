@@ -145,7 +145,7 @@ module plic (
 			claim_m = select_irq(enable_m, threshold_m);
 			claim_s = select_irq(enable_s, threshold_s);
 
-			if ($test$plusargs("TRACE_PLIC_UART")) begin
+			if ($test$plusargs("TRACE_IRQ10PLIC")) begin
 				if ((source_irq[PLIC_UART_IRQ] != trace_prev_uart_source) ||
 				    (pending[PLIC_UART_IRQ] != trace_prev_uart_pending) ||
 				    (in_service[PLIC_UART_IRQ] != trace_prev_uart_in_service) ||
@@ -198,7 +198,7 @@ module plic (
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_M * PLIC_CONTEXT_STRIDE)) begin
 						threshold_m <= wword[2:0];
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_M * PLIC_CONTEXT_STRIDE) + 4) begin
-						if ($test$plusargs("TRACE_PLIC_UART") && wword[5:0] == PLIC_UART_IRQ[5:0]) begin
+						if ($test$plusargs("TRACE_IRQ10PLIC") && wword[5:0] == PLIC_UART_IRQ[5:0]) begin
 							$display("[PLIC UART COMPLETE-M] irq=%0d source=%0b pending=%0b in_service=%0b sel_m=%0d meip=%0b",
 								wword[5:0],
 								source_irq[PLIC_UART_IRQ],
@@ -213,7 +213,7 @@ module plic (
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_S * PLIC_CONTEXT_STRIDE)) begin
 						threshold_s <= wword[2:0];
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_S * PLIC_CONTEXT_STRIDE) + 4) begin
-						if ($test$plusargs("TRACE_PLIC_UART") && wword[5:0] == PLIC_UART_IRQ[5:0]) begin
+						if ($test$plusargs("TRACE_IRQ10PLIC") && wword[5:0] == PLIC_UART_IRQ[5:0]) begin
 							$display("[PLIC UART COMPLETE] irq=%0d source=%0b pending=%0b in_service=%0b sel_s=%0d seip=%0b",
 								wword[5:0],
 								source_irq[PLIC_UART_IRQ],
@@ -231,7 +231,7 @@ module plic (
 						pending[claim_m] <= 1'b0;
 						in_service[claim_m] <= 1'b1;
 					end else if (membus.addr == PLIC_CONTEXT_BASE + Addr'(PLIC_CONTEXT_S * PLIC_CONTEXT_STRIDE) + 4 && claim_s != 6'd0) begin
-						if ($test$plusargs("TRACE_PLIC_UART") && claim_s == PLIC_UART_IRQ[5:0]) begin
+						if ($test$plusargs("TRACE_IRQ10PLIC") && claim_s == PLIC_UART_IRQ[5:0]) begin
 							$display("[PLIC UART CLAIM] irq=%0d source=%0b pending=%0b in_service=%0b sel_s=%0d seip=%0b",
 								claim_s,
 								source_irq[PLIC_UART_IRQ],

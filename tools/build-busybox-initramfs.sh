@@ -380,6 +380,84 @@ while :; do
 done
 INIT
     ;;
+  cmdloop-stty-set-ttyS0)
+    cat > "$OUT_DIR/init" <<'INIT'
+#!/bin/sh
+
+/bin/busybox mount -t proc proc /proc || echo "WARN: proc mount failed: $?"
+/bin/busybox mount -t sysfs sysfs /sys || echo "WARN: sysfs mount failed: $?"
+/bin/busybox mount -t devtmpfs devtmpfs /dev || echo "WARN: devtmpfs mount failed: $?"
+
+/bin/busybox mkdir -p /tmp
+/bin/busybox mount -t tmpfs tmpfs /tmp || echo "WARN: tmpfs mount failed: $?"
+
+exec </dev/ttyS0 >/dev/ttyS0 2>&1
+
+echo "CMDLOOP-STTY-SET-TTYS0"
+echo "TERM-A: before stty sane"
+/bin/busybox stty -F /dev/ttyS0 sane
+echo "TERM-B: before canonical settings"
+/bin/busybox stty -F /dev/ttyS0 icrnl icanon echo
+echo "TERM-C: stty done"
+echo "MARK-A: before loop"
+
+while :; do
+	echo "MARK-B: before read"
+	line=
+	IFS= read -r line
+	read_status=$?
+	echo "MARK-C: read returned"
+	echo "status=$read_status"
+	echo "line=[$line]"
+
+	case "$line" in
+		"")
+			echo "empty command"
+			;;
+		"echo OK")
+			echo "OK"
+			;;
+		"uname -a")
+			/bin/busybox uname -a
+			echo "command-status=$?"
+			;;
+		"ls /")
+			/bin/busybox ls /
+			echo "command-status=$?"
+			;;
+		"cat /proc/cpuinfo")
+			/bin/busybox cat /proc/cpuinfo
+			echo "command-status=$?"
+			;;
+		"cat /proc/interrupts")
+			/bin/busybox cat /proc/interrupts
+			echo "command-status=$?"
+			;;
+		"filetest")
+			/bin/busybox mkdir -p /tmp/test || {
+				echo "mkdir failed: $?"
+				continue
+			}
+			/bin/busybox sh -c 'echo hello > /tmp/test/message.txt' || {
+				echo "write failed: $?"
+				continue
+			}
+			/bin/busybox cat /tmp/test/message.txt
+			/bin/busybox rm -f /tmp/test/message.txt
+			/bin/busybox rmdir /tmp/test
+			echo "filetest complete"
+			;;
+		"shell")
+			echo "starting plain interactive shell"
+			exec /bin/sh -i
+			;;
+		*)
+			echo "unknown command: [$line]"
+			;;
+	esac
+done
+INIT
+    ;;
   setsid-ttyS0)
     cat > "$OUT_DIR/init" <<'INIT'
 #!/bin/sh

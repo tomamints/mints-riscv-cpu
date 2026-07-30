@@ -13,6 +13,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${BUSYBOX_BIN:=$repo_root/build/busybox-out/rv64imac-lp64/busybox}"
 : "${JOBS:=8}"
 : "${DUMP_INIT:=0}"
+: "${LINUX_PREEMPT:=keep}"
 
 if [[ -z "$LINUX_SRC_VOLUME" ]]; then
   case "$LINUX_SRC" in
@@ -131,6 +132,33 @@ docker run "${docker_args[@]}" \
       -e BINFMT_ELF \
       -e BINFMT_SCRIPT \
       --set-str INITRAMFS_SOURCE $initramfs_out_repo/initramfs.linux.list
+
+    case \"$LINUX_PREEMPT\" in
+      keep)
+        ;;
+      none)
+        /linux-src/scripts/config --file $kbuild_out_repo/.config \
+          -e PREEMPT_NONE \
+          -d PREEMPT_VOLUNTARY \
+          -d PREEMPT
+        ;;
+      voluntary)
+        /linux-src/scripts/config --file $kbuild_out_repo/.config \
+          -d PREEMPT_NONE \
+          -e PREEMPT_VOLUNTARY \
+          -d PREEMPT
+        ;;
+      full)
+        /linux-src/scripts/config --file $kbuild_out_repo/.config \
+          -d PREEMPT_NONE \
+          -d PREEMPT_VOLUNTARY \
+          -e PREEMPT
+        ;;
+      *)
+        echo 'LINUX_PREEMPT must be one of: keep, none, voluntary, full' >&2
+        exit 1
+        ;;
+    esac
 
     make -C /linux-src O=$kbuild_out_repo ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- olddefconfig
     make -C /linux-src O=$kbuild_out_repo ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- -j$JOBS Image
