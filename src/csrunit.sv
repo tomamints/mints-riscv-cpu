@@ -160,6 +160,16 @@ module csrunit (
 	UIntX satp;
 	UInt32 mcounteren;
 	UInt64 mcycle, medeleg;
+	logic [2:0] trace_post_timer_count;
+	logic trace_timer_active;
+	UInt64 trace_post_timer_last_minstret;
+	UInt64 trace_timer_start_minstret;
+
+	initial begin
+		if (!$value$plusargs("TRACE_TIMER_MINSTRET=%h", trace_timer_start_minstret)) begin
+			trace_timer_start_minstret = '0;
+		end
+	end
 
 	assign pmpcfg0_value = pmpcfg0;
 	assign pmpaddr0_value = pmpaddr0;
@@ -514,10 +524,33 @@ module csrunit (
 			scause <= '0;
 			stval <= '0;
 			sie <= '0;
+			trace_post_timer_count <= '0;
+			trace_timer_active <= 1'b0;
+			trace_post_timer_last_minstret <= '0;
 		end else begin
 			mcycle += 1;
 			mip_reg |= set_s_interrupt_pending;
 			if (valid) begin
+				if ($test$plusargs("TRACE_TIMER_IRQ") &&
+					minstret >= trace_timer_start_minstret &&
+					trace_post_timer_count != 0 &&
+					minstret != trace_post_timer_last_minstret &&
+					!raise_trap) begin
+					$display("[TIMER-POST] minstret=%h pc=%h inst=%h mode=%0d mtime=%h mtip=%0b mip=%h mip_reg=%h sip=%h mstatus=%h count=%0d",
+						minstret,
+						pc,
+						inst_bits,
+						mode,
+						aclint.mtime,
+						aclint.mtip,
+						mip,
+						mip_reg,
+						sip,
+						mstatus,
+						trace_post_timer_count);
+					trace_post_timer_count <= trace_post_timer_count - 1'b1;
+					trace_post_timer_last_minstret <= minstret;
+				end
 				if (raise_trap) begin
 					if ($test$plusargs("TRACE_TRAP")) begin
 						$display("[TRAP] pc=%h inst=%h mode=%0d expt=%b intr=%b ret=%b cause=%h tval=%h vector=%h next_mode=%0d satp=%h stvec=%h mtvec=%h",
@@ -535,7 +568,28 @@ module csrunit (
 							stvec,
 							mtvec);
 					end
+					if ($test$plusargs("TRACE_TIMER_IRQ") &&
+						minstret >= trace_timer_start_minstret &&
+						raise_interrupt &&
+						(trap_cause == SUPERVISOR_TIMER_INTERRUPT || trap_cause == MACHINE_TIMER_INTERRUPT)) begin
+						$display("[TIMER-ENTRY] pc=%h mode=%0d cause=%h vector=%h next_mode=%0d mtime=%h mtip=%0b mip=%h mip_reg=%h sip=%h mstatus=%h",
+							pc,
+							mode,
+							trap_cause,
+							trap_vector,
+							trap_mode_next,
+							aclint.mtime,
+							aclint.mtip,
+							mip,
+							mip_reg,
+							sip,
+							mstatus);
+					end
 					if (raise_expt || raise_interrupt) begin
+						if (raise_interrupt &&
+							(trap_cause == SUPERVISOR_TIMER_INTERRUPT || trap_cause == MACHINE_TIMER_INTERRUPT)) begin
+							trace_timer_active <= 1'b1;
+						end
 						if (raise_expt)begin
 							xepc = pc; //exception
 						end else if (raise_interrupt && is_wfi) begin
@@ -569,6 +623,23 @@ module csrunit (
 							mstatus[8] <= mode[0];
 						end
 					end else if (trap_return) begin
+						if ($test$plusargs("TRACE_TIMER_IRQ") &&
+							minstret >= trace_timer_start_minstret &&
+							trace_timer_active) begin
+							$display("[TIMER-RETURN] pc=%h mode=%0d sret=%0b mret=%0b vector=%h next_mode=%0d mtime=%h mtip=%0b mip=%h mip_reg=%h sip=%h mstatus=%h",
+								pc,
+								mode,
+								is_sret,
+								is_mret,
+								trap_vector,
+								trap_mode_next,
+								aclint.mtime,
+								aclint.mtip,
+								mip,
+								mip_reg,
+								sip,
+								mstatus);
+						end
 						if (is_mret) begin
 							//save mstatus.mie to mstatus.mipe
 							// and set mstatus.mie = 0
@@ -583,6 +654,11 @@ module csrunit (
 							mstatus[5] <= 0;
 							//set sstatus.spp <= U
 							mstatus[8] <= 0;
+						end
+						if (trace_timer_active) begin
+							trace_post_timer_count <= 3'd4;
+							trace_post_timer_last_minstret <= minstret;
+							trace_timer_active <= 1'b0;
 						end
 					end
 					mode <= trap_mode_next;
@@ -608,6 +684,23 @@ module csrunit (
 								rdata,
 								(csr_addr == SATP) ? validate_satp(satp, wdata) : wdata,
 								inst_bits);
+						end
+						if ($test$plusargs("TRACE_TIMER_IRQ") &&
+							minstret >= trace_timer_start_minstret &&
+							(csr_addr == SIP || csr_addr == MIP) &&
+							(rdata[5] != wdata[5] || aclint.setstip)) begin
+							$display("[TIMER-CSR] pc=%h mode=%0d csr=%03h old=%h new=%h mtime=%h mtip=%0b mip=%h mip_reg=%h sip=%h setstip=%0b",
+								pc,
+								mode,
+								csr_addr,
+								rdata,
+								wdata,
+								aclint.mtime,
+								aclint.mtip,
+								mip,
+								mip_reg,
+								sip,
+								aclint.setstip);
 						end
 						case (csr_addr) //これらはそれぞれのCSRレジスタにwdataを入れている。
 							MSTATUS  : mstatus  <= validate_mstatus(mstatus, wdata);

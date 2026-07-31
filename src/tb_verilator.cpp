@@ -56,8 +56,8 @@ void set_nonblocking(void) {
     // まず old_setting をコピー
     new_setting = old_setting;
 
-    // Keep ISIG/ECHO enabled so Ctrl-C stops the simulator and typed chars remain visible.
-    new_setting.c_lflag &= static_cast<tcflag_t>(~ICANON);
+    // Keep ISIG enabled so Ctrl-C stops the simulator. Linux ttyS0 provides echo.
+    new_setting.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO));
     new_setting.c_cc[VMIN]  = 0;
     new_setting.c_cc[VTIME] = 0;
 

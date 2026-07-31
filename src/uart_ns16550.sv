@@ -15,11 +15,19 @@ module uart_ns16550 (
 	logic [7:0] fcr;
 	logic [7:0] mcr;
 	logic [7:0] scr;
+	localparam int RX_FIFO_DEPTH = 16;
+	localparam logic [4:0] RX_FIFO_DEPTH_COUNT = 5'd16;
+	logic [7:0] rx_fifo [RX_FIFO_DEPTH];
+	logic [3:0] rx_head;
+	logic [3:0] rx_tail;
+	logic [4:0] rx_count;
 	logic [7:0] rx_data;
 	logic rx_valid;
 	logic tx_irq_pending;
 	logic tx_empty_event;
 
+	assign rx_valid = rx_count != 0;
+	assign rx_data = rx_fifo[rx_head];
 	assign irq = (rx_valid && ier[0]) || (tx_irq_pending && ier[1]);
 
 	function automatic logic [7:0] get_write_byte(
@@ -67,22 +75,42 @@ module uart_ns16550 (
 			fcr <= 8'h00;
 			mcr <= 8'h00;
 			scr <= 8'h00;
-			rx_data <= 8'h00;
-			rx_valid <= 1'b0;
+			rx_head <= '0;
+			rx_tail <= '0;
+			rx_count <= '0;
 			tx_irq_pending <= 1'b0;
 			tx_empty_event <= 1'b0;
 		end else begin
+			logic bus_fire;
 			logic rbr_read;
+			logic rx_pop;
+			logic rx_clear;
+			logic rx_push;
+			logic [7:0] rx_push_data;
+			logic [4:0] rx_count_after_pop;
+
+			bus_fire = membus.valid && membus.ready;
 
 			rbr_read =
-				membus.valid &&
+				bus_fire &&
 				!membus.wen &&
 				!lcr[7] &&
 				(membus.addr[2:0] == UART_REG_RBR_THR_DLL[2:0]);
+			rx_pop = rbr_read && rx_valid;
+			rx_clear = 1'b0;
+			rx_push = 1'b0;
+			rx_push_data = 8'h00;
+			rx_count_after_pop = rx_count - {4'b0, rx_pop};
 
-			membus.ready <= 1'b1;
-			membus.rvalid <= membus.valid;
-			membus.rdata <= membus.valid ? read_lane_data(membus.addr) : '0;
+			if (bus_fire) begin
+				membus.ready <= 1'b0;
+				membus.rvalid <= 1'b1;
+				membus.rdata <= read_lane_data(membus.addr);
+			end else begin
+				membus.ready <= !membus.valid;
+				membus.rvalid <= 1'b0;
+				membus.rdata <= '0;
+			end
 
 			if (tx_empty_event) begin
 				if ($test$plusargs("TRACE_TXUART") && (ier[1] || tx_irq_pending)) begin
@@ -99,20 +127,20 @@ module uart_ns16550 (
 			end
 
 `ifdef ENABLE_DEBUG_INPUT
-			if (!rx_valid && !rbr_read) begin
+			if (rx_count_after_pop < RX_FIFO_DEPTH_COUNT) begin
 				longint input_value;
 				input_value = util::get_input();
 				if (input_value[63:44] == 20'h01010) begin
 					if ($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_RXUART")) begin
-						$display("[UART RX] char=%02x", input_value[7:0]);
+						$display("[UART RX] char=%02x count=%0d", input_value[7:0], rx_count);
 					end
-					rx_data <= input_value[7:0];
-					rx_valid <= 1'b1;
+					rx_push = 1'b1;
+					rx_push_data = input_value[7:0];
 				end
 			end
 `endif
 
-			if (membus.valid) begin
+			if (bus_fire) begin
 				logic [7:0] wbyte;
 				logic [2:0] reg_addr;
 				logic dlab;
@@ -152,7 +180,7 @@ module uart_ns16550 (
 							UART_REG_IIR_FCR[2:0]: begin
 								fcr <= wbyte;
 								if (wbyte[1]) begin
-									rx_valid <= 1'b0;
+									rx_clear = 1'b1;
 								end
 							end
 							UART_REG_LCR[2:0]:     lcr <= wbyte;
@@ -163,7 +191,7 @@ module uart_ns16550 (
 					end
 				end else begin
 					if (!dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
-						rx_valid <= 1'b0;
+						// RBR pop is applied once below with any host RX push.
 					end else if (reg_addr == UART_REG_IIR_FCR[2:0]) begin
 						if (!(rx_valid && ier[0]) && tx_irq_pending && ier[1]) begin
 							tx_irq_pending <= 1'b0;
@@ -230,6 +258,30 @@ module uart_ns16550 (
 						end
 					end
 				end
+			end
+
+			if (rx_clear) begin
+				rx_head <= '0;
+				rx_tail <= '0;
+				rx_count <= '0;
+			end else begin
+				unique case ({rx_push, rx_pop})
+					2'b01: begin
+						rx_head <= rx_head + 4'd1;
+						rx_count <= rx_count - 5'd1;
+					end
+					2'b10: begin
+						rx_fifo[rx_tail] <= rx_push_data;
+						rx_tail <= rx_tail + 4'd1;
+						rx_count <= rx_count + 5'd1;
+					end
+					2'b11: begin
+						rx_fifo[rx_tail] <= rx_push_data;
+						rx_head <= rx_head + 4'd1;
+						rx_tail <= rx_tail + 4'd1;
+					end
+					default: ;
+				endcase
 			end
 		end
 	end

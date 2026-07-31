@@ -47,8 +47,8 @@ module aclint_memory (
         end else begin
             //count up mtime
             mtime += 1;
-            if ($test$plusargs("TRACE_TIMER") && aclint.mtip != mtip_q) begin
-                $display("[TIMER] mtip=%b mtime=%h mtimecmp=%h", aclint.mtip, mtime, mtimecmp0);
+            if (($test$plusargs("TRACE_TIMER") || $test$plusargs("TRACE_TIMER_ACLINT")) && aclint.mtip != mtip_q) begin
+                $display("[TIMER-MTIP] mtip=%b mtime=%h mtimecmp=%h", aclint.mtip, mtime, mtimecmp0);
             end
             mtip_q <= aclint.mtip;
             membus.rvalid <= membus.valid;
@@ -57,7 +57,9 @@ module aclint_memory (
                 if (membus.wen) begin
                     M = membus.wmask_expand(membus.wmask);
                     D = membus.wdata & M;
-                    if ($test$plusargs("TRACE_TIMER")) begin
+                    if ($test$plusargs("TRACE_TIMER") ||
+                        ($test$plusargs("TRACE_TIMER_ACLINT") &&
+                         (addr == MMAP_ACLINT_MTIMECMP || addr == MMAP_ACLINT_SETSTIP))) begin
                         unique case(addr)
                             MMAP_ACLINT_MSIP,
                             MMAP_ACLINT_MTIME,
@@ -65,14 +67,16 @@ module aclint_memory (
                             MMAP_ACLINT_MTIMECMP,
                             MMAP_ACLINT_SETSSIP,
                             MMAP_ACLINT_SETSTIP: begin
-                                $display("[TIMER-W] addr=%h data=%h mask=%h mtime=%h mtimecmp=%h msip=%b mtip=%b",
+                                $display("[TIMER-W] addr=%h data=%h mask=%h mtime=%h mtimecmp=%h msip=%b mtip=%b setssip=%b setstip=%b",
                                     addr,
                                     membus.wdata,
                                     membus.wmask,
                                     mtime,
                                     mtimecmp0,
                                     msip0,
-                                    aclint.mtip);
+                                    aclint.mtip,
+                                    aclint.setssip,
+                                    aclint.setstip);
                             end
                             default: ;
                         endcase
