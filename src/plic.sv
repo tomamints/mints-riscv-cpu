@@ -20,6 +20,7 @@ module plic (
 	logic trace_prev_uart_pending;
 	logic trace_prev_uart_in_service;
 	logic trace_prev_seip;
+	logic bus_wait_valid_low;
 
 	localparam logic [5:0] PLIC_LAST_IRQ = 6'(PLIC_NUM_SOURCES);
 	localparam Addr PLIC_ENABLE_CONTEXT_STRIDE = Addr'('h80);
@@ -108,10 +109,10 @@ module plic (
 	assign selected_s = select_irq(enable_s, threshold_s);
 	assign meip = selected_m != 6'd0;
 	assign seip = selected_s != 6'd0;
+	assign membus.ready = !bus_wait_valid_low;
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
-			membus.ready <= 1'b1;
 			membus.rvalid <= 1'b0;
 			membus.rdata <= '0;
 			pending <= '0;
@@ -124,18 +125,31 @@ module plic (
 			trace_prev_uart_pending <= 1'b0;
 			trace_prev_uart_in_service <= 1'b0;
 			trace_prev_seip <= 1'b0;
+			bus_wait_valid_low <= 1'b0;
 			for (int i = 0; i <= PLIC_NUM_SOURCES; i++) begin
 				irq_priority[i] <= '0;
 			end
 		end else begin
+			logic bus_fire;
 			logic [31:0] wword;
 			logic [5:0] irq_index;
 			logic [5:0] claim_m;
 			logic [5:0] claim_s;
 
-			membus.ready <= 1'b1;
-			membus.rvalid <= membus.valid;
-			membus.rdata <= membus.valid ? word_to_bus(read_reg(membus.addr), membus.addr) : '0;
+			bus_fire = membus.valid && !bus_wait_valid_low;
+
+			if (bus_fire) begin
+				bus_wait_valid_low <= 1'b1;
+				membus.rvalid <= 1'b1;
+				membus.rdata <= word_to_bus(read_reg(membus.addr), membus.addr);
+			end else begin
+				membus.rvalid <= 1'b0;
+				membus.rdata <= '0;
+				if (!membus.valid) begin
+					bus_wait_valid_low <= 1'b0;
+				end
+			end
+
 			pending <= pending | (source_irq & ~in_service);
 			pending[0] <= 1'b0;
 			in_service[0] <= 1'b0;
@@ -166,7 +180,7 @@ module plic (
 			trace_prev_uart_in_service <= in_service[PLIC_UART_IRQ];
 			trace_prev_seip <= seip;
 
-			if (membus.valid) begin
+			if (bus_fire) begin
 				if ($test$plusargs("TRACE_PLIC")) begin
 					$display("[PLIC] %s addr=%h wdata=%h rdata=%h source=%h pending=%h enable_m=%h enable_s=%h sel_m=%0d sel_s=%0d meip=%b seip=%b",
 						membus.wen ? "W" : "R",

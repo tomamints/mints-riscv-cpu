@@ -20,6 +20,7 @@ obj_dir_input/
 obj_dir_trace/
 whisper/
 boost_1_88_0/
+fwuart-16550/
 !core/
 !core/test/
 core/test/*

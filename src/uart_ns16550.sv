@@ -25,10 +25,12 @@ module uart_ns16550 (
 	logic rx_valid;
 	logic tx_irq_pending;
 	logic tx_empty_event;
+	logic bus_wait_valid_low;
 
 	assign rx_valid = rx_count != 0;
 	assign rx_data = rx_fifo[rx_head];
 	assign irq = (rx_valid && ier[0]) || (tx_irq_pending && ier[1]);
+	assign membus.ready = !bus_wait_valid_low;
 
 	function automatic logic [7:0] get_write_byte(
 		input logic [MEMBUS_DATA_WIDTH-1:0] wdata,
@@ -46,12 +48,12 @@ module uart_ns16550 (
 		unique case (reg_addr)
 			UART_REG_RBR_THR_DLL[2:0]: read_reg = dlab ? dll : rx_data;
 			UART_REG_IER_DLM[2:0]:     read_reg = dlab ? dlm : ier;
-			UART_REG_IIR_FCR[2:0]:     read_reg = (rx_valid && ier[0]) ? 8'h04 :
-			                                       (tx_irq_pending && ier[1]) ? 8'h02 : 8'h01;
+			UART_REG_IIR_FCR[2:0]:     read_reg = 8'hc0 |
+			                                       ((rx_valid && ier[0]) ? 8'h04 :
+			                                        (tx_irq_pending && ier[1]) ? 8'h02 : 8'h01);
 			UART_REG_LCR[2:0]:         read_reg = lcr;
 			UART_REG_MCR[2:0]:         read_reg = mcr;
-			UART_REG_LSR[2:0]:         read_reg = (tx_empty_event ? 8'h00 : 8'h60) |
-			                                       {7'b0, rx_valid};
+			UART_REG_LSR[2:0]:         read_reg = 8'h60 | {7'b0, rx_valid};
 			UART_REG_MSR[2:0]:         read_reg = 8'h00;
 			UART_REG_SCR[2:0]:         read_reg = scr;
 			default:                   read_reg = 8'h00;
@@ -65,10 +67,9 @@ module uart_ns16550 (
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
-			membus.ready <= 1'b1;
 			membus.rvalid <= 1'b0;
 			membus.rdata <= '0;
-			lcr <= 8'h00;
+			lcr <= 8'h03;
 			ier <= 8'h00;
 			dll <= 8'h00;
 			dlm <= 8'h00;
@@ -80,6 +81,7 @@ module uart_ns16550 (
 			rx_count <= '0;
 			tx_irq_pending <= 1'b0;
 			tx_empty_event <= 1'b0;
+			bus_wait_valid_low <= 1'b0;
 		end else begin
 			logic bus_fire;
 			logic rbr_read;
@@ -89,7 +91,7 @@ module uart_ns16550 (
 			logic [7:0] rx_push_data;
 			logic [4:0] rx_count_after_pop;
 
-			bus_fire = membus.valid && membus.ready;
+			bus_fire = membus.valid && !bus_wait_valid_low;
 
 			rbr_read =
 				bus_fire &&
@@ -103,13 +105,15 @@ module uart_ns16550 (
 			rx_count_after_pop = rx_count - {4'b0, rx_pop};
 
 			if (bus_fire) begin
-				membus.ready <= 1'b0;
+				bus_wait_valid_low <= 1'b1;
 				membus.rvalid <= 1'b1;
 				membus.rdata <= read_lane_data(membus.addr);
 			end else begin
-				membus.ready <= !membus.valid;
 				membus.rvalid <= 1'b0;
 				membus.rdata <= '0;
+				if (!membus.valid) begin
+					bus_wait_valid_low <= 1'b0;
+				end
 			end
 
 			if (tx_empty_event) begin
@@ -168,7 +172,7 @@ module uart_ns16550 (
 								if (dlab) begin
 									dlm <= wbyte;
 								end else begin
-									ier <= wbyte;
+									ier <= {4'b0, wbyte[3:0]};
 									if (!wbyte[1]) begin
 										tx_irq_pending <= 1'b0;
 										tx_empty_event <= 1'b0;
@@ -193,9 +197,7 @@ module uart_ns16550 (
 					if (!dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
 						// RBR pop is applied once below with any host RX push.
 					end else if (reg_addr == UART_REG_IIR_FCR[2:0]) begin
-						if (!(rx_valid && ier[0]) && tx_irq_pending && ier[1]) begin
-							tx_irq_pending <= 1'b0;
-						end
+						// THRE interrupt is cleared by the next THR write, not by IIR read.
 					end
 				end
 
@@ -223,11 +225,13 @@ module uart_ns16550 (
 								irq);
 						end
 					end else if (!membus.wen && reg_addr == UART_REG_IIR_FCR[2:0]) begin
+						logic [7:0] iir_value;
+						iir_value = read_reg(membus.addr);
 						if ($test$plusargs("TRACE_UART") ||
-						    (read_reg(membus.addr) == 8'h04) ||
-						    ($test$plusargs("TRACE_TXUART") && read_reg(membus.addr) == 8'h02)) begin
+						    (iir_value[3:0] == 4'h4) ||
+						    ($test$plusargs("TRACE_TXUART") && iir_value[3:0] == 4'h2)) begin
 							$display("[UART IIR] value=%02x ier=%02x txp=%0b txe=%0b rx=%0b irq=%0b",
-								read_reg(membus.addr),
+								iir_value,
 								ier,
 								tx_irq_pending,
 								tx_empty_event,
