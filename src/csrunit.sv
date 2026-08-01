@@ -50,12 +50,12 @@ module csrunit (
 	localparam UIntX MEPC_WMASK   = 'hffff_ffff_ffff_fffe;
 	localparam UIntX MCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0222);
+	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0022);
 	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_0aaa);
 	localparam UIntX MCYCLE_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX MINSTRET_WMASK = 'hffff_ffff_ffff_ffff;
 	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_000c_0122);
-	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0222);
+	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0022);
 	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);
 	localparam UIntX SCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
 	localparam UIntX STVEC_WMASK  = 'hffff_ffff_ffff_fffd;
@@ -184,7 +184,7 @@ module csrunit (
 	assign sstatus_sum = mstatus[18];
 	assign sstatus_mxr = mstatus[19];
 
-	assign mip = mip_reg | {
+	assign mip = (mip_reg & ~UIntX'('h0000_0000_0000_0a88)) | {
 		{(XLEN - 12){1'b0}},
 		external_meip, // MEIP
 		1'b0, // 0
@@ -529,7 +529,7 @@ module csrunit (
 			trace_post_timer_last_minstret <= '0;
 		end else begin
 			mcycle += 1;
-			mip_reg |= set_s_interrupt_pending;
+			mip_reg <= mip_reg | set_s_interrupt_pending;
 			if (valid) begin
 				if ($test$plusargs("TRACE_TIMER_IRQ") &&
 					minstret >= trace_timer_start_minstret &&

@@ -85,6 +85,8 @@ module uart_ns16550 (
 		end else begin
 			logic bus_fire;
 			logic rbr_read;
+			logic iir_read;
+			logic iir_reports_thre;
 			logic rx_pop;
 			logic rx_clear;
 			logic rx_push;
@@ -98,6 +100,12 @@ module uart_ns16550 (
 				!membus.wen &&
 				!lcr[7] &&
 				(membus.addr[2:0] == UART_REG_RBR_THR_DLL[2:0]);
+			iir_read =
+				bus_fire &&
+				!membus.wen &&
+				!lcr[7] &&
+				(membus.addr[2:0] == UART_REG_IIR_FCR[2:0]);
+			iir_reports_thre = iir_read && !(rx_valid && ier[0]) && tx_irq_pending && ier[1];
 			rx_pop = rbr_read && rx_valid;
 			rx_clear = 1'b0;
 			rx_push = 1'b0;
@@ -197,7 +205,9 @@ module uart_ns16550 (
 					if (!dlab && reg_addr == UART_REG_RBR_THR_DLL[2:0]) begin
 						// RBR pop is applied once below with any host RX push.
 					end else if (reg_addr == UART_REG_IIR_FCR[2:0]) begin
-						// THRE interrupt is cleared by the next THR write, not by IIR read.
+						if (iir_reports_thre) begin
+							tx_irq_pending <= 1'b0;
+						end
 					end
 				end
 
