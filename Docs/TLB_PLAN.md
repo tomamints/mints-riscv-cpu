@@ -71,6 +71,19 @@ leaf_level
 
 既存のfetch/data側PTWインスタンスでは、このleaf情報は未使用wireへ接続している。
 
+PTW本体側では、接続前に以下も整理済み。
+
+```text
+PTE lane selection:
+  MEMBUS_DATA_WIDTH が64bitより広い場合も、pte_addrに対応する64bit laneを選択する
+
+flush with outstanding PTW read:
+  request受理後にflushされた場合は DrainResp で古いresponseを捨ててからIdleへ戻る
+
+canonical check naming:
+  start_va_canonical として、start時入力VAの判定であることを明示
+```
+
 ## Why This Is Not Connected Yet
 
 translation unitは単体で確認済みだが、まだfetch/LSUの制御FSMへは接続していない。

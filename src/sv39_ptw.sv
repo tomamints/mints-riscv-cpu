@@ -34,8 +34,13 @@ module sv39_ptw (
 		Req,
 		WaitResp,
 		Check,
-		Done
+		Done,
+		DrainResp
 	} State;
+
+	localparam int unsigned PTE_BYTES = 8;
+	localparam int unsigned BUS_BYTES = MEMBUS_DATA_WIDTH / 8;
+	localparam int unsigned PTE_LANE_COUNT = MEMBUS_DATA_WIDTH / 64;
 
 	State state;
 	Addr req_va;
@@ -66,7 +71,8 @@ module sv39_ptw (
 	logic pte_access_perm_fault;
 	logic pte_ad_fault;
 	logic superpage_misaligned;
-	logic va_canonical;
+	logic start_va_canonical;
+	logic mem_outstanding;
 
 	assign ready = state == Idle;
 	assign done = state == Done;
@@ -82,7 +88,7 @@ module sv39_ptw (
 	assign mem_valid = state == Req;
 	assign mem_addr = pte_addr;
 
-	assign va_canonical = is_sv39_canonical(va);
+	assign start_va_canonical = is_sv39_canonical(va);
 
 	always_comb begin
 		unique case (level)
@@ -176,6 +182,25 @@ module sv39_ptw (
 		return addr[63:39] == {25{addr[38]}};
 	endfunction
 
+	function automatic UIntX select_pte(
+		input logic [MEMBUS_DATA_WIDTH-1:0] data,
+		input Addr addr
+	);
+		int unsigned lane;
+		UIntX selected;
+
+		lane = int'((addr & (Addr'(BUS_BYTES) - Addr'(1))) >> 3);
+		selected = '0;
+
+		for (int unsigned i = 0; i < PTE_LANE_COUNT; i++) begin
+			if (lane == i) begin
+				selected = UIntX'(data[i * 64 +: 64]);
+			end
+		end
+
+		return selected;
+	endfunction
+
 	function automatic Sv39Fault invalid_fault_detail(
 		input logic v_invalid,
 		input logic w_no_r
@@ -231,7 +256,7 @@ module sv39_ptw (
 	endfunction
 
 	always_ff @(posedge clk or negedge rst) begin
-		if (!rst || flush) begin
+		if (!rst) begin
 			state <= Idle;
 			req_va <= '0;
 			req_access_type <= PMP_ACCESS_READ;
@@ -248,6 +273,25 @@ module sv39_ptw (
 			result_leaf_valid <= 1'b0;
 			result_leaf_pte <= '0;
 			result_leaf_level <= 2'd0;
+			mem_outstanding <= 1'b0;
+		end else if (flush) begin
+			state <= (mem_outstanding || (state == Req && mem_ready)) ? DrainResp : Idle;
+			req_va <= '0;
+			req_access_type <= PMP_ACCESS_READ;
+			req_priv_mode <= M;
+			req_sum <= 1'b0;
+			req_mxr <= 1'b0;
+			level <= 2'd2;
+			base_ppn <= '0;
+			pte <= '0;
+			result_fault <= 1'b0;
+			result_fault_detail <= SV39_FAULT_NONE;
+			result_pa <= '0;
+			result_fault_cause <= CsrCause'(0);
+			result_leaf_valid <= 1'b0;
+			result_leaf_pte <= '0;
+			result_leaf_level <= 2'd0;
+			mem_outstanding <= mem_outstanding || (state == Req && mem_ready);
 		end else begin
 			case (state)
 				Idle: begin
@@ -259,14 +303,14 @@ module sv39_ptw (
 						req_mxr <= mxr;
 						level <= 2'd2;
 						base_ppn <= UIntX'(satp[43:0]);
-						result_fault <= !va_canonical;
-						result_fault_detail <= va_canonical ? SV39_FAULT_NONE : SV39_FAULT_ADDR_INVALID;
+						result_fault <= !start_va_canonical;
+						result_fault_detail <= start_va_canonical ? SV39_FAULT_NONE : SV39_FAULT_ADDR_INVALID;
 						result_pa <= '0;
 						result_fault_cause <= page_fault_cause(access_type);
 						result_leaf_valid <= 1'b0;
 						result_leaf_pte <= '0;
 						result_leaf_level <= 2'd0;
-						state <= va_canonical ? Req : Done;
+						state <= start_va_canonical ? Req : Done;
 					end
 				end
 
@@ -276,6 +320,7 @@ module sv39_ptw (
 							$display("[SV39] REQ level=%0d va=%h pte_addr=%h base_ppn=%h vpn=%h",
 								level, req_va, pte_addr, base_ppn, vpn);
 						end
+						mem_outstanding <= 1'b1;
 						state <= WaitResp;
 					end
 				end
@@ -285,13 +330,14 @@ module sv39_ptw (
 						if ($test$plusargs("TRACE_SV39")) begin
 							$display("[SV39] RESP pte=%h", mem_rdata);
 						end
+						mem_outstanding <= 1'b0;
 						if (mem_error) begin
 							result_fault <= 1'b1;
 							result_fault_detail <= SV39_FAULT_PTE_MEM_ERROR;
 							result_fault_cause <= access_fault_cause(req_access_type);
 							state <= Done;
 						end else begin
-							pte <= UIntX'(mem_rdata[63:0]);
+							pte <= select_pte(mem_rdata, pte_addr);
 							state <= Check;
 						end
 					end
@@ -345,6 +391,13 @@ module sv39_ptw (
 
 				Done: begin
 					state <= Idle;
+				end
+
+				DrainResp: begin
+					if (mem_rvalid) begin
+						mem_outstanding <= 1'b0;
+						state <= Idle;
+					end
 				end
 
 				default: state <= Idle;
