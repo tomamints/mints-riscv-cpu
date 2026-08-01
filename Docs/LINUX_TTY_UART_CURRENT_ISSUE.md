@@ -1,12 +1,11 @@
-# Linux TTY/UART Current Issue
+# Linux TTY/UART Bring-up Notes
 
 Date: 2026-08-01
 
-## Current Symptom
+## Current Status
 
-The system boots through OpenSBI and Linux, then starts `/init`.
-
-Observed prompt path:
+Linux now boots through OpenSBI, starts `/init`, and reaches the
+`cmdloop-ttyS0` read loop:
 
 ```text
 Run /init as init process
@@ -15,218 +14,283 @@ MARK-A: before loop
 MARK-B: before read
 ```
 
-When typing:
-
-```text
-echo OK
-```
-
-the UART RX path receives all bytes, but the shell does not reliably reach:
+With the latest RTL fixes, `echo OK` can reach:
 
 ```text
 MARK-C: read returned
+status=0
 line=[echo OK]
 OK
+MARK-B: before read
 ```
 
-In recent traces, the input bytes are visible up to RBR reads:
-
-```text
-e     0x65
-c     0x63
-h     0x68
-o     0x6f
-space 0x20
-O     0x4f
-K     0x4b
-LF    0x0a
-```
-
-However, TTY echo / shell read completion does not consistently continue after the bytes are read.
+This is the current baseline to preserve.
 
 ## Confirmed Working
 
-The latest UART/PLIC trace shows this sequence for each input byte:
+The following path has been observed working:
 
 ```text
-UART irq source=1
-PLIC pending=1
-PLIC CLAIM irq=10
-UART IIR = c4
-UART LSR = 61
-UART RBR = input byte
-UART irq source=0
-PLIC COMPLETE irq=10
-PLIC in_service=0
-PLIC seip=0
+host input
+-> UART RX FIFO/RBR
+-> UART RX interrupt
+-> PLIC source 10
+-> S-mode external interrupt
+-> Linux 8250 driver
+-> tty flip buffer
+-> kworker / flush_to_ldisc
+-> n_tty canonical read
+-> PID 1 read() return
+-> cmdloop command handling
+-> UART TX
 ```
 
-This strongly suggests the following are working for the observed input:
+The important visible userland sequence is:
 
 ```text
-host input delivery
-UART RX storage
-UART RX interrupt indication
-Linux 8250 IIR read
-Linux 8250 LSR read
-Linux 8250 RBR read
-PLIC pending
-PLIC claim
-PLIC complete
-SEIP deassertion after complete
-```
-
-## Recent Hardware Fixes
-
-### UART MMIO handshake
-
-UART now uses a `bus_wait_valid_low` guard so one held `membus.valid` request is accepted once.
-
-Reason:
-
-```text
-RBR read has side effects.
-THR write has side effects.
-The same MMIO transaction must not pop/write multiple times.
-```
-
-### UART TX interrupt behavior
-
-TX pending is no longer cleared by IIR read. It is cleared by the next THR write.
-
-LSR now always reports TX empty:
-
-```text
-LSR.THRE = 1
-LSR.TEMT = 1
-```
-
-This matches the current zero-latency `$write()` TX model better.
-
-### PLIC MMIO handshake
-
-PLIC now also uses a `bus_wait_valid_low` guard.
-
-Reason:
-
-```text
-PLIC claim read has side effects.
-PLIC complete write has side effects.
-The same held valid request must not be processed multiple times.
-```
-
-The level interrupt logic itself was not changed:
-
-```systemverilog
-pending <= pending | (source_irq & ~in_service);
-```
-
-## Current Interpretation
-
-The latest evidence no longer points first at UART RX or simple PLIC delivery.
-
-The likely failing region is after `serial8250` has read RBR:
-
-```text
-serial8250 RX handling
-  -> tty flip buffer
-  -> tty_flip_buffer_push()
-  -> workqueue / scheduler
-  -> flush_to_ldisc()
-  -> n_tty_receive_buf_common()
-  -> canonical newline handling
-  -> read() wakeup/return
-```
-
-This does not mean Linux itself is likely wrong. More likely, Linux is depending on CPU/interrupt/atomic/scheduler behavior that the current hardware model does not fully satisfy.
-
-## Important Distinction
-
-Current conclusion is not:
-
-```text
-Linux source is probably buggy.
-```
-
-Current conclusion is:
-
-```text
-Linux reaches the TTY path, but the post-RBR path does not reliably progress on this CPU/SoC model.
-We need Linux-side trace to identify which hardware assumption is being violated.
-```
-
-## Next Minimal Trace
-
-Do not add broad traces. The next useful trace should mark only the RBR-to-read-return path:
-
-```text
-A: 8250 RBR read / byte inserted
-P: tty_flip_buffer_push() reached
-Q: queue_work() called
-Y: queue_work() returned true
-N: queue_work() returned false
-W: worker_thread() resumed
-R: flush_to_ldisc() started
-T: flush_to_ldisc() returned
-C: n_tty_receive_buf_common() reached
-D: newline recognized as canonical line end
-E: reader wakeup issued
-G: n_tty_read/read path returning data
-```
-
-Expected healthy path after `echo OK\n`:
-
-```text
-A P Q Y W R C D E T G
+MARK-B: before read
+echo OK
 MARK-C: read returned
+status=0
 line=[echo OK]
 OK
+MARK-B: before read
 ```
 
-## How To Read The Next Result
+## Root Causes Found
+
+### 1. UART THRE pending was not cleared by IIR read
+
+The UART TX interrupt model kept `tx_irq_pending` asserted after Linux read
+`IIR = THRE`. This could leave the UART interrupt source high and repeatedly
+re-trigger PLIC/SEIP.
+
+Fix in `src/uart_ns16550.sv`:
+
+```systemverilog
+iir_reports_thre =
+    iir_read &&
+    !(rx_valid && ier[0]) &&
+    tx_irq_pending &&
+    ier[1];
+
+if (iir_reports_thre) begin
+    tx_irq_pending <= 1'b0;
+end
+```
+
+Expected behavior:
 
 ```text
-A only:
-  serial8250 read happened, but byte was not pushed to tty buffering.
-
-A P Q Y, no W:
-  work was queued and accepted, but worker did not run.
-  Suspect scheduler, interrupt return, preempt state, timer, or CPU state.
-
-A P Q N:
-  work was already pending/running.
-  Need to see whether a prior W/R/T exists.
-
-W R C but no D:
-  n_tty is running, but newline/canonical handling is not reached.
-
-D/E present but no G:
-  wakeup happened, but the waiting read task did not return.
-  Suspect scheduler, task wakeup, trap return, or userspace return.
-
-G present but no MARK-C:
-  kernel read path returned, but userspace/trap return is failing.
+IIR reports THRE
+-> tx_irq_pending clears
+-> UART irq drops
+-> PLIC complete sees source=0
 ```
 
-## Trace To Avoid For Now
+### 2. `mip/sip.SEIP` was effectively writable
 
-Avoid broad always-on traces such as:
+`MIP_WMASK` and `SIP_WMASK` previously allowed bit 9:
 
 ```text
-all timer writes
-all heartbeat PCs
-all preempt_count add/sub
-all UART RX/TX/IIR/LSR forever
+0x222
 ```
 
-Those logs hide the readiness point and can perturb timing. Use targeted traces around the current boundary.
-
-## Current Files Touched In This Investigation
+Because `mip` read data included `external_seip`, a CSR read-modify-write could
+copy an externally asserted SEIP into `mip_reg[9]`. After PLIC dropped `seip`,
+the CPU could still see `sip.SEIP=1`, causing this invalid pattern:
 
 ```text
-src/uart_ns16550.sv
-src/plic.sv
-.gitignore
+scause = supervisor external interrupt
+PLIC claim = 0
+PLIC seip = 0
 ```
 
-`fwuart-16550/` is ignored as reference code only.
+Fix in `src/csrunit.sv`:
+
+```systemverilog
+MIP_WMASK = 0x22;
+SIP_WMASK = 0x22;
+```
+
+and external/ACLINT-driven bits are excluded from `mip_reg` when composing
+`mip`:
+
+```systemverilog
+mip = (mip_reg & ~0x0a88) | external_and_aclint_bits;
+```
+
+The externally driven bits are:
+
+```text
+MEIP bit 11
+SEIP bit 9
+MTIP bit 7
+MSIP bit 3
+```
+
+### 3. `sret/mret` interrupt-enable restore needed cleanup
+
+Trap return now restores the previous interrupt-enable bit and sets the
+previous-enable bit back to 1:
+
+```systemverilog
+mret:
+  MIE  <= MPIE
+  MPIE <= 1
+
+sret:
+  SIE  <= SPIE
+  SPIE <= 1
+```
+
+This is required by the privileged architecture. Later traces showed this was
+not the final SEIP storm cause, but the fix is still correct.
+
+## Trace State
+
+No always-on Linux KTRACE should remain in the normal notrace image.
+
+Removed call:
+
+```c
+svcpu_ktrace_irq('I');
+```
+
+from:
+
+```text
+build/external/linux/kernel/softirq.c
+```
+
+RTL traces remain plusarg-gated. They do not print unless explicitly enabled.
+For normal confirmation, run without `SIM_EXTRA_ARGS=+TRACE...`.
+
+Avoid broad trace while validating stability. It can hide readiness points and
+perturb timing.
+
+## Current Build Artifacts
+
+Linux image rebuilt after removing `[I ...]` trace:
+
+```text
+build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-notrace-initramfs
+```
+
+RTL simulator rebuilt with:
+
+```bash
+make build-input
+```
+
+Run command:
+
+```bash
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-notrace-initramfs \
+  OPENSBI_CYCLES=0
+```
+
+## Next Checks
+
+First validate the current baseline with trace disabled:
+
+```text
+echo OK
+echo OK
+echo hello
+uname
+cat /proc/interrupts
+cat /proc/cpuinfo
+```
+
+Pass criteria:
+
+```text
+No [I ...] Linux KTRACE
+No [UART ...] trace unless plusarg enabled
+No [PLIC ...] trace unless plusarg enabled
+Each command returns to MARK-B
+No scause=9 / claim=0 storm
+```
+
+For `cmdloop-ttyS0`, a command pass looks like:
+
+```text
+MARK-C: read returned
+status=0
+line=[...]
+...
+MARK-B: before read
+```
+
+## If It Fails Again
+
+Use only targeted trace.
+
+### If output stops after TX
+
+Enable only:
+
+```text
++TRACE_TXUART
++TRACE_IRQ10PLIC
+```
+
+Check:
+
+```text
+IIR=c2 clears tx_irq_pending
+UART irq drops
+PLIC complete source=0
+```
+
+### If input reaches RBR but read does not return
+
+Re-enable Linux KTRACE only around:
+
+```text
+tty_flip_buffer_push
+queue_work return value
+worker_thread
+flush_to_ldisc
+n_tty_receive_buf_common
+n_tty_read return
+```
+
+Do not re-enable broad IRQ-exit or per-interrupt traces unless the failing
+boundary again points there.
+
+### If `scause=9` repeats with PLIC claim 0
+
+Check CSR state:
+
+```text
+mip_reg[9]
+external_seip
+mip[9]
+sip[9]
+```
+
+Expected after PLIC source drops:
+
+```text
+external_seip=0
+mip_reg[9]=0
+mip[9]=0
+sip[9]=0
+```
+
+## Notes
+
+The current problem was not a Linux design bug. Linux exposed assumptions that
+the CPU/SoC model must satisfy:
+
+```text
+16550 THRE interrupt acknowledge semantics
+PLIC level interrupt completion semantics
+RISC-V mip/sip external interrupt read/write semantics
+```
+
+These are now the main areas fixed and should be protected by future tests.

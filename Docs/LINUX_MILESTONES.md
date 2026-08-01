@@ -44,13 +44,14 @@ cat /proc/interrupts
 - `rv64imac/lp64` soft-float static BusyBoxをinitramfsに入れられる
 - Linuxが `/init` をPID 1として実行する
 - `/dev/ttyS0` 直結の `readloop-ttyS0` で入力行が `INPUT=[...] status=0` と返る
+- `cmdloop-ttyS0` で `echo OK` が `read()` から戻り、`line=[echo OK]`, `OK`, 次の `MARK-B` まで進む
 
 直近の残り:
 
-- default BusyBox `/init` で `/dev/ttyS0` + `setsid` + `cttyhack` の対話shellを安定させる
-- shellから `uname -a` などの外部コマンドを実行する
+- traceなしのnotrace Imageで `echo OK` を複数回安定して通す
+- `cmdloop-ttyS0` から `uname`, `cat /proc/interrupts`, `cat /proc/cpuinfo` を確認する
 - `/tmp` をtmpfsとしてmountし、書き込み可能な作業領域を用意する
-- 対話shellの行編集で詰まる場合は、`cmdloop-ttyS0` で `read` + `/bin/sh -c` によりコマンド実行経路を先に確認する
+- default BusyBox `/init` で `/dev/ttyS0` + `setsid` + `cttyhack` の対話shellを安定させる
 
 ## Initramfs Policy
 
@@ -167,7 +168,7 @@ cat /proc/interrupts
 
 状態:
 
-- 現在の主作業
+- `cmdloop-ttyS0` で `echo OK` は到達済み。次はtraceなしで複数回の安定性と、`uname` / procfs系コマンドを確認する
 
 ## Milestone C: Basic File Operations
 
