@@ -14,6 +14,7 @@
 - `Docs/LINUX_TTY_UART_CURRENT_ISSUE.md`: Linux TTY/UART bring-upの直近原因と確認手順
 - `Docs/LINUX_BASELINE.md`: Linux cmdloop baselineの固定手順、合格条件、trace方針
 - `Docs/RTL_LAYOUT.md`: 将来のRTL配置、wrapper境界、段階移行方針
+- `Docs/PERFORMANCE_COUNTERS.md`: CPI/stall/eventカウンタの使い方と現在の制限
 
 ## 現在地
 

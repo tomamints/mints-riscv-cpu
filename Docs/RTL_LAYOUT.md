@@ -34,6 +34,7 @@ rtl/
     lsu/
     csr/
     pipeline/
+    perf/
   mmu/
   cache/
   bus/
@@ -46,7 +47,7 @@ rtl/
 
 ```text
 rtl/core
-  pipeline本体、frontend、execute、LSU、CSR周辺
+  pipeline本体、frontend、execute、LSU、CSR、性能観測周辺
 
 rtl/mmu
   Sv39 PTW、ITLB、DTLB、共通TLB、PMP
@@ -81,6 +82,7 @@ src/muldivunit.sv              -> rtl/core/execute/muldivunit.sv
 src/amounit.sv                 -> rtl/core/execute/amounit.sv
 src/memunit.sv                 -> rtl/core/lsu/memunit.sv
 src/csrunit.sv                 -> rtl/core/csr/csrunit.sv
+src/core.sv perf counters      -> rtl/core/perf/perf_counter.sv
 src/pmp_checker.sv             -> rtl/mmu/pmp_checker.sv
 src/sv39_ptw.sv                -> rtl/mmu/sv39_ptw.sv
 src/membus_if.sv               -> rtl/bus/membus_if.sv
@@ -120,6 +122,32 @@ load/store request
 -> DTLB wrapper
 -> D-cache wrapper
 -> memory / MMIO bus
+```
+
+Perf:
+
+```text
+frontend / execute / LSU / CSR / bus
+-> perf observation signals
+-> perf counters
+-> Verilator summary or future MMIO/CSR readout
+```
+
+perfはpipelineの制御経路に入れず、横から観測します。
+
+現在:
+
+```text
+src/core.sv 内で直接カウント
++PERF_SUMMARY でVerilator final時に表示
+```
+
+将来:
+
+```text
+rtl/core/perf/perf_counter.sv
+perf_enable / perf_clear
+perf_ctrl MMIO or CSR
 ```
 
 最初のwrapperはpass-throughにします。

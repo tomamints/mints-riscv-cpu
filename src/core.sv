@@ -342,6 +342,26 @@ module core (
 			UInt64 debug_cycle;
 			UInt64 strsize_trace_count;
 			UInt64 strsize_muldiv_trace_count;
+			UInt64 perf_retired;
+			UInt64 perf_commit_cycle;
+			UInt64 perf_no_commit_cycle;
+			UInt64 perf_ifetch_stall_cycle;
+			UInt64 perf_data_hazard_cycle;
+			UInt64 perf_muldiv_stall_cycle;
+			UInt64 perf_mem_stall_cycle;
+			UInt64 perf_other_stall_cycle;
+			UInt64 perf_ifetch_active_cycle;
+			UInt64 perf_data_hazard_active_cycle;
+			UInt64 perf_muldiv_active_cycle;
+			UInt64 perf_mem_active_cycle;
+			UInt64 perf_branch_count;
+			UInt64 perf_branch_taken_count;
+			UInt64 perf_control_flush_count;
+			UInt64 perf_trap_flush_count;
+			UInt64 perf_load_count;
+			UInt64 perf_store_count;
+			UInt64 perf_ibus_req_count;
+			UInt64 perf_dbus_req_count;
 
 		function automatic UIntX mem_access_size(input logic [2:0] funct3);
 			unique case (funct3[1:0])
@@ -567,7 +587,32 @@ module core (
 	logic [4:0] wbs_rd_addr = wbs_inst_bits[11:7];
 	UIntX wbs_wb_data;
 	logic wbs_writes_minstret;
+	logic architectural_retire;
+	logic minstret_auto_increment;
+	logic perf_ifetch_stall;
+	logic perf_data_hazard_stall;
+	logic perf_muldiv_stall;
+	logic perf_mem_stall;
+	logic perf_branch_event;
+	logic perf_control_flush_event;
+	logic perf_trap_flush_event;
+	logic perf_load_event;
+	logic perf_store_event;
 	assign wbs_writes_minstret = wbs_ctrl.is_csr && (wbs_inst_bits[31:20] == MINSTRET) && (wbs_inst_bits[13:12] != 2'b00);
+	assign architectural_retire = wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap;
+	assign minstret_auto_increment = architectural_retire && !wbs_writes_minstret;
+	assign perf_ifetch_stall = !ids_valid && !control_hazard;
+	assign perf_data_hazard_stall = exs_valid && exs_data_hazard;
+	assign perf_muldiv_stall = exs_muldiv_stall;
+	assign perf_mem_stall = memu_stall;
+	assign perf_branch_event = mems_valid && mems_is_new && inst_is_br(mems_ctrl);
+	assign perf_control_flush_event =
+		mems_valid &&
+		mems_is_new &&
+		(csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken || mems_translation_hazard);
+	assign perf_trap_flush_event = mems_valid && mems_is_new && csru_raise_trap && !csru_trap_return;
+	assign perf_load_event = architectural_retire && wbs_ctrl.is_load;
+	assign perf_store_event = architectural_retire && inst_is_store(wbs_ctrl);
 
 	function automatic string linux_syscall_name(input UIntX nr);
 		case (nr)
@@ -632,8 +677,81 @@ module core (
 			debug_cycle <= '0;
 			strsize_trace_count <= '0;
 			strsize_muldiv_trace_count <= '0;
+			perf_retired <= '0;
+			perf_commit_cycle <= '0;
+			perf_no_commit_cycle <= '0;
+			perf_ifetch_stall_cycle <= '0;
+			perf_data_hazard_cycle <= '0;
+			perf_muldiv_stall_cycle <= '0;
+			perf_mem_stall_cycle <= '0;
+			perf_other_stall_cycle <= '0;
+			perf_ifetch_active_cycle <= '0;
+			perf_data_hazard_active_cycle <= '0;
+			perf_muldiv_active_cycle <= '0;
+			perf_mem_active_cycle <= '0;
+			perf_branch_count <= '0;
+			perf_branch_taken_count <= '0;
+			perf_control_flush_count <= '0;
+			perf_trap_flush_count <= '0;
+			perf_load_count <= '0;
+			perf_store_count <= '0;
+			perf_ibus_req_count <= '0;
+			perf_dbus_req_count <= '0;
 		end else begin
 			debug_cycle <= debug_cycle + 1;
+			if (architectural_retire) begin
+				perf_retired <= perf_retired + 1;
+				perf_commit_cycle <= perf_commit_cycle + 1;
+			end else begin
+				perf_no_commit_cycle <= perf_no_commit_cycle + 1;
+				if (perf_mem_stall) begin
+					perf_mem_stall_cycle <= perf_mem_stall_cycle + 1;
+				end else if (perf_muldiv_stall) begin
+					perf_muldiv_stall_cycle <= perf_muldiv_stall_cycle + 1;
+				end else if (perf_data_hazard_stall) begin
+					perf_data_hazard_cycle <= perf_data_hazard_cycle + 1;
+				end else if (perf_ifetch_stall) begin
+					perf_ifetch_stall_cycle <= perf_ifetch_stall_cycle + 1;
+				end else begin
+					perf_other_stall_cycle <= perf_other_stall_cycle + 1;
+				end
+			end
+			if (perf_mem_stall) begin
+				perf_mem_active_cycle <= perf_mem_active_cycle + 1;
+			end
+			if (perf_muldiv_stall) begin
+				perf_muldiv_active_cycle <= perf_muldiv_active_cycle + 1;
+			end
+			if (perf_data_hazard_stall) begin
+				perf_data_hazard_active_cycle <= perf_data_hazard_active_cycle + 1;
+			end
+			if (perf_ifetch_stall) begin
+				perf_ifetch_active_cycle <= perf_ifetch_active_cycle + 1;
+			end
+			if (perf_branch_event) begin
+				perf_branch_count <= perf_branch_count + 1;
+				if (memq_rdata.br_taken) begin
+					perf_branch_taken_count <= perf_branch_taken_count + 1;
+				end
+			end
+			if (perf_control_flush_event) begin
+				perf_control_flush_count <= perf_control_flush_count + 1;
+			end
+			if (perf_trap_flush_event) begin
+				perf_trap_flush_count <= perf_trap_flush_count + 1;
+			end
+			if (perf_load_event) begin
+				perf_load_count <= perf_load_count + 1;
+			end
+			if (perf_store_event) begin
+				perf_store_count <= perf_store_count + 1;
+			end
+			if (i_membus.rvalid && i_membus.rready) begin
+				perf_ibus_req_count <= perf_ibus_req_count + 1;
+			end
+			if (d_membus.valid && d_membus.ready) begin
+				perf_dbus_req_count <= perf_dbus_req_count + 1;
+			end
 			if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
 				wbs_valid &&
 				(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -650,9 +768,41 @@ module core (
 			end
 			if (minstret_wen) begin
 				minstret <= minstret_wdata;
-			end else if (wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap && !wbs_writes_minstret)begin
+			end else if (minstret_auto_increment)begin
 				minstret <= minstret + 1;
 			end
+		end
+	end
+
+	final begin
+		if ($test$plusargs("PERF_SUMMARY")) begin
+			$display("[PERF] cycles=%0d retired=%0d cpi_x1000=%0d ipc_x1000=%0d",
+				debug_cycle,
+				perf_retired,
+				(perf_retired == 0) ? UInt64'(0) : (debug_cycle * UInt64'(1000)) / perf_retired,
+				(debug_cycle == 0) ? UInt64'(0) : (perf_retired * UInt64'(1000)) / debug_cycle);
+			$display("[PERF] primary commit=%0d no_commit=%0d mem=%0d muldiv=%0d data_hazard=%0d ifetch=%0d other=%0d",
+				perf_commit_cycle,
+				perf_no_commit_cycle,
+				perf_mem_stall_cycle,
+				perf_muldiv_stall_cycle,
+				perf_data_hazard_cycle,
+				perf_ifetch_stall_cycle,
+				perf_other_stall_cycle);
+			$display("[PERF] active mem=%0d muldiv=%0d data_hazard=%0d ifetch=%0d",
+				perf_mem_active_cycle,
+				perf_muldiv_active_cycle,
+				perf_data_hazard_active_cycle,
+				perf_ifetch_active_cycle);
+			$display("[PERF] events branch=%0d branch_taken=%0d control_flush=%0d trap_flush=%0d load=%0d store=%0d ibus_req=%0d dbus_req=%0d",
+				perf_branch_count,
+				perf_branch_taken_count,
+				perf_control_flush_count,
+				perf_trap_flush_count,
+				perf_load_count,
+				perf_store_count,
+				perf_ibus_req_count,
+				perf_dbus_req_count);
 		end
 	end
 

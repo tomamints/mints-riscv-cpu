@@ -167,6 +167,7 @@ git tag linux-baseline
 
 具体的な固定手順、実行コマンド、入力列、失敗条件は `Docs/LINUX_BASELINE.md` に従います。
 RTLの将来配置とwrapper境界は `Docs/RTL_LAYOUT.md` に従います。
+性能カウンタの現在の使い方は `Docs/PERFORMANCE_COUNTERS.md` に記録します。
 
 固定する確認項目:
 
