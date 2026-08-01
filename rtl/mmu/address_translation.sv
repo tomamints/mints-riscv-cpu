@@ -1,0 +1,255 @@
+import eei::*;
+
+module address_translation (
+	input logic clk,
+	input logic rst,
+	input logic flush,
+
+	input logic req_valid,
+	output logic req_ready,
+	input Addr req_va,
+	input PrivMode req_priv_mode,
+	input PmpAccessType req_access_type,
+	input logic req_sum,
+	input logic req_mxr,
+	input UIntX satp,
+
+	output logic rsp_valid,
+	input logic rsp_ready,
+	output Addr rsp_pa,
+	output logic rsp_fault,
+	output Sv39Fault rsp_fault_detail,
+	output CsrCause rsp_fault_cause,
+	output Addr rsp_fault_value,
+
+	output logic ptw_mem_valid,
+	output Addr ptw_mem_addr,
+	input logic ptw_mem_ready,
+	input logic ptw_mem_rvalid,
+	input logic ptw_mem_error,
+	input logic [MEMBUS_DATA_WIDTH-1:0] ptw_mem_rdata
+);
+
+	typedef enum logic [1:0] {
+		Idle,
+		PtwWait,
+		Refill,
+		Response
+	} State;
+
+	State state;
+
+	Addr pending_va;
+	PrivMode pending_priv_mode;
+	PmpAccessType pending_access_type;
+	logic pending_sum;
+	logic pending_mxr;
+	UIntX pending_satp;
+	logic ptw_started;
+
+	Addr result_pa;
+	logic result_fault;
+	Sv39Fault result_fault_detail;
+	CsrCause result_fault_cause;
+	Addr result_fault_value;
+	Addr refill_pa;
+	UIntX refill_leaf_pte;
+	logic [1:0] refill_leaf_level;
+	logic refill_leaf_valid;
+
+	logic tlb_hit;
+	Addr tlb_pa;
+	logic tlb_fault;
+	Sv39Fault tlb_fault_detail;
+	logic tlb_lookup_valid;
+	logic tlb_refill_valid;
+
+	logic ptw_start;
+	logic ptw_ready;
+	logic ptw_done;
+	logic ptw_fault;
+	Sv39Fault ptw_fault_detail;
+	Addr ptw_pa;
+	CsrCause ptw_fault_cause;
+	Addr ptw_fault_value;
+	logic ptw_leaf_valid;
+	UIntX ptw_leaf_pte;
+	logic [1:0] ptw_leaf_level;
+
+	assign req_ready = state == Idle;
+	assign rsp_valid = state == Response;
+	assign rsp_pa = result_pa;
+	assign rsp_fault = result_fault;
+	assign rsp_fault_detail = result_fault_detail;
+	assign rsp_fault_cause = result_fault_cause;
+	assign rsp_fault_value = result_fault_value;
+
+	assign ptw_start = state == PtwWait && !ptw_started && ptw_ready;
+	assign tlb_lookup_valid = state == Idle && req_valid && satp[63:60] == 4'd8 && req_priv_mode != M;
+	assign tlb_refill_valid = state == Refill && refill_leaf_valid && refill_leaf_level == 2'd0;
+
+	function automatic CsrCause page_fault_cause(input PmpAccessType access_type);
+		unique case (access_type)
+			PMP_ACCESS_EXEC:  return INSTRUCTION_PAGE_FAULT;
+			PMP_ACCESS_WRITE: return STORE_AMO_PAGE_FAULT;
+			default:          return LOAD_PAGE_FAULT;
+		endcase
+	endfunction
+
+	tlb #(
+		.ENTRY_COUNT(8)
+	) translation_tlb (
+		.clk(clk),
+		.rst(rst),
+		.flush(flush),
+		.lookup_valid(tlb_lookup_valid),
+		.lookup_va(req_va),
+		.lookup_priv_mode(req_priv_mode),
+		.lookup_access_type(req_access_type),
+		.lookup_sum(req_sum),
+		.lookup_mxr(req_mxr),
+		.hit(tlb_hit),
+		.pa(tlb_pa),
+		.fault(tlb_fault),
+		.fault_detail(tlb_fault_detail),
+		.refill_valid(tlb_refill_valid),
+		.refill_va(pending_va),
+		.refill_ppn(refill_pa[55:12]),
+		.refill_r(refill_leaf_pte[1]),
+		.refill_w(refill_leaf_pte[2]),
+		.refill_x(refill_leaf_pte[3]),
+		.refill_u(refill_leaf_pte[4]),
+		.refill_g(refill_leaf_pte[5]),
+		.refill_a(refill_leaf_pte[6]),
+		.refill_d(refill_leaf_pte[7])
+	);
+
+	sv39_ptw ptw (
+		.clk(clk),
+		.rst(rst),
+		.flush(flush),
+		.start(ptw_start),
+		.ready(ptw_ready),
+		.va(pending_va),
+		.access_type(pending_access_type),
+		.priv_mode(pending_priv_mode),
+		.satp(pending_satp),
+		.sum(pending_sum),
+		.mxr(pending_mxr),
+		.done(ptw_done),
+		.fault(ptw_fault),
+		.fault_detail(ptw_fault_detail),
+		.pa(ptw_pa),
+		.fault_cause(ptw_fault_cause),
+		.fault_value(ptw_fault_value),
+		.leaf_valid(ptw_leaf_valid),
+		.leaf_pte(ptw_leaf_pte),
+		.leaf_level(ptw_leaf_level),
+		.mem_valid(ptw_mem_valid),
+		.mem_addr(ptw_mem_addr),
+		.mem_ready(ptw_mem_ready),
+		.mem_rvalid(ptw_mem_rvalid),
+		.mem_error(ptw_mem_error),
+		.mem_rdata(ptw_mem_rdata)
+	);
+
+	always_ff @(posedge clk or negedge rst) begin
+		if (!rst || flush) begin
+			state <= Idle;
+			pending_va <= '0;
+			pending_priv_mode <= M;
+			pending_access_type <= PMP_ACCESS_READ;
+			pending_sum <= 1'b0;
+			pending_mxr <= 1'b0;
+			pending_satp <= '0;
+			ptw_started <= 1'b0;
+			result_pa <= '0;
+			result_fault <= 1'b0;
+			result_fault_detail <= SV39_FAULT_NONE;
+			result_fault_cause <= CsrCause'(0);
+			result_fault_value <= '0;
+			refill_pa <= '0;
+			refill_leaf_pte <= '0;
+			refill_leaf_level <= 2'd0;
+			refill_leaf_valid <= 1'b0;
+		end else begin
+			unique case (state)
+				Idle: begin
+					if (req_valid) begin
+						pending_va <= req_va;
+						pending_priv_mode <= req_priv_mode;
+						pending_access_type <= req_access_type;
+						pending_sum <= req_sum;
+						pending_mxr <= req_mxr;
+						pending_satp <= satp;
+						ptw_started <= 1'b0;
+						result_fault_value <= req_va;
+						refill_pa <= '0;
+						refill_leaf_pte <= '0;
+						refill_leaf_level <= 2'd0;
+						refill_leaf_valid <= 1'b0;
+
+						if (satp[63:60] == 4'd0 || req_priv_mode == M) begin
+							result_pa <= req_va;
+							result_fault <= 1'b0;
+							result_fault_detail <= SV39_FAULT_NONE;
+							result_fault_cause <= CsrCause'(0);
+							state <= Response;
+						end else if (satp[63:60] != 4'd8) begin
+							result_pa <= '0;
+							result_fault <= 1'b1;
+							result_fault_detail <= SV39_FAULT_ADDR_INVALID;
+							result_fault_cause <= page_fault_cause(req_access_type);
+							state <= Response;
+						end else if (tlb_hit) begin
+							result_pa <= tlb_pa;
+							result_fault <= tlb_fault;
+							result_fault_detail <= tlb_fault_detail;
+							result_fault_cause <= tlb_fault ? page_fault_cause(req_access_type) : CsrCause'(0);
+							state <= Response;
+						end else begin
+							result_pa <= '0;
+							result_fault <= 1'b0;
+							result_fault_detail <= SV39_FAULT_NONE;
+							result_fault_cause <= CsrCause'(0);
+							state <= PtwWait;
+						end
+					end
+				end
+
+				PtwWait: begin
+					if (ptw_start) begin
+						ptw_started <= 1'b1;
+					end
+
+					if (ptw_done) begin
+						result_pa <= ptw_pa;
+						result_fault <= ptw_fault;
+						result_fault_detail <= ptw_fault_detail;
+						result_fault_cause <= ptw_fault_cause;
+						result_fault_value <= ptw_fault_value;
+						refill_pa <= ptw_pa;
+						refill_leaf_pte <= ptw_leaf_pte;
+						refill_leaf_level <= ptw_leaf_level;
+						refill_leaf_valid <= ptw_leaf_valid && !ptw_fault;
+						state <= ptw_fault ? Response : Refill;
+					end
+				end
+
+				Refill: begin
+					state <= Response;
+				end
+
+				Response: begin
+					if (rsp_ready) begin
+						state <= Idle;
+					end
+				end
+
+				default: begin
+					state <= Idle;
+				end
+			endcase
+		end
+	end
+endmodule : address_translation

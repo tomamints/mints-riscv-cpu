@@ -65,6 +65,9 @@ module memunit (
 	logic ptw_mem_valid;
 	Addr ptw_mem_addr;
 	PmpAccessType ptw_access_type;
+	logic ptw_leaf_valid;
+	UIntX ptw_leaf_pte;
+	logic [1:0] ptw_leaf_level;
 
 	function automatic logic [3:0] access_size_bytes(input logic [1:0] funct3_lo);
 		unique case (funct3_lo)
@@ -138,6 +141,9 @@ module memunit (
 		.pa(ptw_pa),
 		.fault_cause(ptw_fault_cause),
 		.fault_value(ptw_fault_value),
+		.leaf_valid(ptw_leaf_valid),
+		.leaf_pte(ptw_leaf_pte),
+		.leaf_level(ptw_leaf_level),
 		.mem_valid(ptw_mem_valid),
 		.mem_addr(ptw_mem_addr),
 		.mem_ready(membus.ready),

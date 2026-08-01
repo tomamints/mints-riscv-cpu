@@ -18,6 +18,9 @@ module sv39_ptw (
 	output Addr pa,
 	output CsrCause fault_cause,
 	output Addr fault_value,
+	output logic leaf_valid,
+	output UIntX leaf_pte,
+	output logic [1:0] leaf_level,
 	output logic mem_valid,
 	output Addr mem_addr,
 	input logic mem_ready,
@@ -47,6 +50,9 @@ module sv39_ptw (
 	Sv39Fault result_fault_detail;
 	Addr result_pa;
 	CsrCause result_fault_cause;
+	logic result_leaf_valid;
+	UIntX result_leaf_pte;
+	logic [1:0] result_leaf_level;
 
 	logic [8:0] vpn;
 	Addr pte_addr;
@@ -69,6 +75,9 @@ module sv39_ptw (
 	assign pa = result_pa;
 	assign fault_cause = result_fault_cause;
 	assign fault_value = req_va;
+	assign leaf_valid = result_leaf_valid;
+	assign leaf_pte = result_leaf_pte;
+	assign leaf_level = result_leaf_level;
 
 	assign mem_valid = state == Req;
 	assign mem_addr = pte_addr;
@@ -236,6 +245,9 @@ module sv39_ptw (
 			result_fault_detail <= SV39_FAULT_NONE;
 			result_pa <= '0;
 			result_fault_cause <= CsrCause'(0);
+			result_leaf_valid <= 1'b0;
+			result_leaf_pte <= '0;
+			result_leaf_level <= 2'd0;
 		end else begin
 			case (state)
 				Idle: begin
@@ -251,6 +263,9 @@ module sv39_ptw (
 						result_fault_detail <= va_canonical ? SV39_FAULT_NONE : SV39_FAULT_ADDR_INVALID;
 						result_pa <= '0;
 						result_fault_cause <= page_fault_cause(access_type);
+						result_leaf_valid <= 1'b0;
+						result_leaf_pte <= '0;
+						result_leaf_level <= 2'd0;
 						state <= va_canonical ? Req : Done;
 					end
 				end
@@ -321,6 +336,9 @@ module sv39_ptw (
 						result_fault <= 1'b0;
 						result_fault_detail <= SV39_FAULT_NONE;
 						result_pa <= leaf_pa(pte, req_va, level);
+						result_leaf_valid <= 1'b1;
+						result_leaf_pte <= pte;
+						result_leaf_level <= level;
 						state <= Done;
 					end
 				end

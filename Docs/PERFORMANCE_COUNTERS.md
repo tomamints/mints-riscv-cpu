@@ -116,6 +116,40 @@ test success!
 
 数値は実装更新により多少変わります。重要なのは、通常実行では出ず、`+PERF_SUMMARY` で終了時だけ出ることです。
 
+## Linux 300M Cycle Baseline
+
+2026-08-02 に、Linux cmdloop notrace Imageで `300,000,000` cycleの初回測定を記録しました。
+
+実行条件:
+
+```bash
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-notrace-initramfs \
+  OPENSBI_CYCLES=300000000 \
+  SIM_EXTRA_ARGS=+PERF_SUMMARY
+```
+
+結果:
+
+```text
+[PERF] cycles=300000000 retired=43361299 cpi_x1000=6918 ipc_x1000=144
+[PERF] primary commit=43361299 no_commit=256638701 mem=117731783 muldiv=4182267 data_hazard=11660555 ifetch=80757477 other=42306619
+[PERF] active mem=126018276 muldiv=4306971 data_hazard=53158503 ifetch=120999891
+[PERF] events branch=3445142 branch_taken=1689174 control_flush=3528305 trap_flush=3775 load=8880411 store=5126702 ibus_req=48071968 dbus_req=26534153
+```
+
+読み取り:
+
+```text
+CPI ~= 6.918
+IPC ~= 0.144
+primary no_commitの最大要因はmem stall
+次にifetch stallが大きい
+```
+
+この結果は、TLB/I-cache追加前の比較基準として使います。
+
 ## Current Limitations
 
 現時点では、まだ次は分かりません。

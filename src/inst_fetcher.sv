@@ -282,6 +282,9 @@ module inst_fetcher (
     Addr fetch_ptw_mem_addr;
     logic fetch_ptw_mem_pending;
     logic fetch_ptw_mem_rvalid;
+    logic fetch_ptw_leaf_valid;
+    UIntX fetch_ptw_leaf_pte;
+    logic [1:0] fetch_ptw_leaf_level;
     ExceptionInfo fetch_fault_expt;
 
     typedef enum logic [2:0] {
@@ -317,6 +320,9 @@ module inst_fetcher (
         .pa(fetch_ptw_pa),
         .fault_cause(fetch_ptw_fault_cause),
         .fault_value(fetch_ptw_fault_value),
+        .leaf_valid(fetch_ptw_leaf_valid),
+        .leaf_pte(fetch_ptw_leaf_pte),
+        .leaf_level(fetch_ptw_leaf_level),
         .mem_valid(fetch_ptw_mem_valid),
         .mem_addr(fetch_ptw_mem_addr),
         .mem_ready(mem_if.ready),

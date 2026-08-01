@@ -109,7 +109,7 @@ Frontend:
 ```text
 PC generation
 -> branch predictor wrapper
--> ITLB wrapper
+-> instruction_translation
 -> I-cache wrapper
 -> fetch buffer
 -> decode
@@ -119,7 +119,7 @@ LSU:
 
 ```text
 load/store request
--> DTLB wrapper
+-> data_translation
 -> D-cache wrapper
 -> memory / MMIO bus
 ```
@@ -157,7 +157,8 @@ branch predictor:
   predict not-taken / next PC = PC + instruction length
 
 ITLB/DTLB:
-  miss固定、既存PTWへ流す
+  instruction_translation / data_translation の内部部品
+  TLB miss時にPTWへ流す
 
 I-cache/D-cache:
   cacheなし、既存memory/busへ流す
@@ -200,8 +201,12 @@ Phase 1でTLBを追加するとき、最初に作る新規ファイル:
 
 ```text
 rtl/mmu/tlb.sv
-rtl/mmu/itlb.sv
-rtl/mmu/dtlb.sv
+rtl/mmu/address_translation.sv
+rtl/mmu/instruction_translation.sv
+rtl/mmu/data_translation.sv
 ```
 
 この時点で `core.f` へ新規ファイルだけ追加します。既存 `src/sv39_ptw.sv` は、TLB miss時に呼ぶ既存PTWとして残します。
+
+現在は第一段として、`rtl/mmu/tlb.sv`、`rtl/mmu/address_translation.sv`、`rtl/mmu/instruction_translation.sv`、`rtl/mmu/data_translation.sv` と単体テストを追加済みです。
+まだCPU本体へは接続していません。詳細は [TLB_PLAN.md](TLB_PLAN.md) を参照します。
