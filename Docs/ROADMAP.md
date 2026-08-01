@@ -1,6 +1,6 @@
 # Roadmap
 
-この文書は、現在の SystemVerilog RISC-V CPU と `core/test/os2_min` を、将来的に Linux 起動や RVA23 方向へ近づけるための作業順序を整理したものです。
+この文書は、現在の **MiNTs-CPU** と `core/test/os2_min` を、将来的に Linux 起動や RVA23 方向へ近づけるための作業順序を整理したものです。
 
 ## Current Position
 
@@ -19,18 +19,17 @@
 - OpenSBI v1.3.1 `FW_JUMP` が起動し、UART banner、ACLINT MSWI、ACLINT MTIMERを認識する
 - OpenSBIからS-mode payloadへhandoffできる
 - Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoffできる
-- Linux 6.12.97のearlycon boot logが出る
-- LinuxがSBI Base/Time/IPI/RFENCE、reserved memory、Sv39 virtual kernel memory layout、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock` まで到達する
+- Linux 6.12.97のearlycon / normal console boot logが出る
+- LinuxがSBI Base/Time/IPI/RFENCE、reserved memory、Sv39 virtual kernel memory layout、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock`、PLIC、8250 UART、`/init` まで到達する
+- BusyBox initramfsの `cmdloop-ttyS0` で `echo OK` が `read()` から戻り、`line=[echo OK]`, `OK`, 次の `MARK-B` まで進む
 
 現在のLinux bring-up観測点:
 
-- `sched_clock` 後も `minstret` は増え続けており、完全停止ではない
-- Linux側は `timekeeping_advance`、`ktime_get_update_offsets_now`、`do_irq`、spinlock周辺を実行している
-- M-mode側はOpenSBIの `_trap_handler`、`sbi_timer_event_start`、`mtimer_event_start` に入っている
-- `TRACE_TIMER` ではOpenSBIがACLINT `mtimecmp` を設定し、`MTIP` が発生してclearされるところまで確認済み
-- `TRACE_HEARTBEAT` ではLinuxが `mode=1`、`satp=8000...`、`pc=ffffffff...` で実行していることを確認済み
+- UART THRE interruptは、LinuxのIIR readでpendingをclearする
+- `mip/sip.SEIP` はPLIC外部信号で決まり、CSR writeで内部にラッチしない
+- `sret/mret` は `SPIE/MPIE` を仕様どおり復元する
 - RTLでは `mtime` が毎CPUクロック増えるため、DTBの `timebase-frequency` はCPU clock想定の50MHzへ合わせる
-- 次は本当の停止点、通常console/PLIC/initramfsの順に切り分ける
+- 次はtraceなしで `cmdloop-ttyS0` の複数回入力、procfs、tmpfs、通常shell化を確認する
 
 注意点:
 
@@ -40,6 +39,255 @@
 - 今の debug MMIO は Linux 標準デバイスではなく、シミュレータ用の独自 console
 - Linux向けconsoleは、debug MMIOではなくNS16550A互換UARTへ寄せる
 - VerilatorではLinux bootが非常に遅い。`+TRACE_PIPE` はさらに遅くなるため、長時間確認では外す
+
+## Development Policy After Linux Bring-up
+
+Linuxが動き始めた後は、機能を思いつきで足すのではなく、次の方針で進めます。
+
+```text
+1. 性能ボトルネックを測れるようにする
+2. 性能機能をCPU本体から分離し、差し替えやすくする
+3. TLB/cache/predictorなどを小さい構成から追加する
+```
+
+目的は、変更前後で「なぜ速くなったか」「なぜ遅くなったか」「どこが壊れたか」を追える状態を保つことです。
+
+### Performance Measurement First
+
+TLBやI-cacheを入れる前に、最低限の性能カウンタを用意します。
+
+見る値:
+
+```text
+cycle
+minstret
+CPI = cycle / minstret
+pipeline stall cycles
+branch count
+branch mispredict count
+load/store count
+TLB hit / miss
+page walk count
+I-cache hit / miss
+D-cache hit / miss
+interrupt count
+MMIO access count
+```
+
+stallは理由別に分けます。
+
+```text
+stall_ptw
+stall_ifetch
+stall_load
+stall_store
+stall_muldiv
+stall_interrupt
+stall_branch
+```
+
+この内訳があると、たとえば次のように次の作業を判断できます。
+
+```text
+Baseline:
+  CPI = 18.4
+  PTW stall = 42%
+  ifetch stall = 31%
+
+After TLB:
+  CPI = 7.2
+  PTW stall = 3%
+  ifetch stall = 58%
+
+Next:
+  I-cache
+```
+
+### Keep Performance Blocks Replaceable
+
+TLB、cache、branch predictorをpipelineへ直接埋め込みすぎないようにします。最初はpass-through実装を置ける境界を作ります。
+
+Frontend:
+
+```text
+PC generation
+branch predictor
+ITLB
+I-cache
+instruction buffer
+```
+
+Backend:
+
+```text
+decode
+execute
+mul/div
+LSU
+DTLB
+D-cache
+store buffer
+```
+
+目標データフロー:
+
+```text
+PC
+ -> branch predictor
+ -> ITLB
+ -> I-cache
+ -> fetch buffer
+ -> decode
+ -> execute
+ -> LSU
+ -> DTLB
+ -> D-cache / MMIO
+```
+
+最初は次のように置き換え可能にします。
+
+```text
+ITLBなし:
+  VA -> PTW -> PA
+
+I-cacheなし:
+  PA -> memory
+
+branch predictorなし:
+  next PC = PC + instruction length
+```
+
+### Phase 0: Baseline Freeze
+
+現在のLinux起動状態を基準点として保存します。
+
+```text
+git tag linux-baseline
+```
+
+具体的な固定手順、実行コマンド、入力列、失敗条件は `Docs/LINUX_BASELINE.md` に従います。
+
+固定する確認項目:
+
+```text
+riscv-tests
+OpenSBI起動
+Linux起動
+BusyBox cmdloop
+UART入力
+echo OK
+procfs確認
+簡単なファイル操作
+```
+
+性能用の最小ベンチも用意します。
+
+```text
+Linux boot完了までのcycle
+BusyBox /init 到達までのcycle
+echo OK 往復までのcycle
+100万命令loop
+memcpy
+branch-heavy loop
+page-walk-heavy access
+```
+
+### Phase 1: Small TLB
+
+最初の性能機能はTLBを優先します。
+
+初期構成:
+
+```text
+ITLB: 8 entry fully associative
+DTLB: 8 entry fully associative
+replacement: round-robin
+ASID: 最初は無視または固定
+page size: まず4KiB
+sfence.vma: 全entry flush
+```
+
+entry例:
+
+```systemverilog
+typedef struct packed {
+    logic        valid;
+    logic [26:0] vpn;
+    logic [43:0] ppn;
+    logic        r;
+    logic        w;
+    logic        x;
+    logic        u;
+    logic        g;
+    logic        a;
+    logic        d;
+} tlb_entry_t;
+```
+
+動作:
+
+```text
+TLB hit
+  -> PA生成
+  -> permission check
+  -> memory/cacheへ
+
+TLB miss
+  -> pipeline停止
+  -> 既存PTW起動
+  -> refill
+  -> 同じaccessを再実行
+```
+
+正しさ優先で始めます。superpageは後回しでもよいですが、Linux側で頻繁に使うなら早めに対応します。
+
+### Phase 2: Small I-cache
+
+次はI-cacheを小さく入れます。
+
+初期構成:
+
+```text
+capacity: 4KiB or 8KiB
+line size: 32B
+ways: 1, direct-mapped
+replacement: none
+write path: none
+```
+
+4KiB / 32B lineなら:
+
+```text
+lines = 128
+index = 7bit
+offset = 5bit
+tag = remaining PA bits
+```
+
+refillは最初から高性能化しなくてよいです。
+
+```text
+32B line = 64-bit memory access x 4
+```
+
+FSMでlineを埋め、hit時だけfetchを速くするところから始めます。
+
+### Later Performance Work
+
+優先順位:
+
+```text
+TLB
+I-cache
+UART FIFO / interrupt reduction
+branch predictor
+D-cache
+store buffer
+mul/div latency
+clock frequency / critical path cleanup
+```
+
+性能改善は、必ずPhase 0のbaselineと比較します。
 
 ## Target Direction
 

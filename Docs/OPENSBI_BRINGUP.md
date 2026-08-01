@@ -66,7 +66,7 @@ Linux 6.12.y `Image` の投入も開始済みです。OpenSBIから `0x80200000`
 
 ```text
 [    0.000000] Linux version 6.12.97 ...
-[    0.000000] Machine model: SystemVerilog RISC-V CPU
+[    0.000000] Machine model: MiNTs-CPU
 [    0.000000] SBI TIME extension detected
 [    0.000000] SBI IPI extension detected
 [    0.000000] SBI RFENCE extension detected
@@ -329,7 +329,7 @@ make run-opensbi-input \
 
 ```text
 Run /init as init process
-BusyBox userspace on SystemVerilog RISC-V CPU
+BusyBox userspace on MiNTs-CPU
 Type commands. Example: uname -a
 /bin/sh: can't access tty; job control turned off
 ~ #

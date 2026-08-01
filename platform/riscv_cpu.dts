@@ -3,8 +3,8 @@
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
-	compatible = "shiraitouma,risc-v-cpu";
-	model = "SystemVerilog RISC-V CPU";
+	compatible = "mints,cpu", "shiraitouma,risc-v-cpu";
+	model = "MiNTs-CPU";
 
 	chosen {
 		stdout-path = "serial0:115200n8";

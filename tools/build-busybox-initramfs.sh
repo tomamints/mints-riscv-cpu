@@ -71,7 +71,7 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null
 mount -t tmpfs tmpfs /tmp 2>/dev/null
 exec </dev/ttyS0 >/dev/ttyS0 2>&1
 
-echo "BusyBox userspace on SystemVerilog RISC-V CPU"
+echo "BusyBox userspace on MiNTs-CPU"
 echo "Type commands. Example: uname -a"
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh
 INIT
@@ -85,7 +85,7 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev 2>/dev/null
 
-echo "BusyBox userspace on SystemVerilog RISC-V CPU"
+echo "BusyBox userspace on MiNTs-CPU"
 echo "Type commands. Example: uname -a"
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh
 INIT
@@ -102,7 +102,7 @@ mount -t sysfs sysfs /sys
 echo "[init] mounted sys"
 mount -t devtmpfs devtmpfs /dev 2>/dev/null
 echo "[init] mounted dev"
-echo "BusyBox userspace on SystemVerilog RISC-V CPU"
+echo "BusyBox userspace on MiNTs-CPU"
 echo "[init] after banner"
 echo "Type commands. Example: uname -a"
 echo "[init] before shell"
@@ -547,7 +547,7 @@ INIT
 #!/bin/sh
 exec </dev/console >/dev/console 2>&1
 
-echo "BusyBox userspace on SystemVerilog RISC-V CPU
+echo "BusyBox userspace on MiNTs-CPU
 Type commands. Example: uname -a
 [init] before shell"
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh

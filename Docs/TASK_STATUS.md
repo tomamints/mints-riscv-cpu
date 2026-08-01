@@ -11,6 +11,8 @@
 - `Docs/RVA23_CHECKLIST.md`: RVA23方向の棚卸し
 - `Docs/OPENSBI_BRINGUP.md`: OpenSBI banner / S-mode payload到達までの修正履歴
 - `Docs/LINUX_MILESTONES.md`: Linuxが動いたと判断する条件と、対話shell後の確認項目
+- `Docs/LINUX_TTY_UART_CURRENT_ISSUE.md`: Linux TTY/UART bring-upの直近原因と確認手順
+- `Docs/LINUX_BASELINE.md`: Linux cmdloop baselineの固定手順、合格条件、trace方針
 
 ## 現在地
 
@@ -40,10 +42,11 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | PLIC / UART interrupt | Linux通常consoleと外部割り込みに必要 |
-| 2 | Sv39補完 | PTWメモリエラー方針、将来TLB用の`sfence.vma`整理 |
-| 3 | Linux-oriented devices | UART / PLIC / DTBなどLinux bootに必要 |
-| 4 | OpenSBI/Linux bring-up | 実際のboot logから不足CSR/ISA/deviceを埋める |
+| 1 | Linux cmdloop baseline固定 | `Docs/LINUX_BASELINE.md` に従い、traceなしで `echo OK` 複数回、procfs、簡単なコマンドを確認 |
+| 2 | 性能計測基盤 | CPI、stall理由、TLB/cache/interrupt/MMIO countを測る |
+| 3 | TLB | Linux性能改善の最初の本命。小さいITLB/DTLBから |
+| 4 | I-cache | fetch stall削減。direct-mapped 4KiB/8KiBから |
+| 5 | 通常shell化 | `setsid` / `cttyhack` / BusyBox対話shellの安定化 |
 
 ## 機能別ステータス
 

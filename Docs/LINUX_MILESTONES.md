@@ -1,6 +1,6 @@
 # Linux Bring-up Milestones
 
-この文書は、自作 SystemVerilog RISC-V CPU 上で「Linuxが動いた」と判断する基準と、その後の確認項目を整理するためのものです。
+この文書は、自作 **MiNTs-CPU** 上で「Linuxが動いた」と判断する基準と、その後の確認項目を整理するためのものです。
 
 ## Goal Definition
 
@@ -9,7 +9,7 @@
 合格条件:
 
 ```text
-自作RISC-V CPU
+MiNTs-CPU
   -> OpenSBI
   -> Linux kernel
   -> initramfs
@@ -53,6 +53,8 @@ cat /proc/interrupts
 - `/tmp` をtmpfsとしてmountし、書き込み可能な作業領域を用意する
 - default BusyBox `/init` で `/dev/ttyS0` + `setsid` + `cttyhack` の対話shellを安定させる
 
+baseline固定の具体的な実行手順と合格条件は `Docs/LINUX_BASELINE.md` に集約します。
+
 ## Initramfs Policy
 
 bring-up用のdefault `/init` は次の方針です。
@@ -66,7 +68,7 @@ mount -t tmpfs tmpfs /tmp 2>/dev/null
 
 exec </dev/ttyS0 >/dev/ttyS0 2>&1
 
-echo "BusyBox userspace on SystemVerilog RISC-V CPU"
+echo "BusyBox userspace on MiNTs-CPU"
 echo "Type commands. Example: uname -a"
 
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh

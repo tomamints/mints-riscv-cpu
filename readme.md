@@ -1,6 +1,6 @@
-# RISC-V CPU in SystemVerilog
+# MiNTs-CPU
 
-`cpu.kanataso.net` の教材「Verylで作るCPU」を参考に、Veryl 実装を SystemVerilog で実装し直している RISC-V CPU です。
+`cpu.kanataso.net` の教材「Verylで作るCPU」を参考に、Veryl 実装を SystemVerilog で実装し直している RISC-V CPU です。このCPUの名前は **MiNTs-CPU** です。
 
 DMA は教材由来ではなく、このリポジトリで独自に追加している実験的な機能です。
 
@@ -296,7 +296,7 @@ make run-opensbi-input \
 
 ```text
 Run /init as init process
-BusyBox userspace on SystemVerilog RISC-V CPU
+BusyBox userspace on MiNTs-CPU
 Type commands. Example: uname -a
 /bin/sh: can't access tty; job control turned off
 ~ #
