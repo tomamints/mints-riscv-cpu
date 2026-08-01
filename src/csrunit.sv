@@ -642,16 +642,16 @@ module csrunit (
 						end
 						if (is_mret) begin
 							//save mstatus.mie to mstatus.mipe
-							// and set mstatus.mie = 0
+							// and set mstatus.mpie = 1
 							mstatus[3] <= mstatus[7];
-							mstatus[7] <= 0;
+							mstatus[7] <= 1'b1;
 							// set mstatus.mpp = U (least priviledge level)
 							mstatus[12:11] <= U;
 						end else if (is_sret) begin
 							//set sstatus.sie = sstatus.spie
-							//    sstatus.spie = 0
+							//    sstatus.spie = 1
 							mstatus[1] <= mstatus[5];
-							mstatus[5] <= 0;
+							mstatus[5] <= 1'b1;
 							//set sstatus.spp <= U
 							mstatus[8] <= 0;
 						end
