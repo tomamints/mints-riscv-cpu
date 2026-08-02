@@ -76,6 +76,9 @@ module core_top #(
     core_data_if #(
     ) d_membus_core();
 
+    core_data_if #(
+    ) dcache_membus_core();
+
     PrivMode pmp_priv_mode;
     UIntX pmpcfg0_fetch_value;
     UIntX pmpaddr0_fetch_value;
@@ -310,10 +313,18 @@ module core_top #(
         .uart_membus (uart_membus)
     );
 
+    dcache dcache0 (
+        .clk        (clk),
+        .rst        (rst),
+        .invalidate (1'b0),
+        .cpu        (d_membus_core),
+        .mem        (dcache_membus_core)
+    );
+
     amounit amou (
         .clk    (clk),
         .rst    (rst),
-        .slave  (d_membus_core),
+        .slave  (dcache_membus_core),
         .master (d_membus)
     );
 

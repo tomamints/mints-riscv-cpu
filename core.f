@@ -28,6 +28,7 @@ rtl/mmu/address_translation.sv
 rtl/mmu/instruction_translation.sv
 rtl/mmu/data_translation.sv
 rtl/cache/icache.sv
+rtl/cache/dcache.sv
 src/muldivunit.sv
 src/memunit.sv
 src/amounit.sv
