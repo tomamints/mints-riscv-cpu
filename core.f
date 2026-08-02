@@ -23,6 +23,9 @@ src/brunit.sv
 src/csrunit.sv
 src/pmp_checker.sv
 src/sv39_ptw.sv
+rtl/mmu/tlb.sv
+rtl/mmu/address_translation.sv
+rtl/mmu/instruction_translation.sv
 src/muldivunit.sv
 src/memunit.sv
 src/amounit.sv

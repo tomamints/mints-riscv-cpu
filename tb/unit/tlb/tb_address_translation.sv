@@ -43,6 +43,7 @@ module tb_address_translation;
 		.clk(clk),
 		.rst(rst),
 		.flush(flush),
+		.tlb_flush(flush),
 		.req_valid(req_valid),
 		.req_ready(req_ready),
 		.req_va(req_va),

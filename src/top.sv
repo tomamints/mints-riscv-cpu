@@ -87,6 +87,7 @@ module core_top #(
     UIntX pmpaddr6_fetch_value;
     UIntX pmpaddr7_fetch_value;
     UIntX satp_fetch_value;
+    logic translation_flush_fetch_value;
     logic sstatus_sum_fetch_value;
     logic sstatus_mxr_fetch_value;
     logic uart_irq;
@@ -365,6 +366,7 @@ module core_top #(
         .satp      (satp_fetch_value),
         .sstatus_sum(sstatus_sum_fetch_value),
         .sstatus_mxr(sstatus_mxr_fetch_value),
+        .translation_flush(translation_flush_fetch_value),
         .core_if   (i_membus_core),
         .mem_if    (i_membus)
     );
@@ -387,6 +389,7 @@ module core_top #(
         .pmpaddr6_fetch_value(pmpaddr6_fetch_value),
         .pmpaddr7_fetch_value(pmpaddr7_fetch_value),
         .satp_fetch_value(satp_fetch_value),
+        .translation_flush_fetch_value(translation_flush_fetch_value),
         .sstatus_sum_fetch_value(sstatus_sum_fetch_value),
         .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
         .external_meip(plic_meip),

@@ -1,9 +1,12 @@
 import eei::*;
 
-module address_translation (
+module address_translation #(
+	parameter string PERF_NAME = "TRANSLATION"
+) (
 	input logic clk,
 	input logic rst,
 	input logic flush,
+	input logic tlb_flush,
 
 	input logic req_valid,
 	output logic req_ready,
@@ -75,6 +78,25 @@ module address_translation (
 	logic ptw_leaf_valid;
 	UIntX ptw_leaf_pte;
 	logic [1:0] ptw_leaf_level;
+	UInt64 perf_req_count;
+	UInt64 perf_bare_count;
+	UInt64 perf_unsupported_mode_count;
+	UInt64 perf_lookup_count;
+	UInt64 perf_hit_count;
+	UInt64 perf_hit_fault_count;
+	UInt64 perf_miss_count;
+	UInt64 perf_miss_cycle_count;
+	UInt64 perf_ptw_start_count;
+	UInt64 perf_ptw_done_count;
+	UInt64 perf_ptw_fault_count;
+	UInt64 perf_ptw_mem_req_count;
+	UInt64 perf_ptw_mem_resp_count;
+	UInt64 perf_leaf_l0_count;
+	UInt64 perf_leaf_l1_count;
+	UInt64 perf_leaf_l2_count;
+	UInt64 perf_refill_count;
+	UInt64 perf_superpage_bypass_count;
+	UInt64 perf_flush_count;
 
 	assign req_ready = state == Idle;
 	assign rsp_valid = state == Response;
@@ -101,7 +123,7 @@ module address_translation (
 	) translation_tlb (
 		.clk(clk),
 		.rst(rst),
-		.flush(flush),
+		.flush(tlb_flush),
 		.lookup_valid(tlb_lookup_valid),
 		.lookup_va(req_va),
 		.lookup_priv_mode(req_priv_mode),
@@ -152,6 +174,117 @@ module address_translation (
 		.mem_error(ptw_mem_error),
 		.mem_rdata(ptw_mem_rdata)
 	);
+
+	always_ff @(posedge clk or negedge rst) begin
+		if (!rst) begin
+			perf_req_count <= '0;
+			perf_bare_count <= '0;
+			perf_unsupported_mode_count <= '0;
+			perf_lookup_count <= '0;
+			perf_hit_count <= '0;
+			perf_hit_fault_count <= '0;
+			perf_miss_count <= '0;
+			perf_miss_cycle_count <= '0;
+			perf_ptw_start_count <= '0;
+			perf_ptw_done_count <= '0;
+			perf_ptw_fault_count <= '0;
+			perf_ptw_mem_req_count <= '0;
+			perf_ptw_mem_resp_count <= '0;
+			perf_leaf_l0_count <= '0;
+			perf_leaf_l1_count <= '0;
+			perf_leaf_l2_count <= '0;
+			perf_refill_count <= '0;
+			perf_superpage_bypass_count <= '0;
+			perf_flush_count <= '0;
+		end else begin
+			if (tlb_flush) begin
+				perf_flush_count <= perf_flush_count + UInt64'(1);
+			end
+
+			if (state == Idle && req_valid && req_ready) begin
+				perf_req_count <= perf_req_count + UInt64'(1);
+
+				if (satp[63:60] == 4'd0 || req_priv_mode == M) begin
+					perf_bare_count <= perf_bare_count + UInt64'(1);
+				end else if (satp[63:60] != 4'd8) begin
+					perf_unsupported_mode_count <= perf_unsupported_mode_count + UInt64'(1);
+				end else begin
+					perf_lookup_count <= perf_lookup_count + UInt64'(1);
+					if (tlb_hit) begin
+						perf_hit_count <= perf_hit_count + UInt64'(1);
+						if (tlb_fault) begin
+							perf_hit_fault_count <= perf_hit_fault_count + UInt64'(1);
+						end
+					end else begin
+						perf_miss_count <= perf_miss_count + UInt64'(1);
+					end
+				end
+			end
+
+			if (state == PtwWait) begin
+				perf_miss_cycle_count <= perf_miss_cycle_count + UInt64'(1);
+			end
+			if (ptw_start) begin
+				perf_ptw_start_count <= perf_ptw_start_count + UInt64'(1);
+			end
+			if (ptw_done) begin
+				perf_ptw_done_count <= perf_ptw_done_count + UInt64'(1);
+				if (ptw_fault) begin
+					perf_ptw_fault_count <= perf_ptw_fault_count + UInt64'(1);
+				end else if (ptw_leaf_valid) begin
+					unique case (ptw_leaf_level)
+						2'd0: perf_leaf_l0_count <= perf_leaf_l0_count + UInt64'(1);
+						2'd1: perf_leaf_l1_count <= perf_leaf_l1_count + UInt64'(1);
+						2'd2: perf_leaf_l2_count <= perf_leaf_l2_count + UInt64'(1);
+						default: begin end
+					endcase
+					if (ptw_leaf_level != 2'd0) begin
+						perf_superpage_bypass_count <= perf_superpage_bypass_count + UInt64'(1);
+					end
+				end
+			end
+			if (ptw_mem_valid && ptw_mem_ready) begin
+				perf_ptw_mem_req_count <= perf_ptw_mem_req_count + UInt64'(1);
+			end
+			if (state == PtwWait && ptw_mem_rvalid) begin
+				perf_ptw_mem_resp_count <= perf_ptw_mem_resp_count + UInt64'(1);
+			end
+			if (tlb_refill_valid) begin
+				perf_refill_count <= perf_refill_count + UInt64'(1);
+			end
+		end
+	end
+
+	final begin
+		if ($test$plusargs("PERF_SUMMARY")) begin
+			$display("[PERF-%s] req=%0d bare=%0d unsupported=%0d lookup=%0d hit=%0d miss=%0d hit_fault=%0d hit_rate_x1000=%0d",
+				PERF_NAME,
+				perf_req_count,
+				perf_bare_count,
+				perf_unsupported_mode_count,
+				perf_lookup_count,
+				perf_hit_count,
+				perf_miss_count,
+				perf_hit_fault_count,
+				(perf_lookup_count == 0) ? UInt64'(0) : (perf_hit_count * UInt64'(1000)) / perf_lookup_count);
+			$display("[PERF-%s] ptw start=%0d done=%0d fault=%0d miss_cycles=%0d mem_req=%0d mem_resp=%0d",
+				PERF_NAME,
+				perf_ptw_start_count,
+				perf_ptw_done_count,
+				perf_ptw_fault_count,
+				perf_miss_cycle_count,
+				perf_ptw_mem_req_count,
+				perf_ptw_mem_resp_count);
+			$display("[PERF-%s] leaf_l0_4k=%0d leaf_l1_2m=%0d leaf_l2_1g=%0d refill_4k=%0d superpage_bypass=%0d flush=%0d",
+				PERF_NAME,
+				perf_leaf_l0_count,
+				perf_leaf_l1_count,
+				perf_leaf_l2_count,
+				perf_refill_count,
+				perf_superpage_bypass_count,
+				perf_flush_count);
+		end
+	end
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst || flush) begin

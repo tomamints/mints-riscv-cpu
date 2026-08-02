@@ -18,6 +18,7 @@ module core (
 	output UIntX pmpaddr6_fetch_value,
 	output UIntX pmpaddr7_fetch_value,
 	output UIntX satp_fetch_value,
+	output logic translation_flush_fetch_value,
 	output logic sstatus_sum_fetch_value,
 	output logic sstatus_mxr_fetch_value,
 	input  logic external_meip,
@@ -478,6 +479,12 @@ module core (
 	assign mems_translation_hazard = mems_satp_access || mems_sfence_vma;
 
 	assign control_hazard = mems_valid && (csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken || mems_translation_hazard);
+	assign translation_flush_fetch_value =
+		mems_valid &&
+		mems_is_new &&
+		mems_translation_hazard &&
+		!csru_raise_trap &&
+		!mems_expt.valid;
 	assign control_hazard_pc_next =
 		(csru_raise_trap) ? csru_trap_vector :
 		(mems_translation_hazard) ? mems_pc + Addr'(4) :

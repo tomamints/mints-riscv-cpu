@@ -15,7 +15,8 @@ tb/unit/tlb/tb_tlb.sv
 tb/unit/tlb/tb_address_translation.sv
 ```
 
-これらの `rtl/mmu/` ファイルはまだ `core.f` に入れていない。したがって、現在の Linux baseline には影響しない。
+`tlb.sv` / `address_translation.sv` / `instruction_translation.sv` は `core.f` に追加済み。
+`data_translation.sv` はまだLSUへ接続していない。
 
 ここで作った `tlb.sv` は address translation 全体ではなく、変換結果を保持する小さな部品です。
 CPU本体へ見せる境界は、TLBとPage Table Walkerをまとめた translation unit にします。
@@ -84,10 +85,13 @@ canonical check naming:
   start_va_canonical として、start時入力VAの判定であることを明示
 ```
 
-## Why This Is Not Connected Yet
+## Current Connection
 
-translation unitは単体で確認済みだが、まだfetch/LSUの制御FSMへは接続していない。
-次に接続する時点で、既存のfetch PTW制御を `instruction_translation` へ置き換える。
+命令fetch側は、既存のfetch専用 `sv39_ptw` 直接接続から `instruction_translation` へ置き換え済み。
+データ側はまだ既存の `memunit.sv` から `sv39_ptw` を直接使っている。
+
+fetch側では、translation unit内のPTWがflush後の古いメモリ応答をDrainRespで捨てられるように、PTWへの `ptw_mem_rvalid` は `mem_if.rvalid` を直接渡す。
+fetch側の外側でpendingを落としてゲートすると、flush中に発行済みPTW応答をPTWへ届けられず、以後の変換が止まる可能性がある。
 
 ## Translation Unit Boundary
 
@@ -98,7 +102,8 @@ module address_translation (
     input logic clk,
     input logic rst,
 
-    input logic flush,
+    input logic flush,      // cancel in-flight translation/PTW
+    input logic tlb_flush,  // invalidate TLB entries
 
     input logic req_valid,
     output logic req_ready,
@@ -123,6 +128,18 @@ module address_translation (
     input logic [MEMBUS_DATA_WIDTH-1:0] ptw_mem_rdata
 );
 ```
+
+`flush` と `tlb_flush` は分ける。
+
+```text
+flush:
+  branch/trap/control redirectで、進行中のtranslation要求だけを破棄する
+
+tlb_flush:
+  satp write / sfence.vmaで、TLB entryを全消去する
+```
+
+分岐や通常trapのたびにTLB entryを消すと、Linuxではcontrol flush数と同じ規模でITLBが無効化され、TLBとして機能しなくなる。
 
 内部の基本構成:
 
@@ -221,6 +238,46 @@ Aの変換結果をTLBへ登録
 
 これは demand refill です。将来使うページを先読みして登録する仕組みではありません。
 
+## Superpage TLB And Walk Cache
+
+Sv39のページウォークは最大3段です。
+
+```text
+4 KiB page      level 2 → level 1 → level 0 leaf  最大3回PTE read
+2 MiB superpage level 2 → level 1 leaf            最大2回PTE read
+1 GiB superpage level 2 leaf                      最大1回PTE read
+```
+
+Hypervisorの二段変換はまだ対象外なので、現時点のMiNTs-CPUでは通常最大3回です。
+
+現在のTLBは4KiB leafだけをrefillする。
+Linux kernel mappingで2MiB/1GiB superpageが多い場合、superpage leafを毎回PTWで解くことになり、ITLBを入れてもfetch stallが改善しない可能性がある。
+
+次の改善候補:
+
+```text
+superpage TLB support
+  TLB entryにleaf_levelを持たせ、VPN match幅をlevelごとに変える
+  2MiB/1GiB mappingを直接hitさせる
+
+page-walk cache
+  level 2やlevel 1のnon-leaf PTE結果を小さく保持する
+  leaf TLB miss時でも、上位段PTE readを省く
+```
+
+優先順位は、`[PERF-ITLB]` の結果で決める。
+
+```text
+leaf_l1_2m / leaf_l2_1g が多い
+  superpage TLBを先に入れる
+
+leaf_l0_4k が多く、mem_req / miss が3に近い
+  page-walk cacheを検討する
+
+hit率が高いのにCPIが悪い
+  fetch側のTLB hit fast pathを先に作る
+```
+
 ## Next Steps
 
 1. `tlb.sv` 単体テストを通す
@@ -229,7 +286,7 @@ Aの変換結果をTLBへ登録
 4. `rtl/mmu/instruction_translation.sv` を追加し、内部で共通wrapperを使う
 5. `src/inst_fetcher.sv` の PTW 入口へ instruction_translation を挿入
 6. `rtl/mmu/data_translation.sv` を追加し、LSU側へ展開
-7. `sfence.vma` と `satp` write で translation unit を全flush
+7. `sfence.vma` と `satp` write で TLB entry を全flush
 8. performance counterに以下を追加
 
 ```text
@@ -239,7 +296,7 @@ itlb_miss
 itlb_miss_cycles
 ```
 
-1〜4は完了。次は5から開始する。
+1〜5は完了。6はまだ未接続。7はfetch側で `translation_flush_fetch_value` として `satp` / `sfence.vma` の1cycle pulseを出し、`tlb_flush`へ接続済み。
 
 ## Validation Order
 
@@ -257,7 +314,17 @@ itlb_miss_cycles
 tb_tlb                    pass
 tb_address_translation    pass
 make build                pass
+make test-output          pass
+make test-os2-min-sv39    pass
 ```
+
+Linux notrace Imageは、20M cycleの短いOpenSBI smokeで `+PERF_SUMMARY` まで完走確認済み。
+300M cycleのLinux比較測定では、ITLB接続後にCPIが悪化し、primary ifetch stallが大きく増えた。
+詳細は `Docs/PERFORMANCE_COUNTERS.md` に記録する。
+
+初回の `[PERF-ITLB]` では、`flush` がcontrol flushと同じ規模になり、さらに `miss_cycles` が非常に大きかった。
+これは、分岐flushでTLB entryまで無効化していたこと、およびPTW待ちがcontrol redirectで頻繁にキャンセルされていたことを示す。
+現在は `flush` と `tlb_flush` を分離済みなので、再測定で次を確認する。
 
 ITLB接続後にまず見る値:
 

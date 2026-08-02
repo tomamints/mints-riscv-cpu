@@ -17,6 +17,7 @@ module inst_fetcher (
     input  UIntX             satp,
     input  logic             sstatus_sum,
     input  logic             sstatus_mxr,
+    input  logic             translation_flush,
     core_inst_if.slave       core_if,
     Membus.master            mem_if
 );
@@ -270,21 +271,18 @@ module inst_fetcher (
     logic fetch_pmp_allow;
     logic satp_sv39;
     logic need_translate;
-    logic fetch_ptw_start;
-    logic fetch_ptw_ready;
-    logic fetch_ptw_done;
-    logic fetch_ptw_fault;
-    Sv39Fault fetch_ptw_fault_detail;
-    Addr fetch_ptw_pa;
-    CsrCause fetch_ptw_fault_cause;
-    Addr fetch_ptw_fault_value;
-    logic fetch_ptw_mem_valid;
-    Addr fetch_ptw_mem_addr;
-    logic fetch_ptw_mem_pending;
-    logic fetch_ptw_mem_rvalid;
-    logic fetch_ptw_leaf_valid;
-    UIntX fetch_ptw_leaf_pte;
-    logic [1:0] fetch_ptw_leaf_level;
+    logic fetch_translation_req_valid;
+    logic fetch_translation_req_ready;
+    logic fetch_translation_rsp_valid;
+    logic fetch_translation_rsp_ready;
+    Addr fetch_translation_pa;
+    logic fetch_translation_fault;
+    Sv39Fault fetch_translation_fault_detail;
+    CsrCause fetch_translation_fault_cause;
+    Addr fetch_translation_fault_value;
+    logic fetch_translation_mem_valid;
+    logic fetch_translation_mem_ready;
+    Addr fetch_translation_mem_addr;
     ExceptionInfo fetch_fault_expt;
 
     typedef enum logic [2:0] {
@@ -299,36 +297,36 @@ module inst_fetcher (
 
     assign satp_sv39 = satp[63:60] == 4'd8;
     assign need_translate = satp_sv39 && (priv_mode != M);
-    assign fetch_ptw_start = fetch_state == FetchTranslate && fetch_ptw_ready;
-    assign fetch_ptw_mem_rvalid = fetch_ptw_mem_pending && mem_if.rvalid;
+    assign fetch_translation_req_valid =
+        fetch_state == FetchIdle &&
+        fetch_fifo_wready &&
+        need_translate &&
+        !core_if.is_hazard;
+    assign fetch_translation_rsp_ready = fetch_state == FetchTranslate;
 
-    sv39_ptw fetch_ptw (
+    instruction_translation fetch_translation (
         .clk(clk),
         .rst(rst),
         .flush(core_if.is_hazard),
-        .start(fetch_ptw_start),
-        .ready(fetch_ptw_ready),
-        .va(fetch_req_vaddr),
-        .access_type(PMP_ACCESS_EXEC),
-        .priv_mode(priv_mode),
+        .tlb_flush(translation_flush),
+        .req_valid(fetch_translation_req_valid),
+        .req_ready(fetch_translation_req_ready),
+        .req_va(fetch_pc),
+        .req_priv_mode(priv_mode),
         .satp(satp),
-        .sum(sstatus_sum),
-        .mxr(sstatus_mxr),
-        .done(fetch_ptw_done),
-        .fault(fetch_ptw_fault),
-        .fault_detail(fetch_ptw_fault_detail),
-        .pa(fetch_ptw_pa),
-        .fault_cause(fetch_ptw_fault_cause),
-        .fault_value(fetch_ptw_fault_value),
-        .leaf_valid(fetch_ptw_leaf_valid),
-        .leaf_pte(fetch_ptw_leaf_pte),
-        .leaf_level(fetch_ptw_leaf_level),
-        .mem_valid(fetch_ptw_mem_valid),
-        .mem_addr(fetch_ptw_mem_addr),
-        .mem_ready(mem_if.ready),
-        .mem_rvalid(fetch_ptw_mem_rvalid),
-        .mem_error(1'b0),
-        .mem_rdata(mem_if.rdata)
+        .rsp_valid(fetch_translation_rsp_valid),
+        .rsp_ready(fetch_translation_rsp_ready),
+        .rsp_pa(fetch_translation_pa),
+        .rsp_fault(fetch_translation_fault),
+        .rsp_fault_detail(fetch_translation_fault_detail),
+        .rsp_fault_cause(fetch_translation_fault_cause),
+        .rsp_fault_value(fetch_translation_fault_value),
+        .ptw_mem_valid(fetch_translation_mem_valid),
+        .ptw_mem_addr(fetch_translation_mem_addr),
+        .ptw_mem_ready(fetch_translation_mem_ready),
+        .ptw_mem_rvalid(mem_if.rvalid),
+        .ptw_mem_error(1'b0),
+        .ptw_mem_rdata(mem_if.rdata)
     );
 
     pmp_checker pmp_fetch_checker (
@@ -348,6 +346,11 @@ module inst_fetcher (
         .allow(fetch_pmp_allow)
     );
 
+    assign fetch_translation_mem_ready =
+        !core_if.is_hazard &&
+        fetch_translation_mem_valid &&
+        mem_if.ready;
+
     // core -> mem_if
     always_comb begin
         mem_if.valid = 1'b0;
@@ -357,9 +360,9 @@ module inst_fetcher (
         mem_if.wmask = '0;
 
         if (!core_if.is_hazard) begin
-            if (fetch_ptw_mem_valid) begin
+            if (fetch_translation_mem_valid) begin
                 mem_if.valid = 1'b1;
-                mem_if.addr = fetch_ptw_mem_addr;
+                mem_if.addr = fetch_translation_mem_addr;
             end else if (fetch_state == FetchIdle && !need_translate) begin
                 mem_if.valid = fetch_fifo_wready && fetch_pmp_allow;
                 mem_if.addr = fetch_pc;
@@ -396,32 +399,26 @@ module inst_fetcher (
             fetch_req_vaddr  <= '0;
             fetch_req_paddr  <= '0;
             fetch_fault_expt <= '0;
-            fetch_ptw_mem_pending <= 1'b0;
             fetch_state      <= FetchIdle;
         end else begin
-            if (fetch_ptw_mem_rvalid) begin
-                fetch_ptw_mem_pending <= 1'b0;
-            end else if (!core_if.is_hazard && fetch_ptw_mem_valid && mem_if.ready) begin
-                fetch_ptw_mem_pending <= 1'b1;
-            end
-
             if (core_if.is_hazard) begin
                 fetch_pc         <= {core_if.next_pc[XLEN-1:3], 3'b000};
                 fetch_req_vaddr  <= '0;
                 fetch_req_paddr  <= '0;
                 fetch_fault_expt <= '0;
-                fetch_ptw_mem_pending <= 1'b0;
                 fetch_state      <= FetchIdle;
             end else begin
                 unique case (fetch_state)
                     FetchIdle: begin
                         if (fetch_fifo_wready) begin
                             if (need_translate) begin
-                                fetch_req_vaddr <= fetch_pc;
-                                if ($test$plusargs("TRACE_FETCH")) begin
-                                    $display("[FETCH] translate va=%h priv=%0d satp=%h", fetch_pc, priv_mode, satp);
+                                if (fetch_translation_req_ready) begin
+                                    fetch_req_vaddr <= fetch_pc;
+                                    if ($test$plusargs("TRACE_FETCH")) begin
+                                        $display("[FETCH] translate va=%h priv=%0d satp=%h", fetch_pc, priv_mode, satp);
+                                    end
+                                    fetch_state <= FetchTranslate;
                                 end
-                                fetch_state <= FetchTranslate;
                             end else if (!fetch_pmp_allow) begin
                                 if ($test$plusargs("TRACE_FETCH")) begin
                                     $display("[FETCH] pmp fault physical pc=%h", fetch_pc);
@@ -440,22 +437,22 @@ module inst_fetcher (
                     end
 
                     FetchTranslate: begin
-                        if (fetch_ptw_done) begin
-                            if (fetch_ptw_fault) begin
+                        if (fetch_translation_rsp_valid) begin
+                            if (fetch_translation_fault) begin
                                 if ($test$plusargs("TRACE_FETCH")) begin
                                     $display("[FETCH] ptw fault va=%h cause=%0d detail=%0d value=%h",
-                                        fetch_req_vaddr, fetch_ptw_fault_cause, fetch_ptw_fault_detail, fetch_ptw_fault_value);
+                                        fetch_req_vaddr, fetch_translation_fault_cause, fetch_translation_fault_detail, fetch_translation_fault_value);
                                 end
                                 fetch_fault_expt.valid <= 1'b1;
-                                fetch_fault_expt.cause <= fetch_ptw_fault_cause;
-                                fetch_fault_expt.value <= fetch_ptw_fault_value;
+                                fetch_fault_expt.cause <= fetch_translation_fault_cause;
+                                fetch_fault_expt.value <= fetch_translation_fault_value;
                                 fetch_pc <= fetch_pc + 2;
                                 fetch_state <= FetchFault;
                             end else begin
                                 if ($test$plusargs("TRACE_FETCH")) begin
-                                    $display("[FETCH] ptw ok va=%h pa=%h", fetch_req_vaddr, fetch_ptw_pa);
+                                    $display("[FETCH] ptw ok va=%h pa=%h", fetch_req_vaddr, fetch_translation_pa);
                                 end
-                                fetch_req_paddr <= fetch_ptw_pa;
+                                fetch_req_paddr <= fetch_translation_pa;
                                 fetch_state <= FetchAccess;
                             end
                         end

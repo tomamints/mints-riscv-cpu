@@ -4,6 +4,7 @@ module data_translation (
 	input logic clk,
 	input logic rst,
 	input logic flush,
+	input logic tlb_flush,
 
 	input logic req_valid,
 	output logic req_ready,
@@ -30,10 +31,13 @@ module data_translation (
 	input logic [MEMBUS_DATA_WIDTH-1:0] ptw_mem_rdata
 );
 
-	address_translation translation (
+	address_translation #(
+		.PERF_NAME("DTLB")
+	) translation (
 		.clk(clk),
 		.rst(rst),
 		.flush(flush),
+		.tlb_flush(tlb_flush),
 		.req_valid(req_valid),
 		.req_ready(req_ready),
 		.req_va(req_va),
