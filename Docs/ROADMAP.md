@@ -205,7 +205,7 @@ ITLB: 8 entry fully associative
 DTLB: 8 entry fully associative
 replacement: round-robin
 ASID: 最初は無視または固定
-page size: まず4KiB
+page size: 4KiB / 2MiB superpage / 1GiB superpage
 sfence.vma: 全entry flush
 ```
 
@@ -243,6 +243,33 @@ TLB miss
 
 正しさ優先で始めます。superpageは後回しでもよいですが、Linux側で頻繁に使うなら早めに対応します。
 
+現在の状態:
+
+```text
+ITLB:
+  接続済み
+  8 entry fully associative
+  Sv39 4KiB / 2MiB / 1GiB leaf refill対応
+  satp write / sfence.vma で全flush
+  Linux 300Mで hit_rate_x1000=999
+
+DTLB:
+  wrapperは存在
+  memunitへの接続は次作業
+```
+
+ITLB導入後の300M Linux測定:
+
+```text
+baseline no TLB/cache:
+  retired=43,361,299
+  CPI=6.918
+
+ITLB fixed superpage refill:
+  retired=53,176,454
+  CPI=5.641
+```
+
 ### Phase 2: Small I-cache
 
 次はI-cacheを小さく入れます。
@@ -266,24 +293,77 @@ offset = 5bit
 tag = remaining PA bits
 ```
 
-refillは最初から高性能化しなくてよいです。
+現在は、最小blocking refillから一段進めて、critical-word-first / early restartまで入れています。
 
 ```text
 32B line = 64-bit memory access x 4
 ```
 
-FSMでlineを埋め、hit時だけfetchを速くするところから始めます。
+現在の構成:
+
+```text
+capacity: 4KiB
+line size: 32B
+lines: 128
+ways: 1 direct-mapped
+refill: 4 x 8B
+policy: critical-word-first, early restart
+fill buffer: 1 entry
+hit-under-refill: same fill line only
+```
+
+I-cache導入後の300M Linux測定:
+
+```text
+ITLB fixed superpage refill:
+  retired=53,176,454
+  CPI=5.641
+
+I-cache 4KiB 32B early restart:
+  retired=56,871,866
+  CPI=5.275
+  I-cache hit_rate_x1000=942
+```
+
+この時点で命令側は一定改善したため、次の本命はdata sideです。
+
+### Phase 3: DTLB / Data Side
+
+次はDTLBを `memunit` 側へ接続します。
+
+初期方針:
+
+```text
+DTLB: 8 entry fully associative
+access type: load=read, store/AMO=write
+SUM/MXR: sstatusから反映
+miss: 既存PTWを使用
+sfence.vma/satp: 全flush
+```
+
+最初に見る値:
+
+```text
+[PERF-DTLB] lookup / hit / miss
+[PERF-DTLB] miss_cycles
+[PERF-DTLB] mem_req / mem_resp
+[PERF] primary mem
+[PERF] dbus_req
+```
+
+DTLB接続後にdata page walkが小さいと分かった場合は、小さいD-cacheへ進みます。
 
 ### Later Performance Work
 
 優先順位:
 
 ```text
-TLB
+ITLB
 I-cache
+DTLB
+D-cache
 UART FIFO / interrupt reduction
 branch predictor
-D-cache
 store buffer
 mul/div latency
 clock frequency / critical path cleanup

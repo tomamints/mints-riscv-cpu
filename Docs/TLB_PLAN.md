@@ -326,15 +326,32 @@ make test-os2-min-sv39    pass
 ```
 
 Linux notrace Imageは、20M cycleの短いOpenSBI smokeで `+PERF_SUMMARY` まで完走確認済み。
-300M cycleのLinux比較測定では、ITLB接続後にCPIが悪化し、primary ifetch stallが大きく増えた。
-詳細は `Docs/PERFORMANCE_COUNTERS.md` に記録する。
+初期の300M cycle Linux比較測定では、ITLB接続後にCPIが悪化し、primary ifetch stallが大きく増えた。
+詳細は `docs/PERFORMANCE_COUNTERS.md` に記録する。
 
 初回の `[PERF-ITLB]` では、`flush` がcontrol flushと同じ規模になり、さらに `miss_cycles` が非常に大きかった。
 これは、分岐flushでTLB entryまで無効化していたこと、およびPTW待ちがcontrol redirectで頻繁にキャンセルされていたことを示す。
-現在は `flush` と `tlb_flush` を分離済みなので、再測定で次を確認する。
+現在は `flush` と `tlb_flush` を分離済み。
 
 その後の再測定では `flush=14` まで下がったが、`mem_req=9` / `mem_resp=8` のままPTW待ちが残った。
 これに対して、fetcherにmemory response ownerを追加し、通常fetch応答とPTW応答を分離した。
+
+その後、2MiB superpage leafをTLBへrefillできるようにし、Linux 300M測定ではITLB単体で改善が確認できた。
+
+```text
+baseline no TLB/cache:
+  retired=43,361,299
+  CPI=6.918
+
+ITLB fixed superpage refill:
+  retired=53,176,454
+  CPI=5.641
+  hit_rate_x1000=999
+  miss=1877
+  superpage_refill=1875
+```
+
+現在のI-cache込みの最新値は `docs/PERFORMANCE_COUNTERS.md` に記録する。
 
 ITLB接続後にまず見る値:
 

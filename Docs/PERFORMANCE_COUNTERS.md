@@ -203,20 +203,124 @@ primary mem stall    117,731,783 → 20,994,446
 後続の `[PERF-ITLB]` カウンタで、分岐flushと同じ規模でTLBを消していた問題が見えたため、現在はtranslation cancel用の `flush` とTLB invalidation用の `tlb_flush` を分離している。
 さらに `mem_req` と `mem_resp` が一致しないケースに対して、fetcher側でmemory response ownerを保持し、通常instruction fetch応答とPTW応答を分離している。
 
-## Current Limitations
+## Current 300M Performance Timeline
 
-現時点では、まだ次は分かりません。
+2026-08-03 時点のLinux cmdloop notrace Image、`300,000,000` cycle測定の推移です。
+
+同じ実行条件で比較します。
+
+```bash
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-notrace-initramfs \
+  OPENSBI_CYCLES=300000000 \
+  SIM_EXTRA_ARGS=+PERF_SUMMARY
+```
+
+要約:
 
 ```text
-TLB hit/miss
-I-cache hit/miss
+stage                         retired     CPI      IPC      primary_mem  primary_ifetch
+baseline no TLB/cache         43,361,299  6.918    0.144    117,731,783  80,757,477
+ITLB initial broken path      18,368,225  16.332   0.061    20,994,446   232,922,918
+ITLB fixed superpage refill   53,176,454  5.641    0.177    151,741,249  28,921,100
+I-cache 4KiB 32B early restart 56,871,866 5.275    0.189    144,670,072  29,112,305
+```
+
+読み取り:
+
+```text
+ITLB初期版:
+  性能改善ではなくregression。
+  原因はTLB flush過多、superpage refill不足、fetch/PTW response routing不足。
+
+ITLB修正版:
+  2MiB superpage leafをTLBへrefillし、tlb_flushをsatp/sfence.vmaへ限定。
+  retiredがbaseline比で約22.6%増加。
+  CPIは 6.918 -> 5.641。
+
+I-cache 4KiB 32B early restart:
+  retiredがbaseline比で約31.2%増加。
+  CPIは 6.918 -> 5.275。
+  ITLB修正版からはretiredが約6.9%増加。
+```
+
+現在のI-cache構成:
+
+```text
+capacity: 4KiB
+line size: 32B
+lines: 128
+ways: 1 direct-mapped
+refill: 4 x 8B
+policy: critical-word-first, early restart
+fill buffer: 1 entry
+hit-under-refill: same fill line only
+```
+
+300M result:
+
+```text
+[PERF-ITLB] req=36391786 bare=0 unsupported=0 lookup=36391786 hit=36389909 miss=1877 hit_fault=0 hit_rate_x1000=999
+[PERF-ITLB] ptw start=1877 done=1876 fault=1 miss_cycles=18759 mem_req=3752 mem_resp=3751
+[PERF-ITLB] leaf_l0_4k=0 leaf_l1_2m=1875 leaf_l2_1g=0 refill=1875 superpage_refill=1875 flush=1887
+[PERF-ICACHE] req=51425487 cacheable=51425487 hit=44045398 fill_hit=4405593 miss=2974496 uncached=0 hit_rate_x1000=942 flush=1887
+[PERF-ICACHE] mem_req=11894234 mem_resp=11894234 early_rsp=2853791 lines=128 line_bytes=32
+[PERF] cycles=300000000 retired=56871866 cpi_x1000=5275 ipc_x1000=189
+[PERF] primary commit=56871866 no_commit=243128134 mem=144670072 muldiv=4804218 data_hazard=13988492 ifetch=29112305 other=50553047
+[PERF] active mem=155376964 muldiv=4934344 data_hazard=65438017 ifetch=41855514
+[PERF] events branch=5446301 branch_taken=2693892 control_flush=4936811 trap_flush=4155 load=11329674 store=6488419 ibus_req=64823049 dbus_req=37873624
+```
+
+I-cache counterの読み方:
+
+```text
+hit_rate_x1000=942
+  hit + fill_hit をcacheable requestで割った値。
+  94.2%程度の命令側hit率。
+
+miss=2,974,496
+mem_req=11,894,234
+  32B lineを8B x4でrefillするため、missあたり約4 request。
+
+early_rsp=2,853,791
+  critical wordをline完成前にCPUへ返した回数。
+  missの多くでearly restartが効いている。
+
+fill_hit=4,405,593
+  refill中の同一line・受信済みwordに対する応答。
+  full non-blocking cacheではないが、sequential fetchの局所性を拾えている。
+```
+
+現時点の主なボトルネック:
+
+```text
+primary_mem = 144,670,072
+dbus_req    = 37,873,624
+load        = 11,329,674
+store       = 6,488,419
+```
+
+命令側はITLB + I-cacheで改善したため、次の性能改善の本命はdata sideです。
+
+```text
+next:
+  1. DTLBをmemunitへ接続
+  2. DTLB counterでdata page walk頻度を確認
+  3. 小さいD-cacheまたはload/store path改善へ進む
+```
+
+## Current Limitations
+
+現時点で、TLBとI-cacheの概要は `+PERF_SUMMARY` で見えます。
+まだ見えていない、または粗いものは次です。
+
+```text
 D-cache hit/miss
 PTW wait cycleの詳細内訳
 MMIO device別access count
 branch mispredict
 ```
-
-TLBやcacheを入れる前なので、まずは既存pipelineのCPIと大まかなstallを見る段階です。
 
 現在のCPIは、リセット解除からシミュレーション終了までの全体平均です。特定区間だけを測る `perf_enable/perf_clear` や専用MMIO制御は次段階で追加します。
 

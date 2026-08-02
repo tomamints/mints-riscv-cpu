@@ -521,6 +521,7 @@ module core (
 			.satp   (satp_value),
 			.sstatus_sum(sstatus_sum),
 			.sstatus_mxr(sstatus_mxr),
+			.translation_flush(translation_flush_fetch_value),
 			.addr   (memu_addr),
 			.rs2    (memq_rdata.rs2_data),
 			.rdata  (memu_rdata),
