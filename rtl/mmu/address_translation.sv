@@ -95,7 +95,7 @@ module address_translation #(
 	UInt64 perf_leaf_l1_count;
 	UInt64 perf_leaf_l2_count;
 	UInt64 perf_refill_count;
-	UInt64 perf_superpage_bypass_count;
+	UInt64 perf_superpage_refill_count;
 	UInt64 perf_flush_count;
 
 	assign req_ready = state == Idle;
@@ -108,7 +108,7 @@ module address_translation #(
 
 	assign ptw_start = state == PtwWait && !ptw_started && ptw_ready;
 	assign tlb_lookup_valid = state == Idle && req_valid && satp[63:60] == 4'd8 && req_priv_mode != M;
-	assign tlb_refill_valid = state == Refill && refill_leaf_valid && refill_leaf_level == 2'd0;
+	assign tlb_refill_valid = state == Refill && refill_leaf_valid;
 
 	function automatic CsrCause page_fault_cause(input PmpAccessType access_type);
 		unique case (access_type)
@@ -136,7 +136,8 @@ module address_translation #(
 		.fault_detail(tlb_fault_detail),
 		.refill_valid(tlb_refill_valid),
 		.refill_va(pending_va),
-		.refill_ppn(refill_pa[55:12]),
+		.refill_ppn(refill_leaf_pte[53:10]),
+		.refill_level(refill_leaf_level),
 		.refill_r(refill_leaf_pte[1]),
 		.refill_w(refill_leaf_pte[2]),
 		.refill_x(refill_leaf_pte[3]),
@@ -194,7 +195,7 @@ module address_translation #(
 			perf_leaf_l1_count <= '0;
 			perf_leaf_l2_count <= '0;
 			perf_refill_count <= '0;
-			perf_superpage_bypass_count <= '0;
+			perf_superpage_refill_count <= '0;
 			perf_flush_count <= '0;
 		end else begin
 			if (tlb_flush) begin
@@ -239,7 +240,7 @@ module address_translation #(
 						default: begin end
 					endcase
 					if (ptw_leaf_level != 2'd0) begin
-						perf_superpage_bypass_count <= perf_superpage_bypass_count + UInt64'(1);
+						perf_superpage_refill_count <= perf_superpage_refill_count + UInt64'(1);
 					end
 				end
 			end
@@ -275,13 +276,13 @@ module address_translation #(
 				perf_miss_cycle_count,
 				perf_ptw_mem_req_count,
 				perf_ptw_mem_resp_count);
-			$display("[PERF-%s] leaf_l0_4k=%0d leaf_l1_2m=%0d leaf_l2_1g=%0d refill_4k=%0d superpage_bypass=%0d flush=%0d",
+			$display("[PERF-%s] leaf_l0_4k=%0d leaf_l1_2m=%0d leaf_l2_1g=%0d refill=%0d superpage_refill=%0d flush=%0d",
 				PERF_NAME,
 				perf_leaf_l0_count,
 				perf_leaf_l1_count,
 				perf_leaf_l2_count,
 				perf_refill_count,
-				perf_superpage_bypass_count,
+				perf_superpage_refill_count,
 				perf_flush_count);
 		end
 	end

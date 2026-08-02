@@ -24,6 +24,7 @@ module tlb #(
 	input logic refill_valid,
 	input Addr refill_va,
 	input logic [PPN_WIDTH-1:0] refill_ppn,
+	input logic [1:0] refill_level,
 	input logic refill_r,
 	input logic refill_w,
 	input logic refill_x,
@@ -39,6 +40,7 @@ module tlb #(
 		logic valid;
 		logic [VPN_WIDTH-1:0] vpn;
 		logic [PPN_WIDTH-1:0] ppn;
+		logic [1:0] level;
 		logic global_bit;
 		logic user;
 		logic read;
@@ -59,6 +61,29 @@ module tlb #(
 
 	assign lookup_vpn = lookup_va[38:12];
 	assign refill_vpn = refill_va[38:12];
+
+	function automatic logic vpn_matches(
+		input logic [VPN_WIDTH-1:0] entry_vpn,
+		input logic [1:0] entry_level,
+		input logic [VPN_WIDTH-1:0] request_vpn
+	);
+		unique case (entry_level)
+			2'd2: return entry_vpn[26:18] == request_vpn[26:18];
+			2'd1: return entry_vpn[26:9] == request_vpn[26:9];
+			default: return entry_vpn == request_vpn;
+		endcase
+	endfunction
+
+	function automatic Addr translated_pa(
+		input TlbEntry entry,
+		input Addr va
+	);
+		unique case (entry.level)
+			2'd2: return {8'b0, entry.ppn[43:18], va[29:0]};
+			2'd1: return {8'b0, entry.ppn[43:9], va[20:0]};
+			default: return {8'b0, entry.ppn, va[11:0]};
+		endcase
+	endfunction
 
 	function automatic Sv39Fault permission_fault_detail(
 		input TlbEntry entry,
@@ -131,13 +156,13 @@ module tlb #(
 		matched_entry = '0;
 
 		for (int unsigned i = 0; i < ENTRY_COUNT; i++) begin
-			if (!hit && lookup_valid && entries[i].valid && entries[i].vpn == lookup_vpn) begin
+			if (!hit && lookup_valid && entries[i].valid && vpn_matches(entries[i].vpn, entries[i].level, lookup_vpn)) begin
 				hit = 1'b1;
 				matched_entry = entries[i];
 			end
 		end
 
-		pa = {8'b0, matched_entry.ppn, lookup_va[11:0]};
+		pa = translated_pa(matched_entry, lookup_va);
 		fault = hit && !entry_allows_access(
 			matched_entry,
 			lookup_access_type,
@@ -159,7 +184,10 @@ module tlb #(
 		refill_index = replace_index;
 
 		for (int unsigned i = 0; i < ENTRY_COUNT; i++) begin
-			if (!refill_match && entries[i].valid && entries[i].vpn == refill_vpn) begin
+			if (!refill_match &&
+				entries[i].valid &&
+				entries[i].level == refill_level &&
+				vpn_matches(entries[i].vpn, entries[i].level, refill_vpn)) begin
 				refill_match = 1'b1;
 				refill_index = INDEX_WIDTH'(i);
 			end
@@ -181,6 +209,7 @@ module tlb #(
 			entries[refill_index].valid <= 1'b1;
 			entries[refill_index].vpn <= refill_vpn;
 			entries[refill_index].ppn <= refill_ppn;
+			entries[refill_index].level <= refill_level;
 			entries[refill_index].global_bit <= refill_g;
 			entries[refill_index].user <= refill_u;
 			entries[refill_index].read <= refill_r;

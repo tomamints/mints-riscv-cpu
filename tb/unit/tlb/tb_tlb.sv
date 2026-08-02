@@ -17,6 +17,7 @@ module tb_tlb;
 	logic refill_valid;
 	Addr refill_va;
 	logic [43:0] refill_ppn;
+	logic [1:0] refill_level;
 	logic refill_r;
 	logic refill_w;
 	logic refill_x;
@@ -44,6 +45,7 @@ module tb_tlb;
 		.refill_valid(refill_valid),
 		.refill_va(refill_va),
 		.refill_ppn(refill_ppn),
+		.refill_level(refill_level),
 		.refill_r(refill_r),
 		.refill_w(refill_w),
 		.refill_x(refill_x),
@@ -64,6 +66,7 @@ module tb_tlb;
 	task automatic refill(
 		input Addr va,
 		input logic [43:0] ppn,
+		input logic [1:0] level,
 		input logic r,
 		input logic w,
 		input logic x,
@@ -74,6 +77,7 @@ module tb_tlb;
 		begin
 			refill_va = va;
 			refill_ppn = ppn;
+			refill_level = level;
 			refill_r = r;
 			refill_w = w;
 			refill_x = x;
@@ -119,6 +123,7 @@ module tb_tlb;
 		refill_valid = 1'b0;
 		refill_va = '0;
 		refill_ppn = '0;
+		refill_level = 2'd0;
 		refill_r = 1'b0;
 		refill_w = 1'b0;
 		refill_x = 1'b0;
@@ -135,23 +140,23 @@ module tb_tlb;
 		lookup(64'h0000_0000_0000_1234, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(!hit, "empty TLB must miss");
 
-		refill(64'h0000_0000_0000_1000, 44'h0000_0000_0123, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+		refill(64'h0000_0000_0000_1000, 44'h0000_0000_0123, 2'd0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
 		lookup(64'h0000_0000_0000_1456, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit, "refilled VPN must hit");
 		check(!fault, "S-mode execute on supervisor executable page must pass");
 		check(pa == 64'h0000_0000_0012_3456, "4KiB PA must use refill PPN and VA offset");
 
-		refill(64'h0000_0000_0000_2000, 44'h0000_0000_0456, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0);
+		refill(64'h0000_0000_0000_2000, 44'h0000_0000_0456, 2'd0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0);
 		lookup(64'h0000_0000_0000_2000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit && fault && fault_detail == SV39_FAULT_FETCH_X, "X=0 must fault instruction fetch");
 
-		refill(64'h0000_0000_0000_3000, 44'h0000_0000_0789, 1'b1, 1'b0, 1'b1, 1'b1, 1'b1, 1'b0);
+		refill(64'h0000_0000_0000_3000, 44'h0000_0000_0789, 2'd0, 1'b1, 1'b0, 1'b1, 1'b1, 1'b1, 1'b0);
 		lookup(64'h0000_0000_0000_3000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit && fault && fault_detail == SV39_FAULT_PTE_U, "S-mode must not execute U page");
 		lookup(64'h0000_0000_0000_3000, U, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit && !fault, "U-mode may execute U executable page");
 
-		refill(64'h0000_0000_0000_4000, 44'h0000_0000_0999, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0);
+		refill(64'h0000_0000_0000_4000, 44'h0000_0000_0999, 2'd0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0);
 		lookup(64'h0000_0000_0000_4000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit && fault && fault_detail == SV39_FAULT_PTE_A, "A=0 must fault");
 
@@ -162,12 +167,22 @@ module tb_tlb;
 		lookup(64'h0000_0000_0000_1000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(!hit, "flush must invalidate entries");
 
+		refill(64'hffff_ffff_8020_0000, 44'h0000_0000_0802, 2'd1, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+		lookup(64'hffff_ffff_8021_2340, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
+		check(hit, "2MiB superpage refill must hit within the same VPN[2:1]");
+		check(pa == 64'h0000_0000_8021_2340, "2MiB PA must combine PPN[2:1] with VA[20:0]");
+
+		refill(64'hffff_ffff_8000_0000, 44'h0000_0000_0800, 2'd2, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+		lookup(64'hffff_ffff_8123_4560, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
+		check(hit, "1GiB superpage refill must hit within the same VPN[2]");
+		check(pa == 64'h0000_0000_8123_4560, "1GiB PA must combine PPN[2] with VA[29:0]");
+
 		for (int unsigned i = 0; i < 8; i++) begin
-			refill(64'h0000_0000_0001_0000 + (Addr'(i) << 12), 44'(44'h1000 + i), 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+			refill(64'h0000_0000_0001_0000 + (Addr'(i) << 12), 44'(44'h1000 + i), 2'd0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
 		end
 		lookup(64'h0000_0000_0001_0000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit, "first entry should still hit before wrap refill");
-		refill(64'h0000_0000_0002_0000, 44'h0000_0000_2000, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+		refill(64'h0000_0000_0002_0000, 44'h0000_0000_2000, 2'd0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
 		lookup(64'h0000_0000_0001_0000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(!hit, "round-robin refill must evict first entry after wrap");
 

@@ -282,8 +282,19 @@ module inst_fetcher (
     Addr fetch_translation_fault_value;
     logic fetch_translation_mem_valid;
     logic fetch_translation_mem_ready;
+    logic fetch_translation_mem_rvalid;
     Addr fetch_translation_mem_addr;
     ExceptionInfo fetch_fault_expt;
+
+    typedef enum logic [1:0] {
+        FetchMemOwnerNone,
+        FetchMemOwnerInst,
+        FetchMemOwnerPtw
+    } FetchMemOwner;
+
+    FetchMemOwner fetch_mem_owner;
+    logic fetch_inst_mem_fire;
+    logic fetch_inst_mem_rvalid;
 
     typedef enum logic [2:0] {
         FetchIdle,
@@ -324,7 +335,7 @@ module inst_fetcher (
         .ptw_mem_valid(fetch_translation_mem_valid),
         .ptw_mem_addr(fetch_translation_mem_addr),
         .ptw_mem_ready(fetch_translation_mem_ready),
-        .ptw_mem_rvalid(mem_if.rvalid),
+        .ptw_mem_rvalid(fetch_translation_mem_rvalid),
         .ptw_mem_error(1'b0),
         .ptw_mem_rdata(mem_if.rdata)
     );
@@ -350,6 +361,20 @@ module inst_fetcher (
         !core_if.is_hazard &&
         fetch_translation_mem_valid &&
         mem_if.ready;
+    assign fetch_translation_mem_rvalid =
+        mem_if.rvalid &&
+        fetch_mem_owner == FetchMemOwnerPtw;
+    assign fetch_inst_mem_fire =
+        !core_if.is_hazard &&
+        !fetch_translation_mem_valid &&
+        mem_if.ready &&
+        (
+            (fetch_state == FetchIdle && !need_translate && fetch_fifo_wready && fetch_pmp_allow) ||
+            (fetch_state == FetchAccess && fetch_fifo_wready && fetch_pmp_allow)
+        );
+    assign fetch_inst_mem_rvalid =
+        mem_if.rvalid &&
+        fetch_mem_owner == FetchMemOwnerInst;
 
     // core -> mem_if
     always_comb begin
@@ -376,11 +401,11 @@ module inst_fetcher (
     // memory -> fetch_fifo
     always_comb begin
         fetch_fifo_flush      = core_if.is_hazard;
-        fetch_fifo_wvalid     = (fetch_state == FetchWaitResp && mem_if.rvalid) ||
+        fetch_fifo_wvalid     = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ||
                                 (fetch_state == FetchFault && fetch_fifo_wready) ||
                                 (fetch_state == FetchIdle && !need_translate && !core_if.is_hazard && fetch_fifo_wready && !fetch_pmp_allow);
-        fetch_fifo_wdata.addr = (fetch_state == FetchWaitResp && mem_if.rvalid) ? fetch_req_vaddr : fetch_pc;
-        fetch_fifo_wdata.bits = (fetch_state == FetchWaitResp && mem_if.rvalid) ? mem_if.rdata : '0;
+        fetch_fifo_wdata.addr = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ? fetch_req_vaddr : fetch_pc;
+        fetch_fifo_wdata.bits = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ? mem_if.rdata : '0;
         fetch_fifo_wdata.expt = '0;
         if (fetch_state == FetchFault && fetch_fifo_wready) begin
             fetch_fifo_wdata.addr = fetch_req_vaddr;
@@ -399,8 +424,17 @@ module inst_fetcher (
             fetch_req_vaddr  <= '0;
             fetch_req_paddr  <= '0;
             fetch_fault_expt <= '0;
+            fetch_mem_owner  <= FetchMemOwnerNone;
             fetch_state      <= FetchIdle;
         end else begin
+            if (fetch_translation_mem_ready) begin
+                fetch_mem_owner <= FetchMemOwnerPtw;
+            end else if (fetch_inst_mem_fire) begin
+                fetch_mem_owner <= FetchMemOwnerInst;
+            end else if (mem_if.rvalid) begin
+                fetch_mem_owner <= FetchMemOwnerNone;
+            end
+
             if (core_if.is_hazard) begin
                 fetch_pc         <= {core_if.next_pc[XLEN-1:3], 3'b000};
                 fetch_req_vaddr  <= '0;
@@ -424,7 +458,7 @@ module inst_fetcher (
                                     $display("[FETCH] pmp fault physical pc=%h", fetch_pc);
                                 end
                                 fetch_pc <= fetch_pc + 2;
-                            end else if (mem_if.ready && mem_if.valid) begin
+                            end else if (fetch_inst_mem_fire) begin
                                 if ($test$plusargs("TRACE_FETCH")) begin
                                     $display("[FETCH] request physical pc=%h", fetch_pc);
                                 end
@@ -468,7 +502,7 @@ module inst_fetcher (
                             fetch_fault_expt.value <= fetch_req_vaddr;
                             fetch_pc <= fetch_pc + 2;
                             fetch_state <= FetchFault;
-                        end else if (mem_if.ready && mem_if.valid) begin
+                        end else if (fetch_inst_mem_fire) begin
                             if ($test$plusargs("TRACE_FETCH")) begin
                                 $display("[FETCH] request translated va=%h pa=%h", fetch_req_vaddr, fetch_req_paddr);
                             end
@@ -478,7 +512,7 @@ module inst_fetcher (
                     end
 
                     FetchWaitResp: begin
-                        if (mem_if.rvalid) begin
+                        if (fetch_inst_mem_rvalid) begin
                             if ($test$plusargs("TRACE_FETCH")) begin
                                 $display("[FETCH] response va=%h data=%h", fetch_req_vaddr, mem_if.rdata);
                             end

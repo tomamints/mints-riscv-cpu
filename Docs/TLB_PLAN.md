@@ -41,7 +41,7 @@ physical address or page fault
 entry count      8
 lookup           fully associative
 replacement      round-robin
-page size        4 KiB only
+page size        4 KiB / 2 MiB / 1 GiB
 ASID             not implemented yet
 flush            all entries invalidated
 permissions      R/W/X/U/A/D checked on hit
@@ -91,7 +91,19 @@ canonical check naming:
 データ側はまだ既存の `memunit.sv` から `sv39_ptw` を直接使っている。
 
 fetch側では、translation unit内のPTWがflush後の古いメモリ応答をDrainRespで捨てられるように、PTWへの `ptw_mem_rvalid` は `mem_if.rvalid` を直接渡す。
-fetch側の外側でpendingを落としてゲートすると、flush中に発行済みPTW応答をPTWへ届けられず、以後の変換が止まる可能性がある。
+ただし、通常のinstruction fetch応答とPTW応答を混ぜてはいけない。
+現在はfetcher側で、最後に受理した命令側memory requestのownerを保持する。
+
+```text
+FetchMemOwnerInst:
+  通常instruction fetchの応答としてfetch FIFOへ渡す
+
+FetchMemOwnerPtw:
+  PTWのPTE read応答としてtranslation unitへ渡す
+```
+
+control hazardでfetch状態を捨てた後に古いinstruction fetch応答が返ってきた場合は、PTWへ渡さず破棄する。
+PTW requestが発行済みのままflushされた場合は、ownerをPtwとして残し、PTW内部のDrainRespで古い応答を捨てる。
 
 ## Translation Unit Boundary
 
@@ -178,12 +190,12 @@ ptw_done / leaf_valid は1サイクルpulseになり得る
 Refill状態でPTW出力を直接読むとTLBへ登録されない可能性がある
 ```
 
-現在のTLBは4 KiB page専用なので、superpageはTLBへ登録しない。
+現在のTLBはleaf levelを保持するので、superpageもTLBへ登録する。
 
 ```text
 leaf_level=0  4 KiB  → TLB refill
-leaf_level=1  2 MiB  → そのアクセスにはPTW結果を使うが、TLB refillしない
-leaf_level=2  1 GiB  → そのアクセスにはPTW結果を使うが、TLB refillしない
+leaf_level=1  2 MiB  → TLB refill、VPN[2:1]でmatch
+leaf_level=2  1 GiB  → TLB refill、VPN[2]でmatch
 ```
 
 TLB lookupは新しいrequestを受理する `Idle && req_valid && Sv39 && !M-mode` の時だけ行う。
@@ -250,16 +262,11 @@ Sv39のページウォークは最大3段です。
 
 Hypervisorの二段変換はまだ対象外なので、現時点のMiNTs-CPUでは通常最大3回です。
 
-現在のTLBは4KiB leafだけをrefillする。
-Linux kernel mappingで2MiB/1GiB superpageが多い場合、superpage leafを毎回PTWで解くことになり、ITLBを入れてもfetch stallが改善しない可能性がある。
+現在のTLBは4KiB/2MiB/1GiB leafをrefillする。
 
 次の改善候補:
 
 ```text
-superpage TLB support
-  TLB entryにleaf_levelを持たせ、VPN match幅をlevelごとに変える
-  2MiB/1GiB mappingを直接hitさせる
-
 page-walk cache
   level 2やlevel 1のnon-leaf PTE結果を小さく保持する
   leaf TLB miss時でも、上位段PTE readを省く
@@ -268,8 +275,8 @@ page-walk cache
 優先順位は、`[PERF-ITLB]` の結果で決める。
 
 ```text
-leaf_l1_2m / leaf_l2_1g が多い
-  superpage TLBを先に入れる
+leaf_l1_2m / leaf_l2_1g が多いがhit率が上がらない
+  superpage TLBのmatch幅やPA合成を確認する
 
 leaf_l0_4k が多く、mem_req / miss が3に近い
   page-walk cacheを検討する
@@ -325,6 +332,9 @@ Linux notrace Imageは、20M cycleの短いOpenSBI smokeで `+PERF_SUMMARY` ま�
 初回の `[PERF-ITLB]` では、`flush` がcontrol flushと同じ規模になり、さらに `miss_cycles` が非常に大きかった。
 これは、分岐flushでTLB entryまで無効化していたこと、およびPTW待ちがcontrol redirectで頻繁にキャンセルされていたことを示す。
 現在は `flush` と `tlb_flush` を分離済みなので、再測定で次を確認する。
+
+その後の再測定では `flush=14` まで下がったが、`mem_req=9` / `mem_resp=8` のままPTW待ちが残った。
+これに対して、fetcherにmemory response ownerを追加し、通常fetch応答とPTW応答を分離した。
 
 ITLB接続後にまず見る値:
 

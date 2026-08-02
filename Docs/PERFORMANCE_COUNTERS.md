@@ -201,6 +201,7 @@ primary mem stall    117,731,783 → 20,994,446
 現時点では性能改善ではなく、fetch側が大きく悪化している。
 この時点ではITLB詳細カウンタがなく、原因候補は `instruction_translation` 接続後のblocking path、superpage leaf未キャッシュ、またはflush処理だった。
 後続の `[PERF-ITLB]` カウンタで、分岐flushと同じ規模でTLBを消していた問題が見えたため、現在はtranslation cancel用の `flush` とTLB invalidation用の `tlb_flush` を分離している。
+さらに `mem_req` と `mem_resp` が一致しないケースに対して、fetcher側でmemory response ownerを保持し、通常instruction fetch応答とPTW応答を分離している。
 
 ## Current Limitations
 
@@ -261,11 +262,14 @@ ptw_fault
 ```text
 [PERF-ITLB] req=... bare=... unsupported=... lookup=... hit=... miss=... hit_fault=... hit_rate_x1000=...
 [PERF-ITLB] ptw start=... done=... fault=... miss_cycles=... mem_req=... mem_resp=...
-[PERF-ITLB] leaf_l0_4k=... leaf_l1_2m=... leaf_l2_1g=... refill_4k=... superpage_bypass=... flush=...
+[PERF-ITLB] leaf_l0_4k=... leaf_l1_2m=... leaf_l2_1g=... refill=... superpage_refill=... flush=...
 ```
 
 `flush` は `tlb_flush` 回数、つまり `satp` write / `sfence.vma` によるTLB invalidation回数です。
 branch/trap/control redirectによるtranslation cancelは、この値には含めません。
+
+`mem_req` と `mem_resp` は、PTWへ渡されたPTE read request/responseです。
+この2つが長時間実行後に大きくずれる場合、fetch memory response routingを疑います。
 
 見るべき点:
 
@@ -283,10 +287,10 @@ leaf_l0_4k
   4KiB leaf。現在のTLBへrefillされる
 
 leaf_l1_2m / leaf_l2_1g
-  superpage leaf。現在はTLBへ登録せず、そのアクセスだけPTW結果を使う
+  superpage leaf。現在はTLBへ登録する
 
-superpage_bypass
-  superpage未キャッシュにより、次回もPTWが必要になる回数
+superpage_refill
+  2MiB/1GiB superpage leafをTLBへ登録した回数
 ```
 
 Sv39のページウォークは、通常の4KiB pageなら最大3回PTEを読みます。
@@ -299,8 +303,8 @@ Hypervisorの二段変換はまだ実装対象外なので、現時点のMiNTs-C
 missが多く leaf_l0_4k が多い
   4KiB ITLB容量や置換が主因
 
-missが多く leaf_l1_2m / leaf_l2_1g が多い
-  superpage TLB対応を優先
+missが多く leaf_l1_2m / leaf_l2_1g が多いがhit率が上がらない
+  superpage TLBのmatch幅やPA合成を確認
 
 mem_req / miss が3に近い
   4KiB page walkが多い。中間PTEを保持するpage-walk cacheが候補
