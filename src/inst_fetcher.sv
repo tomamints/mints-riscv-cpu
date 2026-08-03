@@ -305,6 +305,24 @@ module inst_fetcher (
     FetchMemOwner fetch_mem_owner;
     logic fetch_inst_mem_fire;
     logic fetch_inst_mem_rvalid;
+    logic fetch_recovery_active;
+    UInt64 perf_fetch_fifo_full_cycle;
+    UInt64 perf_fetch_control_recovery_cycle;
+    UInt64 perf_fetch_translation_issue_cycle;
+    UInt64 perf_fetch_translation_req_wait_cycle;
+    UInt64 perf_fetch_translation_rsp_wait_cycle;
+    UInt64 perf_fetch_icache_req_wait_cycle;
+    UInt64 perf_fetch_icache_rsp_wait_cycle;
+    UInt64 perf_fetch_fault_wait_cycle;
+    UInt64 perf_fetch_no_request_cycle;
+    UInt64 perf_fetch_recovery_idle_cycle;
+    UInt64 perf_fetch_recovery_translate_cycle;
+    UInt64 perf_fetch_recovery_access_cycle;
+    UInt64 perf_fetch_recovery_wait_resp_cycle;
+    UInt64 perf_fetch_recovery_fault_cycle;
+    UInt64 perf_fetch_icache_req_not_ready_cycle;
+    UInt64 perf_fetch_icache_rsp_mem_wait_cycle;
+    UInt64 perf_fetch_icache_rsp_fifo_wait_cycle;
 
     typedef enum logic [2:0] {
         FetchIdle,
@@ -475,7 +493,105 @@ module inst_fetcher (
             fetch_fault_expt <= '0;
             fetch_mem_owner  <= FetchMemOwnerNone;
             fetch_state      <= FetchIdle;
+            fetch_recovery_active <= 1'b0;
+            perf_fetch_fifo_full_cycle <= '0;
+            perf_fetch_control_recovery_cycle <= '0;
+            perf_fetch_translation_issue_cycle <= '0;
+            perf_fetch_translation_req_wait_cycle <= '0;
+            perf_fetch_translation_rsp_wait_cycle <= '0;
+            perf_fetch_icache_req_wait_cycle <= '0;
+            perf_fetch_icache_rsp_wait_cycle <= '0;
+            perf_fetch_fault_wait_cycle <= '0;
+            perf_fetch_no_request_cycle <= '0;
+            perf_fetch_recovery_idle_cycle <= '0;
+            perf_fetch_recovery_translate_cycle <= '0;
+            perf_fetch_recovery_access_cycle <= '0;
+            perf_fetch_recovery_wait_resp_cycle <= '0;
+            perf_fetch_recovery_fault_cycle <= '0;
+            perf_fetch_icache_req_not_ready_cycle <= '0;
+            perf_fetch_icache_rsp_mem_wait_cycle <= '0;
+            perf_fetch_icache_rsp_fifo_wait_cycle <= '0;
         end else begin
+            if (core_if.is_hazard) begin
+                fetch_recovery_active <= 1'b1;
+            end else if (core_if.rvalid && core_if.rready) begin
+                fetch_recovery_active <= 1'b0;
+            end
+
+            if (!core_if.is_hazard) begin
+                if (!fetch_fifo_wready) begin
+                    perf_fetch_fifo_full_cycle <= perf_fetch_fifo_full_cycle + UInt64'(1);
+                end
+                if (fetch_recovery_active) begin
+                    perf_fetch_control_recovery_cycle <= perf_fetch_control_recovery_cycle + UInt64'(1);
+                    unique case (fetch_state)
+                        FetchIdle:     perf_fetch_recovery_idle_cycle <= perf_fetch_recovery_idle_cycle + UInt64'(1);
+                        FetchTranslate: perf_fetch_recovery_translate_cycle <= perf_fetch_recovery_translate_cycle + UInt64'(1);
+                        FetchAccess:   perf_fetch_recovery_access_cycle <= perf_fetch_recovery_access_cycle + UInt64'(1);
+                        FetchWaitResp: perf_fetch_recovery_wait_resp_cycle <= perf_fetch_recovery_wait_resp_cycle + UInt64'(1);
+                        FetchFault:    perf_fetch_recovery_fault_cycle <= perf_fetch_recovery_fault_cycle + UInt64'(1);
+                        default: begin
+                        end
+                    endcase
+                end
+
+                unique case (fetch_state)
+                    FetchIdle: begin
+                        if (fetch_fifo_wready) begin
+                            if (need_translate && !fetch_translation_req_ready) begin
+                                perf_fetch_translation_req_wait_cycle <= perf_fetch_translation_req_wait_cycle + UInt64'(1);
+                            end else if (need_translate && fetch_translation_req_ready) begin
+                                perf_fetch_translation_issue_cycle <= perf_fetch_translation_issue_cycle + UInt64'(1);
+                            end else if (!need_translate && fetch_pmp_allow && !fetch_inst_mem_fire) begin
+                                perf_fetch_icache_req_wait_cycle <= perf_fetch_icache_req_wait_cycle + UInt64'(1);
+                                if (!icache_req_ready) begin
+                                    perf_fetch_icache_req_not_ready_cycle <= perf_fetch_icache_req_not_ready_cycle + UInt64'(1);
+                                end
+                            end else if (!need_translate && fetch_pmp_allow) begin
+                            end else if (!need_translate && !fetch_pmp_allow) begin
+                            end else begin
+                                perf_fetch_no_request_cycle <= perf_fetch_no_request_cycle + UInt64'(1);
+                            end
+                        end
+                    end
+
+                    FetchTranslate: begin
+                        if (!fetch_translation_rsp_valid) begin
+                            perf_fetch_translation_rsp_wait_cycle <= perf_fetch_translation_rsp_wait_cycle + UInt64'(1);
+                        end
+                    end
+
+                    FetchAccess: begin
+                        if (fetch_pmp_allow && !fetch_inst_mem_fire) begin
+                            perf_fetch_icache_req_wait_cycle <= perf_fetch_icache_req_wait_cycle + UInt64'(1);
+                            if (!icache_req_ready) begin
+                                perf_fetch_icache_req_not_ready_cycle <= perf_fetch_icache_req_not_ready_cycle + UInt64'(1);
+                            end
+                        end
+                    end
+
+                    FetchWaitResp: begin
+                        if (!fetch_inst_mem_rvalid) begin
+                            perf_fetch_icache_rsp_wait_cycle <= perf_fetch_icache_rsp_wait_cycle + UInt64'(1);
+                            perf_fetch_icache_rsp_mem_wait_cycle <= perf_fetch_icache_rsp_mem_wait_cycle + UInt64'(1);
+                        end else if (!fetch_fifo_wready) begin
+                            perf_fetch_icache_rsp_wait_cycle <= perf_fetch_icache_rsp_wait_cycle + UInt64'(1);
+                            perf_fetch_icache_rsp_fifo_wait_cycle <= perf_fetch_icache_rsp_fifo_wait_cycle + UInt64'(1);
+                        end
+                    end
+
+                    FetchFault: begin
+                        if (!fetch_fifo_wready) begin
+                            perf_fetch_fault_wait_cycle <= perf_fetch_fault_wait_cycle + UInt64'(1);
+                        end
+                    end
+
+                    default: begin
+                        perf_fetch_no_request_cycle <= perf_fetch_no_request_cycle + UInt64'(1);
+                    end
+                endcase
+            end
+
             if (fetch_translation_mem_ready) begin
                 fetch_mem_owner <= FetchMemOwnerPtw;
             end else if (icache_mem_ready) begin
@@ -579,6 +695,31 @@ module inst_fetcher (
                     default: fetch_state <= FetchIdle;
                 endcase
             end
+        end
+    end
+
+    final begin
+        if ($test$plusargs("PERF_SUMMARY")) begin
+            $display("[PERF-FETCH-STALL] fifo_full=%0d control_recovery=%0d translation_issue=%0d translation_req_wait=%0d translation_rsp=%0d icache_req=%0d icache_rsp=%0d fault=%0d no_request=%0d",
+                perf_fetch_fifo_full_cycle,
+                perf_fetch_control_recovery_cycle,
+                perf_fetch_translation_issue_cycle,
+                perf_fetch_translation_req_wait_cycle,
+                perf_fetch_translation_rsp_wait_cycle,
+                perf_fetch_icache_req_wait_cycle,
+                perf_fetch_icache_rsp_wait_cycle,
+                perf_fetch_fault_wait_cycle,
+                perf_fetch_no_request_cycle);
+            $display("[PERF-FETCH-RECOVERY] idle=%0d translate=%0d access=%0d wait_resp=%0d fault=%0d",
+                perf_fetch_recovery_idle_cycle,
+                perf_fetch_recovery_translate_cycle,
+                perf_fetch_recovery_access_cycle,
+                perf_fetch_recovery_wait_resp_cycle,
+                perf_fetch_recovery_fault_cycle);
+            $display("[PERF-FETCH-ICACHE-WAIT] req_not_ready=%0d rsp_mem=%0d rsp_fifo=%0d",
+                perf_fetch_icache_req_not_ready_cycle,
+                perf_fetch_icache_rsp_mem_wait_cycle,
+                perf_fetch_icache_rsp_fifo_wait_cycle);
         end
     end
 

@@ -107,6 +107,9 @@ module core_top #(
     UInt64 perf_memarb_d_grant_count;
     UInt64 perf_memarb_d_low_grant_count;
     UInt64 perf_memarb_d_low_defer_count;
+    UInt64 perf_memarb_i_wait_cycle;
+    UInt64 perf_memarb_d_high_wait_cycle;
+    UInt64 perf_memarb_d_low_wait_cycle;
 
     always_comb begin
         plic_source_irq = '0;
@@ -156,6 +159,9 @@ module core_top #(
             perf_memarb_d_grant_count <= '0;
             perf_memarb_d_low_grant_count <= '0;
             perf_memarb_d_low_defer_count <= '0;
+            perf_memarb_i_wait_cycle <= '0;
+            perf_memarb_d_high_wait_cycle <= '0;
+            perf_memarb_d_low_wait_cycle <= '0;
         end else begin
             if (mmio_membus.valid && mmio_membus.ready) begin
                 if (memarb_issue_is_i) begin
@@ -169,6 +175,16 @@ module core_top #(
             end
             if (i_membus.valid && d_membus.valid && d_membus_low_priority) begin
                 perf_memarb_d_low_defer_count <= perf_memarb_d_low_defer_count + UInt64'(1);
+            end
+            if (i_membus.valid && !i_membus.ready) begin
+                perf_memarb_i_wait_cycle <= perf_memarb_i_wait_cycle + UInt64'(1);
+            end
+            if (d_membus.valid && !d_membus.ready) begin
+                if (d_membus_low_priority) begin
+                    perf_memarb_d_low_wait_cycle <= perf_memarb_d_low_wait_cycle + UInt64'(1);
+                end else begin
+                    perf_memarb_d_high_wait_cycle <= perf_memarb_d_high_wait_cycle + UInt64'(1);
+                end
             end
         end
     end
@@ -393,6 +409,10 @@ module core_top #(
                 perf_memarb_d_grant_count,
                 perf_memarb_d_low_grant_count,
                 perf_memarb_d_low_defer_count);
+            $display("[PERF-MEMARB-STALL] i_wait=%0d d_high_wait=%0d d_low_wait=%0d",
+                perf_memarb_i_wait_cycle,
+                perf_memarb_d_high_wait_cycle,
+                perf_memarb_d_low_wait_cycle);
         end
     end
 

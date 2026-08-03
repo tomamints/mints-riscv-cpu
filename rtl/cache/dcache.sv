@@ -104,6 +104,21 @@ module dcache #(
 	UInt64 perf_mem_req_count;
 	UInt64 perf_mem_resp_count;
 	UInt64 perf_flush_count;
+	UInt64 perf_load_miss_stall_cycle;
+	UInt64 perf_uncached_stall_cycle;
+	UInt64 perf_cpu_wait_busy_cycle;
+	UInt64 perf_cpu_wait_rsp_pending_cycle;
+	UInt64 perf_cpu_wait_store_full_cycle;
+	UInt64 perf_cpu_wait_load_overlap_cycle;
+	UInt64 perf_cpu_wait_load_store_empty_cycle;
+	UInt64 perf_cpu_wait_uncached_store_empty_cycle;
+	UInt64 perf_cpu_wait_other_cycle;
+	UInt64 perf_load_fill_req_wait_cycle;
+	UInt64 perf_load_fill_rsp_wait_cycle;
+	UInt64 perf_bypass_req_wait_cycle;
+	UInt64 perf_bypass_rsp_wait_cycle;
+	UInt64 perf_store_drain_req_wait_cycle;
+	UInt64 perf_store_drain_active_cycle;
 
 	function automatic logic is_ram(input Addr paddr);
 		return paddr >= MMAP_RAM_BEGIN && paddr < MMAP_RAM_END;
@@ -324,6 +339,21 @@ module dcache #(
 			perf_mem_req_count <= '0;
 			perf_mem_resp_count <= '0;
 			perf_flush_count <= '0;
+			perf_load_miss_stall_cycle <= '0;
+			perf_uncached_stall_cycle <= '0;
+			perf_cpu_wait_busy_cycle <= '0;
+			perf_cpu_wait_rsp_pending_cycle <= '0;
+			perf_cpu_wait_store_full_cycle <= '0;
+			perf_cpu_wait_load_overlap_cycle <= '0;
+			perf_cpu_wait_load_store_empty_cycle <= '0;
+			perf_cpu_wait_uncached_store_empty_cycle <= '0;
+			perf_cpu_wait_other_cycle <= '0;
+			perf_load_fill_req_wait_cycle <= '0;
+			perf_load_fill_rsp_wait_cycle <= '0;
+			perf_bypass_req_wait_cycle <= '0;
+			perf_bypass_rsp_wait_cycle <= '0;
+			perf_store_drain_req_wait_cycle <= '0;
+			perf_store_drain_active_cycle <= '0;
 			for (int unsigned i = 0; i < LINE_COUNT; i++) begin
 				valid[i] <= 1'b0;
 			end
@@ -332,6 +362,48 @@ module dcache #(
 
 			store_buffer_count_next = store_buffer_count;
 			rsp_valid_q <= 1'b0;
+
+			if (state == LoadFillReq || state == LoadFillWait) begin
+				perf_load_miss_stall_cycle <= perf_load_miss_stall_cycle + UInt64'(1);
+			end
+			if (state == BypassReq || state == BypassWait) begin
+				perf_uncached_stall_cycle <= perf_uncached_stall_cycle + UInt64'(1);
+			end
+			if (state == LoadFillReq && !mem.ready) begin
+				perf_load_fill_req_wait_cycle <= perf_load_fill_req_wait_cycle + UInt64'(1);
+			end
+			if (state == LoadFillWait && !mem.rvalid) begin
+				perf_load_fill_rsp_wait_cycle <= perf_load_fill_rsp_wait_cycle + UInt64'(1);
+			end
+			if (state == BypassReq && !mem.ready) begin
+				perf_bypass_req_wait_cycle <= perf_bypass_req_wait_cycle + UInt64'(1);
+			end
+			if (state == BypassWait && !mem.rvalid) begin
+				perf_bypass_rsp_wait_cycle <= perf_bypass_rsp_wait_cycle + UInt64'(1);
+			end
+			if (store_buffer_issue_valid) begin
+				perf_store_drain_active_cycle <= perf_store_drain_active_cycle + UInt64'(1);
+				if (!mem.ready) begin
+					perf_store_drain_req_wait_cycle <= perf_store_drain_req_wait_cycle + UInt64'(1);
+				end
+			end
+			if (cpu.valid && !cpu.ready) begin
+				if (state != Idle) begin
+					perf_cpu_wait_busy_cycle <= perf_cpu_wait_busy_cycle + UInt64'(1);
+				end else if (rsp_valid_q) begin
+					perf_cpu_wait_rsp_pending_cycle <= perf_cpu_wait_rsp_pending_cycle + UInt64'(1);
+				end else if (cpu_cacheable && cpu.wen && store_buffer_full_after_issue) begin
+					perf_cpu_wait_store_full_cycle <= perf_cpu_wait_store_full_cycle + UInt64'(1);
+				end else if (cpu_cacheable && !cpu.wen && store_buffer_count != '0 && cpu_store_buffer_overlap) begin
+					perf_cpu_wait_load_overlap_cycle <= perf_cpu_wait_load_overlap_cycle + UInt64'(1);
+				end else if (cpu_cacheable && !cpu.wen && store_buffer_count != '0) begin
+					perf_cpu_wait_load_store_empty_cycle <= perf_cpu_wait_load_store_empty_cycle + UInt64'(1);
+				end else if ((!cpu_cacheable || cpu.is_amo) && store_buffer_count != '0) begin
+					perf_cpu_wait_uncached_store_empty_cycle <= perf_cpu_wait_uncached_store_empty_cycle + UInt64'(1);
+				end else begin
+					perf_cpu_wait_other_cycle <= perf_cpu_wait_other_cycle + UInt64'(1);
+				end
+			end
 
 			if (store_buffer_issue_fire) begin
 				store_buffer_head <= store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(1);
@@ -532,6 +604,26 @@ module dcache #(
 			$display("[PERF-STOREBUF-LOAD] bypass=%0d wait=%0d",
 				perf_store_buffer_load_bypass_count,
 				perf_store_buffer_load_wait_count);
+			$display("[PERF-DSTALL] load_miss=%0d uncached=%0d storebuf_full=%0d storebuf_dep=%0d",
+				perf_load_miss_stall_cycle,
+				perf_uncached_stall_cycle,
+				perf_store_buffer_full_stall_count,
+				perf_store_buffer_load_wait_count);
+			$display("[PERF-DCACHE-CPUWAIT] busy=%0d rsp_pending=%0d store_full=%0d load_overlap=%0d load_store_empty=%0d uncached_store_empty=%0d other=%0d",
+				perf_cpu_wait_busy_cycle,
+				perf_cpu_wait_rsp_pending_cycle,
+				perf_cpu_wait_store_full_cycle,
+				perf_cpu_wait_load_overlap_cycle,
+				perf_cpu_wait_load_store_empty_cycle,
+				perf_cpu_wait_uncached_store_empty_cycle,
+				perf_cpu_wait_other_cycle);
+			$display("[PERF-DCACHE-MEMWAIT] fill_req=%0d fill_rsp=%0d bypass_req=%0d bypass_rsp=%0d drain_active=%0d drain_req_wait=%0d",
+				perf_load_fill_req_wait_cycle,
+				perf_load_fill_rsp_wait_cycle,
+				perf_bypass_req_wait_cycle,
+				perf_bypass_rsp_wait_cycle,
+				perf_store_drain_active_cycle,
+				perf_store_drain_req_wait_cycle);
 		end
 	end
 

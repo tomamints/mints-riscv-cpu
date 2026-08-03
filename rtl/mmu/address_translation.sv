@@ -76,6 +76,15 @@ module address_translation #(
 	logic tlb_lookup_valid;
 	logic tlb_refill_valid;
 	logic req_needs_ptw;
+	logic fast_rsp_valid;
+	Addr fast_rsp_pa;
+	logic fast_rsp_fault;
+	Sv39Fault fast_rsp_fault_detail;
+	CsrCause fast_rsp_fault_cause;
+	Addr fast_rsp_fault_value;
+	logic fast_rsp_is_bare;
+	logic fast_rsp_is_unsupported;
+	logic fast_rsp_is_tlb_hit;
 
 	logic ptw_start;
 	logic ptw_ready;
@@ -125,15 +134,40 @@ module address_translation #(
 	UInt64 perf_ptw_pmp_deny_count;
 	UInt64 perf_ptw_pmp_deny_cycle;
 	UInt64 perf_ptw_other_cycle;
+	UInt64 perf_fast_bare_count;
+	UInt64 perf_fast_unsupported_count;
+	UInt64 perf_fast_hit_count;
+	UInt64 perf_fast_hit_fault_count;
+	UInt64 perf_held_response_count;
 
 	assign req_needs_ptw = satp[63:60] == 4'd8 && req_priv_mode != M;
 	assign req_ready = state == Idle && (!req_needs_ptw || ptw_ready);
-	assign rsp_valid = state == Response;
-	assign rsp_pa = result_pa;
-	assign rsp_fault = result_fault;
-	assign rsp_fault_detail = result_fault_detail;
-	assign rsp_fault_cause = result_fault_cause;
-	assign rsp_fault_value = result_fault_value;
+	assign fast_rsp_is_bare = satp[63:60] == 4'd0 || req_priv_mode == M;
+	assign fast_rsp_is_unsupported = satp[63:60] != 4'd8 && !fast_rsp_is_bare;
+	assign fast_rsp_is_tlb_hit = req_needs_ptw && tlb_hit;
+	assign fast_rsp_valid =
+		state == Idle &&
+		req_valid &&
+		req_ready &&
+		(fast_rsp_is_bare || fast_rsp_is_unsupported || fast_rsp_is_tlb_hit);
+	assign fast_rsp_pa =
+		fast_rsp_is_bare ? req_va :
+		fast_rsp_is_tlb_hit ? tlb_pa :
+		'0;
+	assign fast_rsp_fault = fast_rsp_is_unsupported || (fast_rsp_is_tlb_hit && tlb_fault);
+	assign fast_rsp_fault_detail =
+		fast_rsp_is_unsupported ? SV39_FAULT_ADDR_INVALID :
+		(fast_rsp_is_tlb_hit && tlb_fault) ? tlb_fault_detail :
+		SV39_FAULT_NONE;
+	assign fast_rsp_fault_cause =
+		fast_rsp_fault ? page_fault_cause(req_access_type) : CsrCause'(0);
+	assign fast_rsp_fault_value = req_va;
+	assign rsp_valid = fast_rsp_valid || state == Response;
+	assign rsp_pa = fast_rsp_valid ? fast_rsp_pa : result_pa;
+	assign rsp_fault = fast_rsp_valid ? fast_rsp_fault : result_fault;
+	assign rsp_fault_detail = fast_rsp_valid ? fast_rsp_fault_detail : result_fault_detail;
+	assign rsp_fault_cause = fast_rsp_valid ? fast_rsp_fault_cause : result_fault_cause;
+	assign rsp_fault_value = fast_rsp_valid ? fast_rsp_fault_value : result_fault_value;
 
 	assign ptw_start = state == PtwWait && !ptw_started && ptw_ready;
 	assign tlb_lookup_valid = state == Idle && req_ready && req_valid && req_needs_ptw;
@@ -270,6 +304,11 @@ module address_translation #(
 			perf_ptw_pmp_deny_count <= '0;
 			perf_ptw_pmp_deny_cycle <= '0;
 			perf_ptw_other_cycle <= '0;
+			perf_fast_bare_count <= '0;
+			perf_fast_unsupported_count <= '0;
+			perf_fast_hit_count <= '0;
+			perf_fast_hit_fault_count <= '0;
+			perf_held_response_count <= '0;
 		end else begin
 			if (tlb_flush) begin
 				perf_flush_count <= perf_flush_count + UInt64'(1);
@@ -293,6 +332,20 @@ module address_translation #(
 						perf_miss_count <= perf_miss_count + UInt64'(1);
 					end
 				end
+			end
+			if (fast_rsp_valid && rsp_ready) begin
+				if (fast_rsp_is_bare) begin
+					perf_fast_bare_count <= perf_fast_bare_count + UInt64'(1);
+				end else if (fast_rsp_is_unsupported) begin
+					perf_fast_unsupported_count <= perf_fast_unsupported_count + UInt64'(1);
+				end else begin
+					perf_fast_hit_count <= perf_fast_hit_count + UInt64'(1);
+					if (fast_rsp_fault) begin
+						perf_fast_hit_fault_count <= perf_fast_hit_fault_count + UInt64'(1);
+					end
+				end
+			end else if (fast_rsp_valid) begin
+				perf_held_response_count <= perf_held_response_count + UInt64'(1);
 			end
 
 			if (state == PtwWait) begin
@@ -379,6 +432,13 @@ module address_translation #(
 				perf_refill_count,
 				perf_superpage_refill_count,
 				perf_flush_count);
+			$display("[PERF-%s-FAST] bare=%0d unsupported=%0d hit=%0d hit_fault=%0d held=%0d",
+				PERF_NAME,
+				perf_fast_bare_count,
+				perf_fast_unsupported_count,
+				perf_fast_hit_count,
+				perf_fast_hit_fault_count,
+				perf_held_response_count);
 		end
 	end
 
@@ -418,24 +478,12 @@ module address_translation #(
 						refill_leaf_level <= 2'd0;
 						refill_leaf_valid <= 1'b0;
 
-						if (satp[63:60] == 4'd0 || req_priv_mode == M) begin
-							result_pa <= req_va;
-							result_fault <= 1'b0;
-							result_fault_detail <= SV39_FAULT_NONE;
-							result_fault_cause <= CsrCause'(0);
-							state <= Response;
-						end else if (satp[63:60] != 4'd8) begin
-							result_pa <= '0;
-							result_fault <= 1'b1;
-							result_fault_detail <= SV39_FAULT_ADDR_INVALID;
-							result_fault_cause <= page_fault_cause(req_access_type);
-							state <= Response;
-						end else if (tlb_hit) begin
-							result_pa <= tlb_pa;
-							result_fault <= tlb_fault;
-							result_fault_detail <= tlb_fault_detail;
-							result_fault_cause <= tlb_fault ? page_fault_cause(req_access_type) : CsrCause'(0);
-							state <= Response;
+						if (fast_rsp_valid) begin
+							result_pa <= fast_rsp_pa;
+							result_fault <= fast_rsp_fault;
+							result_fault_detail <= fast_rsp_fault_detail;
+							result_fault_cause <= fast_rsp_fault_cause;
+							state <= rsp_ready ? Idle : Response;
 						end else begin
 							result_pa <= '0;
 							result_fault <= 1'b0;

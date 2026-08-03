@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <vector>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -183,6 +184,10 @@ int main(int argc, char** argv) {
     }
 
     dut->final();
+    std::cout << std::flush;
+    std::cerr << std::flush;
+    fflush(stdout);
+    fflush(stderr);
 
     #ifdef TRACE
         tfp->close();
@@ -192,4 +197,6 @@ int main(int argc, char** argv) {
     #ifdef TEST_MODE
         return dut->test_success != 1;
     #endif
+    delete dut;
+    return 0;
 }

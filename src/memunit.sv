@@ -95,6 +95,33 @@ module memunit (
 		UIntX data_pmp_size;
 		PmpAccessType data_pmp_access_type;
 		logic data_pmp_allow;
+		UInt64 perf_mem_translation_wait_cycle;
+		UInt64 perf_mem_access_ready_wait_cycle;
+		UInt64 perf_mem_response_wait_cycle;
+		UInt64 perf_mem_split_ready_wait_cycle;
+		UInt64 perf_mem_split_response_wait_cycle;
+		UInt64 perf_mem_discard_wait_cycle;
+		UInt64 perf_mem_fault_cycle;
+		UInt64 perf_mem_translation_req_ready_wait_cycle;
+		UInt64 perf_mem_translation_rsp_wait_cycle;
+		UInt64 perf_mem_translation_ptw_req_wait_cycle;
+		UInt64 perf_mem_translation_ptw_rsp_wait_cycle;
+		UInt64 perf_mem_translation_done_count;
+		UInt64 perf_mem_translation_fault_count;
+		UInt64 perf_mem_access_ready_load_cycle;
+		UInt64 perf_mem_access_ready_store_cycle;
+		UInt64 perf_mem_access_ready_amo_cycle;
+		UInt64 perf_mem_access_ready_split_cycle;
+		UInt64 perf_mem_access_ready_bus_wait_cycle;
+		UInt64 perf_mem_response_load_cycle;
+		UInt64 perf_mem_response_amo_cycle;
+		UInt64 perf_mem_response_split_first_cycle;
+		UInt64 perf_mem_response_bus_wait_cycle;
+		UInt64 perf_mem_split_ready_load_cycle;
+		UInt64 perf_mem_split_ready_store_cycle;
+		UInt64 perf_mem_split_ready_bus_wait_cycle;
+		UInt64 perf_mem_split_response_load_cycle;
+		UInt64 perf_mem_split_response_bus_wait_cycle;
 
 		localparam Addr MMAP_RAM_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
 
@@ -351,7 +378,114 @@ module memunit (
 			fault_detail <= SV39_FAULT_NONE;
 			fault_cause <= CsrCause'(0);
 			fault_value <= '0;
+			perf_mem_translation_wait_cycle <= '0;
+			perf_mem_access_ready_wait_cycle <= '0;
+			perf_mem_response_wait_cycle <= '0;
+			perf_mem_split_ready_wait_cycle <= '0;
+			perf_mem_split_response_wait_cycle <= '0;
+			perf_mem_discard_wait_cycle <= '0;
+			perf_mem_fault_cycle <= '0;
+			perf_mem_translation_req_ready_wait_cycle <= '0;
+			perf_mem_translation_rsp_wait_cycle <= '0;
+			perf_mem_translation_ptw_req_wait_cycle <= '0;
+			perf_mem_translation_ptw_rsp_wait_cycle <= '0;
+			perf_mem_translation_done_count <= '0;
+			perf_mem_translation_fault_count <= '0;
+			perf_mem_access_ready_load_cycle <= '0;
+			perf_mem_access_ready_store_cycle <= '0;
+			perf_mem_access_ready_amo_cycle <= '0;
+			perf_mem_access_ready_split_cycle <= '0;
+			perf_mem_access_ready_bus_wait_cycle <= '0;
+			perf_mem_response_load_cycle <= '0;
+			perf_mem_response_amo_cycle <= '0;
+			perf_mem_response_split_first_cycle <= '0;
+			perf_mem_response_bus_wait_cycle <= '0;
+			perf_mem_split_ready_load_cycle <= '0;
+			perf_mem_split_ready_store_cycle <= '0;
+			perf_mem_split_ready_bus_wait_cycle <= '0;
+			perf_mem_split_response_load_cycle <= '0;
+			perf_mem_split_response_bus_wait_cycle <= '0;
 		end else begin
+			if (valid) begin
+				unique case (state)
+					TranslateWait: begin
+						perf_mem_translation_wait_cycle <= perf_mem_translation_wait_cycle + UInt64'(1);
+						if (!translation_req_ready) begin
+							perf_mem_translation_req_ready_wait_cycle <= perf_mem_translation_req_ready_wait_cycle + UInt64'(1);
+						end
+						if (!translation_rsp_valid) begin
+							perf_mem_translation_rsp_wait_cycle <= perf_mem_translation_rsp_wait_cycle + UInt64'(1);
+						end else if (translation_fault) begin
+							perf_mem_translation_fault_count <= perf_mem_translation_fault_count + UInt64'(1);
+						end else begin
+							perf_mem_translation_done_count <= perf_mem_translation_done_count + UInt64'(1);
+						end
+					end
+					AccessWaitReady: begin
+						perf_mem_access_ready_wait_cycle <= perf_mem_access_ready_wait_cycle + UInt64'(1);
+						if (req_is_amo) begin
+							perf_mem_access_ready_amo_cycle <= perf_mem_access_ready_amo_cycle + UInt64'(1);
+						end else if (req_wen) begin
+							perf_mem_access_ready_store_cycle <= perf_mem_access_ready_store_cycle + UInt64'(1);
+						end else begin
+							perf_mem_access_ready_load_cycle <= perf_mem_access_ready_load_cycle + UInt64'(1);
+						end
+						if (req_crosses_word) begin
+							perf_mem_access_ready_split_cycle <= perf_mem_access_ready_split_cycle + UInt64'(1);
+						end
+						if (!membus.ready) begin
+							perf_mem_access_ready_bus_wait_cycle <= perf_mem_access_ready_bus_wait_cycle + UInt64'(1);
+						end
+					end
+					AccessWaitValid: begin
+						perf_mem_response_wait_cycle <= perf_mem_response_wait_cycle + UInt64'(1);
+						if (req_crosses_word) begin
+							perf_mem_response_split_first_cycle <= perf_mem_response_split_first_cycle + UInt64'(1);
+						end else if (req_is_amo) begin
+							perf_mem_response_amo_cycle <= perf_mem_response_amo_cycle + UInt64'(1);
+						end else begin
+							perf_mem_response_load_cycle <= perf_mem_response_load_cycle + UInt64'(1);
+						end
+						if (!data_mem_rvalid) begin
+							perf_mem_response_bus_wait_cycle <= perf_mem_response_bus_wait_cycle + UInt64'(1);
+						end
+					end
+					SplitAccessWaitReady: begin
+						perf_mem_split_ready_wait_cycle <= perf_mem_split_ready_wait_cycle + UInt64'(1);
+						if (req_wen) begin
+							perf_mem_split_ready_store_cycle <= perf_mem_split_ready_store_cycle + UInt64'(1);
+						end else begin
+							perf_mem_split_ready_load_cycle <= perf_mem_split_ready_load_cycle + UInt64'(1);
+						end
+						if (!membus.ready) begin
+							perf_mem_split_ready_bus_wait_cycle <= perf_mem_split_ready_bus_wait_cycle + UInt64'(1);
+						end
+					end
+					SplitAccessWaitValid: begin
+						perf_mem_split_response_wait_cycle <= perf_mem_split_response_wait_cycle + UInt64'(1);
+						perf_mem_split_response_load_cycle <= perf_mem_split_response_load_cycle + UInt64'(1);
+						if (!data_mem_rvalid) begin
+							perf_mem_split_response_bus_wait_cycle <= perf_mem_split_response_bus_wait_cycle + UInt64'(1);
+						end
+					end
+					DiscardWaitValid: begin
+						perf_mem_discard_wait_cycle <= perf_mem_discard_wait_cycle + UInt64'(1);
+					end
+					Fault: begin
+						perf_mem_fault_cycle <= perf_mem_fault_cycle + UInt64'(1);
+					end
+					default: begin
+					end
+				endcase
+
+				if (translation_mem_valid && !membus.ready) begin
+					perf_mem_translation_ptw_req_wait_cycle <= perf_mem_translation_ptw_req_wait_cycle + UInt64'(1);
+				end
+				if (mem_owner == MemOwnerTranslation && !translation_mem_rvalid) begin
+					perf_mem_translation_ptw_rsp_wait_cycle <= perf_mem_translation_ptw_rsp_wait_cycle + UInt64'(1);
+				end
+			end
+
 			if (membus.rvalid) begin
 				mem_owner <= MemOwnerNone;
 			end
@@ -505,6 +639,42 @@ module memunit (
 					default: state <= Init;
 				endcase
 			end
+		end
+	end
+
+	final begin
+		if ($test$plusargs("PERF_SUMMARY")) begin
+			$display("[PERF-MEMU-STALL] translation=%0d access_ready=%0d response=%0d split_ready=%0d split_response=%0d discard=%0d fault=%0d",
+				perf_mem_translation_wait_cycle,
+				perf_mem_access_ready_wait_cycle,
+				perf_mem_response_wait_cycle,
+				perf_mem_split_ready_wait_cycle,
+				perf_mem_split_response_wait_cycle,
+				perf_mem_discard_wait_cycle,
+				perf_mem_fault_cycle);
+			$display("[PERF-MEMU-TRANS] req_ready_wait=%0d rsp_wait=%0d ptw_req_wait=%0d ptw_rsp_wait=%0d done=%0d fault=%0d",
+				perf_mem_translation_req_ready_wait_cycle,
+				perf_mem_translation_rsp_wait_cycle,
+				perf_mem_translation_ptw_req_wait_cycle,
+				perf_mem_translation_ptw_rsp_wait_cycle,
+				perf_mem_translation_done_count,
+				perf_mem_translation_fault_count);
+			$display("[PERF-MEMU-ACCESS] ready_load=%0d ready_store=%0d ready_amo=%0d ready_split=%0d ready_bus_wait=%0d response_load=%0d response_amo=%0d response_split_first=%0d response_bus_wait=%0d",
+				perf_mem_access_ready_load_cycle,
+				perf_mem_access_ready_store_cycle,
+				perf_mem_access_ready_amo_cycle,
+				perf_mem_access_ready_split_cycle,
+				perf_mem_access_ready_bus_wait_cycle,
+				perf_mem_response_load_cycle,
+				perf_mem_response_amo_cycle,
+				perf_mem_response_split_first_cycle,
+				perf_mem_response_bus_wait_cycle);
+			$display("[PERF-MEMU-SPLIT] ready_load=%0d ready_store=%0d ready_bus_wait=%0d response_load=%0d response_bus_wait=%0d",
+				perf_mem_split_ready_load_cycle,
+				perf_mem_split_ready_store_cycle,
+				perf_mem_split_ready_bus_wait_cycle,
+				perf_mem_split_response_load_cycle,
+				perf_mem_split_response_bus_wait_cycle);
 		end
 	end
 endmodule : memunit

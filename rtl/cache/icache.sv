@@ -83,6 +83,7 @@ module icache #(
 	UInt64 perf_mem_resp_count;
 	UInt64 perf_flush_count;
 	UInt64 perf_early_rsp_count;
+	UInt64 perf_demand_miss_stall_cycle;
 
 	assign req_line_addr = {req_addr[XLEN-1:LINE_OFFSET_WIDTH], {LINE_OFFSET_WIDTH{1'b0}}};
 	assign req_beat_addr = {req_addr[XLEN-1:3], 3'b000};
@@ -166,10 +167,18 @@ module icache #(
 			perf_mem_resp_count <= '0;
 			perf_flush_count <= '0;
 			perf_early_rsp_count <= '0;
+			perf_demand_miss_stall_cycle <= '0;
 			for (int unsigned i = 0; i < LINE_COUNT; i++) begin
 				valid[i] <= 1'b0;
 			end
 		end else begin
+			if (!cancel &&
+				(state == FillReq || state == FillWait) &&
+				fill_cpu_waiting &&
+				!mem_will_respond_cpu) begin
+				perf_demand_miss_stall_cycle <= perf_demand_miss_stall_cycle + UInt64'(1);
+			end
+
 			if (rsp_valid && rsp_ready) begin
 				rsp_valid <= 1'b0;
 			end
@@ -355,6 +364,8 @@ module icache #(
 				perf_early_rsp_count,
 				LINE_COUNT,
 				LINE_BYTES);
+			$display("[PERF-ICACHE-STALL] demand_miss=%0d",
+				perf_demand_miss_stall_cycle);
 		end
 	end
 
