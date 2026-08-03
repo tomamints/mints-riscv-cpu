@@ -66,11 +66,11 @@ module dcache #(
 	logic [STORE_BUFFER_INDEX_WIDTH-1:0] store_buffer_head;
 	logic [STORE_BUFFER_INDEX_WIDTH-1:0] store_buffer_tail;
 	logic [STORE_BUFFER_COUNT_WIDTH-1:0] store_buffer_count;
-	logic store_buffer_outstanding;
 	logic store_buffer_issue_valid;
 	logic store_buffer_issue_fire;
 	logic store_buffer_full_after_issue;
 	logic store_buffer_empty;
+	logic fill_allocate;
 
 	logic [INDEX_WIDTH-1:0] cpu_index;
 	logic [TAG_WIDTH-1:0] cpu_tag;
@@ -119,12 +119,12 @@ module dcache #(
 	assign cpu_ram_access = is_ram(cpu.addr);
 	assign cpu_cacheable = cpu_ram_access && !cpu.is_amo;
 	assign cache_hit = cpu_cacheable && valid[cpu_index] && tags[cpu_index] == cpu_tag;
-	assign store_buffer_issue_valid = state == Idle && !store_buffer_outstanding && store_buffer_count != '0;
+	assign store_buffer_issue_valid = state == Idle && store_buffer_count != '0;
 	assign store_buffer_issue_fire = store_buffer_issue_valid && mem.ready;
 	assign store_buffer_full_after_issue =
 		store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH) &&
 		!store_buffer_issue_fire;
-	assign store_buffer_empty = store_buffer_count == '0 && !store_buffer_outstanding;
+	assign store_buffer_empty = store_buffer_count == '0;
 
 	assign cpu.ready =
 		state == Idle &&
@@ -238,7 +238,7 @@ module dcache #(
 			store_buffer_head <= '0;
 			store_buffer_tail <= '0;
 			store_buffer_count <= '0;
-			store_buffer_outstanding <= 1'b0;
+			fill_allocate <= 1'b0;
 			perf_req_count <= '0;
 			perf_load_req_count <= '0;
 			perf_store_req_count <= '0;
@@ -263,20 +263,14 @@ module dcache #(
 			store_buffer_count_next = store_buffer_count;
 			rsp_valid_q <= 1'b0;
 
-			if (store_buffer_outstanding && mem.rvalid) begin
-				store_buffer_outstanding <= 1'b0;
-				perf_mem_resp_count <= perf_mem_resp_count + UInt64'(1);
-			end
-
 			if (store_buffer_issue_fire) begin
 				store_buffer_head <= store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(1);
 				store_buffer_count_next = store_buffer_count_next - STORE_BUFFER_COUNT_WIDTH'(1);
-				store_buffer_outstanding <= 1'b1;
 				perf_mem_req_count <= perf_mem_req_count + UInt64'(1);
 				perf_store_buffer_drain_count <= perf_store_buffer_drain_count + UInt64'(1);
 			end
 
-			if (cpu.valid && cpu_cacheable && cpu.wen && !cpu.ready) begin
+			if (state == Idle && cpu.valid && cpu_cacheable && cpu.wen && store_buffer_full_after_issue) begin
 				perf_store_buffer_full_stall_count <= perf_store_buffer_full_stall_count + UInt64'(1);
 			end
 
@@ -285,6 +279,7 @@ module dcache #(
 					valid[i] <= 1'b0;
 				end
 				fill_word_valid <= '0;
+				fill_allocate <= 1'b0;
 				perf_flush_count <= perf_flush_count + UInt64'(1);
 			end
 
@@ -332,6 +327,7 @@ module dcache #(
 							fill_response_word <= cpu_word_offset;
 							fill_count <= '0;
 							fill_word_valid <= '0;
+							fill_allocate <= 1'b1;
 							state <= LoadFillReq;
 						end else if (cpu_cacheable && cpu.wen) begin
 							if (cache_hit) begin
@@ -356,7 +352,7 @@ module dcache #(
 							perf_bypass_count <= perf_bypass_count + UInt64'(1);
 							if (mem.ready) begin
 								perf_mem_req_count <= perf_mem_req_count + UInt64'(1);
-								state <= BypassWait;
+								state <= (cpu.wen && !cpu.is_amo) ? Idle : BypassWait;
 							end else begin
 								state <= BypassReq;
 							end
@@ -382,11 +378,14 @@ module dcache #(
 						end
 
 						if (fill_count == FILL_COUNT_WIDTH'(WORDS_PER_LINE - 1)) begin
-							valid[fill_index] <= 1'b1;
-							tags[fill_index] <= fill_tag;
-							for (int unsigned i = 0; i < WORDS_PER_LINE; i++) begin
-								data[fill_index][i] <= (WORD_OFFSET_WIDTH'(i) == fill_next_word) ? mem.rdata : fill_data[i];
+							if (fill_allocate) begin
+								valid[fill_index] <= 1'b1;
+								tags[fill_index] <= fill_tag;
+								for (int unsigned i = 0; i < WORDS_PER_LINE; i++) begin
+									data[fill_index][i] <= (WORD_OFFSET_WIDTH'(i) == fill_next_word) ? mem.rdata : fill_data[i];
+								end
 							end
+							fill_allocate <= 1'b0;
 							state <= Idle;
 						end else begin
 							fill_next_word <= fill_next_word + WORD_OFFSET_WIDTH'(1);
@@ -399,7 +398,7 @@ module dcache #(
 				BypassReq: begin
 					if (mem.ready) begin
 						perf_mem_req_count <= perf_mem_req_count + UInt64'(1);
-						state <= BypassWait;
+						state <= (saved_wen && !saved_is_amo) ? Idle : BypassWait;
 					end
 				end
 
@@ -452,7 +451,7 @@ module dcache #(
 				perf_store_buffer_full_stall_count,
 				STORE_BUFFER_DEPTH,
 				store_buffer_count,
-				store_buffer_outstanding);
+				1'b0);
 		end
 	end
 
