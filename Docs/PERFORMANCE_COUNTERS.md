@@ -326,10 +326,14 @@ store bufferを空にせず先に実行できます。
 
 ```text
 next:
-  1. store-to-load forwarding
-  2. load-use / ALU forwarding cleanup
-  3. branch penalty reduction
+  1. ALU/WB forwardingのLinux 300M測定
+  2. branch penalty reduction
+  3. load-use detail counters
+  4. store-to-load forwarding
 ```
+
+ALU/WB forwarding後は、まず既存の `data_hazard` を比較します。
+追加の専用counterはまだ入れず、性能ログを増やさない方針です。
 
 ## Current Limitations
 

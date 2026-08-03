@@ -188,7 +188,7 @@ module dcache #(
 		!store_buffer_issue_fire;
 	assign store_buffer_empty = store_buffer_count == '0;
 	assign store_buffer_drain_urgent =
-		store_buffer_full ||
+		store_buffer_count >= STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH - 1) ||
 		(cpu.valid && !(cpu_cacheable && cpu.wen));
 
 	assign cpu.ready =

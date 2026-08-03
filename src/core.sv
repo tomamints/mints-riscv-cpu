@@ -161,6 +161,14 @@ module core (
 	logic [4:0] exs_rs2_addr = exs_inst_bits[24:20];
 
 	UIntX exs_rs1_data,exs_rs2_data;
+	UIntX exs_rs1_forwarded_data, exs_rs2_forwarded_data;
+	UIntX mems_forward_data;
+	logic mems_forward_valid;
+	logic wbs_forward_valid;
+	logic exs_rs1_mem_match, exs_rs2_mem_match;
+	logic exs_rs1_wb_match, exs_rs2_wb_match;
+	logic exs_rs1_mem_forward, exs_rs2_mem_forward;
+	logic exs_rs1_wb_forward, exs_rs2_wb_forward;
 
 	//ソースレジスタのデータ
 	always_comb begin
@@ -173,9 +181,60 @@ module core (
 	logic exs_mem_data_hazard, exs_wb_data_hazard, exs_data_hazard;
 
 
-	assign exs_mem_data_hazard = mems_valid && mems_ctrl.rwb_en && (mems_rd_addr != 5'd0) && ((mems_rd_addr == exs_rs1_addr) || (mems_rd_addr == exs_rs2_addr));
-	assign exs_wb_data_hazard = wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && (wbs_rd_addr == exs_rs1_addr || wbs_rd_addr == exs_rs2_addr);
+	assign mems_forward_valid =
+		mems_valid &&
+		mems_ctrl.rwb_en &&
+		!mems_expt.valid &&
+		!csru_raise_trap &&
+		!mems_ctrl.is_load &&
+		!mems_ctrl.is_amo &&
+		!mems_ctrl.is_csr;
+	assign wbs_forward_valid =
+		wbs_valid &&
+		wbs_ctrl.rwb_en &&
+		!wbq_rdata.raise_trap;
+	assign exs_rs1_mem_match = mems_valid && mems_ctrl.rwb_en && (mems_rd_addr != 5'd0) && (mems_rd_addr == exs_rs1_addr);
+	assign exs_rs2_mem_match = mems_valid && mems_ctrl.rwb_en && (mems_rd_addr != 5'd0) && (mems_rd_addr == exs_rs2_addr);
+	assign exs_rs1_wb_match = wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && (wbs_rd_addr == exs_rs1_addr);
+	assign exs_rs2_wb_match = wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && (wbs_rd_addr == exs_rs2_addr);
+	assign exs_rs1_mem_forward = exs_rs1_mem_match && mems_forward_valid;
+	assign exs_rs2_mem_forward = exs_rs2_mem_match && mems_forward_valid;
+	assign exs_rs1_wb_forward = exs_rs1_wb_match && wbs_forward_valid;
+	assign exs_rs2_wb_forward = exs_rs2_wb_match && wbs_forward_valid;
+	assign exs_mem_data_hazard =
+		(exs_rs1_mem_match && !exs_rs1_mem_forward) ||
+		(exs_rs2_mem_match && !exs_rs2_mem_forward);
+	assign exs_wb_data_hazard =
+		(exs_rs1_wb_match && !exs_rs1_wb_forward) ||
+		(exs_rs2_wb_match && !exs_rs2_wb_forward);
 	assign exs_data_hazard = exs_mem_data_hazard || exs_wb_data_hazard;
+
+	always_comb begin
+		if (mems_ctrl.is_lui) begin
+			mems_forward_data = memq_rdata.imm;
+		end else if (mems_ctrl.is_jump) begin
+			mems_forward_data = mems_pc + (mems_ctrl.is_rvc ? Addr'(2) : Addr'(4));
+		end else begin
+			mems_forward_data = memq_rdata.alu_result;
+		end
+	end
+
+	always_comb begin
+		exs_rs1_forwarded_data = exs_rs1_data;
+		exs_rs2_forwarded_data = exs_rs2_data;
+
+		if (exs_rs1_mem_forward) begin
+			exs_rs1_forwarded_data = mems_forward_data;
+		end else if (exs_rs1_wb_forward) begin
+			exs_rs1_forwarded_data = wbs_wb_data;
+		end
+
+		if (exs_rs2_mem_forward) begin
+			exs_rs2_forwarded_data = mems_forward_data;
+		end else if (exs_rs2_wb_forward) begin
+			exs_rs2_forwarded_data = wbs_wb_data;
+		end
+	end
 	//ALU
 
 	UIntX exs_op1,exs_op2,exs_alu_result;
@@ -183,11 +242,11 @@ module core (
 	always_comb begin
 		case (exs_ctrl.itype)
 			INST_R, INST_B: begin
-				exs_op1 = exs_rs1_data;
-				exs_op2 = exs_rs2_data;
+				exs_op1 = exs_rs1_forwarded_data;
+				exs_op2 = exs_rs2_forwarded_data;
 			end
 			INST_I, INST_S: begin
-				exs_op1 = exs_rs1_data;
+				exs_op1 = exs_rs1_forwarded_data;
 				exs_op2 = exs_imm;
 			end
 			INST_U, INST_J: begin
@@ -286,9 +345,6 @@ module core (
 
 		logic instruction_address_misaligned;
 		Addr memaddr;
-		logic loadstore_address_misaligned;
-		logic loadstore_pmp_fault;
-		UIntX loadstore_access_size;
 
 		UIntX pmpcfg0_value;
 		UIntX pmpaddr0_value;
@@ -302,7 +358,6 @@ module core (
 		UIntX satp_value;
 		logic sstatus_sum;
 		logic sstatus_mxr;
-			logic pmp_data_allow;
 			PrivMode csru_priv_mode;
 			PrivMode csru_mem_priv_mode;
 			UIntX csru_rdata;
@@ -336,18 +391,7 @@ module core (
 			UInt64 perf_ibus_req_count;
 			UInt64 perf_dbus_req_count;
 
-		function automatic UIntX mem_access_size(input logic [2:0] funct3);
-			unique case (funct3[1:0])
-				2'b00 : return UIntX'(1);
-				2'b01 : return UIntX'(2);
-				2'b10 : return UIntX'(4);
-				2'b11 : return UIntX'(8);
-				default : return UIntX'(1);
-			endcase
-		endfunction
-
-		assign memaddr = exs_ctrl.is_amo ? exs_rs1_data : exs_alu_result;
-		assign loadstore_access_size = mem_access_size(exs_ctrl.funct3);
+		assign memaddr = exs_ctrl.is_amo ? exs_rs1_forwarded_data : exs_alu_result;
 		assign pmp_priv_mode = csru_priv_mode;
 		assign pmpcfg0_fetch_value = pmpcfg0_value;
 		assign pmpaddr0_fetch_value = pmpaddr0_value;
@@ -362,23 +406,6 @@ module core (
 		assign sstatus_sum_fetch_value = sstatus_sum;
 		assign sstatus_mxr_fetch_value = sstatus_mxr;
 
-			pmp_checker pmp_data_checker (
-				.priv_mode(csru_mem_priv_mode),
-			.access_start(memaddr),
-			.access_size(loadstore_access_size),
-			.access_type((inst_is_store(exs_ctrl) || exs_ctrl.is_amo) ? PMP_ACCESS_WRITE : PMP_ACCESS_READ),
-			.pmpcfg0(pmpcfg0_value),
-			.pmpaddr0(pmpaddr0_value),
-			.pmpaddr1(pmpaddr1_value),
-			.pmpaddr2(pmpaddr2_value),
-			.pmpaddr3(pmpaddr3_value),
-			.pmpaddr4(pmpaddr4_value),
-			.pmpaddr5(pmpaddr5_value),
-			.pmpaddr6(pmpaddr6_value),
-			.pmpaddr7(pmpaddr7_value),
-			.allow(pmp_data_allow)
-		);
-
 		always_comb begin
 		//EX-> MEM
 		exq_rready  = memq_wready && !exs_stall;
@@ -388,42 +415,19 @@ module core (
 		memq_wdata.ctrl = exq_rdata.ctrl;
 		memq_wdata.imm = exq_rdata.imm;
 		memq_wdata.rs1_addr = exs_rs1_addr;
-		memq_wdata.rs1_data = exs_rs1_data;
-		memq_wdata.rs2_data = exs_rs2_data;
+		memq_wdata.rs1_data = exs_rs1_forwarded_data;
+		memq_wdata.rs2_data = exs_rs2_forwarded_data;
 		memq_wdata.alu_result = (exs_ctrl.is_muldiv) ? exs_muldiv_result : exs_alu_result;
 		memq_wdata.br_taken = exs_ctrl.is_jump || inst_is_br(exs_ctrl) && exs_brunit_take;
 		memq_wdata.jump_addr = (inst_is_br(exs_ctrl)) ? exs_pc + exs_imm : exs_alu_result & ~1;
 			// exception
 			instruction_address_misaligned = (IALIGN == 32 && memq_wdata.br_taken && memq_wdata.jump_addr[1:0] != 2'b00);
-			if (inst_is_memop(exs_ctrl) && exs_ctrl.is_amo) begin
-				unique case (exs_ctrl.funct3[1:0])
-					2'b00 : loadstore_address_misaligned = 1'b0;
-				2'b01 : loadstore_address_misaligned = (memaddr[0]   != 1'b0); //H
-				2'b10 : loadstore_address_misaligned = (memaddr[1:0] != 2'b00); //W
-				2'b11 : loadstore_address_misaligned = (memaddr[2:0] != 3'b000); //D
-				default : loadstore_address_misaligned = 1'b0;
-			endcase
-			end else begin
-				loadstore_address_misaligned = 1'b0;
-			end
-			loadstore_pmp_fault =
-				inst_is_memop(exs_ctrl) &&
-				!loadstore_address_misaligned &&
-				!pmp_data_allow;
 			memq_wdata.expt = exq_rdata.expt;
 			if (!memq_wdata.expt.valid)begin
 				if ( instruction_address_misaligned)begin
 					memq_wdata.expt.valid = 1;
 					memq_wdata.expt.cause = INSTRUCTION_ADDRESS_MISALIGNED;
 					memq_wdata.expt.value = memq_wdata.jump_addr;
-				end else if (loadstore_address_misaligned) begin
-					memq_wdata.expt.valid = 1;
-					memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ADDRESS_MISALIGNED : STORE_AMO_ADDRESS_MISALIGNED;
-					memq_wdata.expt.value = memaddr;
-				end else if (loadstore_pmp_fault) begin
-					memq_wdata.expt.valid = 1;
-					memq_wdata.expt.cause = (exs_ctrl.is_load) ? LOAD_ACCESS_FAULT : STORE_AMO_ACCESS_FAULT;
-					memq_wdata.expt.value = memaddr;
 				end
 			end
 		end
@@ -494,6 +498,15 @@ module core (
 			.sstatus_sum(sstatus_sum),
 			.sstatus_mxr(sstatus_mxr),
 			.translation_flush(translation_flush_fetch_value),
+			.pmpcfg0(pmpcfg0_value),
+			.pmpaddr0(pmpaddr0_value),
+			.pmpaddr1(pmpaddr1_value),
+			.pmpaddr2(pmpaddr2_value),
+			.pmpaddr3(pmpaddr3_value),
+			.pmpaddr4(pmpaddr4_value),
+			.pmpaddr5(pmpaddr5_value),
+			.pmpaddr6(pmpaddr6_value),
+			.pmpaddr7(pmpaddr7_value),
 			.addr   (memu_addr),
 			.rs2    (memq_rdata.rs2_data),
 			.rdata  (memu_rdata),

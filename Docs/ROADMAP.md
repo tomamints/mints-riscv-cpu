@@ -420,6 +420,7 @@ depth: 4 entry
 drain: 背後でwrite-through
 load: cache hitかつstore buffer内の未排出storeと同一8B beat/byte maskで重ならない場合は先行可能
 AMO/MMIO/uncached/load miss: store bufferが空になるまで待つ
+drain priority: count 0-2は低優先度、count 3-4またはempty待ち要求ありなら緊急
 store-to-load forwarding: なし
 unrelated load bypass: cache hit loadのみ対応
 ```
@@ -456,10 +457,13 @@ store buffer:
 
 store buffer自体は動作していますが、単一RAM portをI-cache refillと奪い合います。
 そのため、store drainには低優先度sidebandを持たせ、通常時はI-cache refillを優先します。
-ただしstore buffer full時やload/AMO/MMIO/uncachedがbuffer emptyを待つ場合は、store drainを緊急扱いにします。
+ただしstore buffer occupancyが `depth-1` 以上の時や、load/AMO/MMIO/uncachedがbuffer emptyを待つ場合は、store drainを緊急扱いにします。
 
 さらに、cache hit loadについては、store buffer内の未排出storeとbyte範囲が重ならない場合だけ先行可能にしました。
 load missはline fillで古いRAM内容をcacheへ入れる危険があるため、まだstore buffer empty待ちです。
+
+ここで Phase 5 の初期store bufferは一旦complete扱いにします。
+残るstore-to-load forwarding、partial forwarding、store coalescingは、後の測定でstore-load待ちが主因として残った場合に戻ります。
 
 ### Later Performance Work
 
@@ -476,9 +480,9 @@ done:
   unrelated load bypass
 
 next:
-  store-to-load forwarding
-  load-use / ALU forwarding cleanup
+  ALU/WB forwarding Linux perf check
   branch predictor / branch penalty reduction
+  load-use detail counters
   D-cache write-back
   RAM arbiter / I-D memory port pressure reduction
 
@@ -489,6 +493,64 @@ later:
 ```
 
 性能改善は、必ずPhase 0のbaselineと比較します。
+
+### Phase 6: ALU / WB Forwarding
+
+目的:
+
+```text
+不要なdata hazard stallを減らす
+load-useだけを本当に必要なstallとして残す
+```
+
+実装:
+
+```text
+MEM -> EX:
+  ALU/LUI/JALなど、MEM段で結果が確定しているrdだけforward
+
+WB -> EX:
+  load/CSRを含め、trapしていないwriteback結果をforward
+
+stall継続:
+  MEM段のload/AMO/CSR依存は、結果がまだ安全に使えないためstall
+```
+
+これにより、従来は全部止めていた次の依存を通せます。
+
+```text
+add x3, x1, x2
+add x4, x3, x5   // MEM -> EX forward
+
+ld  x3, 0(x1)
+add x4, x3, x5   // load-useなので1段待ってWB -> EX forward
+```
+
+期待する測定変化:
+
+```text
+primary data_hazard減少
+active data_hazard減少
+CPI改善
+```
+
+### Correctness Guard: PMP After Translation
+
+Sv39有効時、data PMPは仮想アドレスではなく変換後の物理アドレスに対して行う必要があります。
+
+現在の整理:
+
+```text
+I-fetch:
+  instruction_translation後のphysical PCへPMP EXEC check
+
+load/store/AMO:
+  memunit内でBare時は元アドレス、Sv39時はtranslation_paへPMP READ/WRITE check
+
+PTW:
+  address_translation内でPTE read物理アドレスへPMP READ check
+  PMP拒否時は外部memoryへrequestを出さず、PTWへmem_errorとして返す
+```
 
 ## Target Direction
 

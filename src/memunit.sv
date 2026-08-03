@@ -12,6 +12,15 @@ module memunit (
 	input logic sstatus_sum,
 	input logic sstatus_mxr,
 	input logic translation_flush,
+	input UIntX pmpcfg0,
+	input UIntX pmpaddr0,
+	input UIntX pmpaddr1,
+	input UIntX pmpaddr2,
+	input UIntX pmpaddr3,
+	input UIntX pmpaddr4,
+	input UIntX pmpaddr5,
+	input UIntX pmpaddr6,
+	input UIntX pmpaddr7,
 	input Addr addr,
 	input UIntX rs2,
 	output UIntX rdata,
@@ -82,6 +91,10 @@ module memunit (
 		logic split_data_mem_fire;
 		logic data_read_mem_fire;
 		logic response_will_be_outstanding;
+		Addr data_pmp_addr;
+		UIntX data_pmp_size;
+		PmpAccessType data_pmp_access_type;
+		logic data_pmp_allow;
 
 		localparam Addr MMAP_RAM_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
 
@@ -180,6 +193,30 @@ module memunit (
 			(mem_owner != MemOwnerNone && !membus.rvalid) ||
 			translation_mem_fire ||
 			data_read_mem_fire;
+		assign data_pmp_addr =
+			(state == TranslateWait && translation_rsp_valid && !translation_fault) ? translation_pa : addr;
+		assign data_pmp_size =
+			(state == TranslateWait) ? UIntX'(req_size) : UIntX'(access_size_bytes(ctrl.funct3[1:0]));
+		assign data_pmp_access_type =
+			((state == TranslateWait) ? (req_wen || req_is_amo) : (inst_is_store(ctrl) || ctrl.is_amo)) ?
+				PMP_ACCESS_WRITE : PMP_ACCESS_READ;
+
+	pmp_checker data_pmp_checker (
+		.priv_mode(priv_mode),
+		.access_start(data_pmp_addr),
+		.access_size(data_pmp_size),
+		.access_type(data_pmp_access_type),
+		.pmpcfg0(pmpcfg0),
+		.pmpaddr0(pmpaddr0),
+		.pmpaddr1(pmpaddr1),
+		.pmpaddr2(pmpaddr2),
+		.pmpaddr3(pmpaddr3),
+		.pmpaddr4(pmpaddr4),
+		.pmpaddr5(pmpaddr5),
+		.pmpaddr6(pmpaddr6),
+		.pmpaddr7(pmpaddr7),
+		.allow(data_pmp_allow)
+	);
 
 	data_translation translation (
 		.clk(clk),
@@ -194,6 +231,15 @@ module memunit (
 		.req_sum(sstatus_sum),
 		.req_mxr(sstatus_mxr),
 		.satp(satp),
+		.pmpcfg0(pmpcfg0),
+		.pmpaddr0(pmpaddr0),
+		.pmpaddr1(pmpaddr1),
+		.pmpaddr2(pmpaddr2),
+		.pmpaddr3(pmpaddr3),
+		.pmpaddr4(pmpaddr4),
+		.pmpaddr5(pmpaddr5),
+		.pmpaddr6(pmpaddr6),
+		.pmpaddr7(pmpaddr7),
 		.rsp_valid(translation_rsp_valid),
 		.rsp_ready(translation_rsp_ready),
 		.rsp_pa(translation_pa),
@@ -354,6 +400,11 @@ module memunit (
 									fault_cause <= ctrl.is_load ? LOAD_ADDRESS_MISALIGNED : STORE_AMO_ADDRESS_MISALIGNED;
 									fault_value <= addr;
 									state <= Fault;
+								end else if (!need_translate && !data_pmp_allow) begin
+									fault_detail <= SV39_FAULT_NONE;
+									fault_cause <= (inst_is_store(ctrl) || ctrl.is_amo) ? STORE_AMO_ACCESS_FAULT : LOAD_ACCESS_FAULT;
+									fault_value <= addr;
+									state <= Fault;
 								end else if (need_translate) begin
 									// Misaligned RAM/ROM accesses within one page are supported.
 									// Cross-page accesses trap to avoid a second translation and
@@ -382,6 +433,11 @@ module memunit (
 								end else if (access_misaligned(req_funct3, req_vaddr) && !is_normal_memory(translation_pa)) begin
 									fault_detail <= SV39_FAULT_NONE;
 									fault_cause <= req_wen ? STORE_AMO_ADDRESS_MISALIGNED : LOAD_ADDRESS_MISALIGNED;
+									fault_value <= req_vaddr;
+									state <= Fault;
+								end else if (!data_pmp_allow) begin
+									fault_detail <= SV39_FAULT_NONE;
+									fault_cause <= (req_wen || req_is_amo) ? STORE_AMO_ACCESS_FAULT : LOAD_ACCESS_FAULT;
 									fault_value <= req_vaddr;
 									state <= Fault;
 								end else begin

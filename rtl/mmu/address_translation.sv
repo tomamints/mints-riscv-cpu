@@ -16,6 +16,15 @@ module address_translation #(
 	input logic req_sum,
 	input logic req_mxr,
 	input UIntX satp,
+	input UIntX pmpcfg0,
+	input UIntX pmpaddr0,
+	input UIntX pmpaddr1,
+	input UIntX pmpaddr2,
+	input UIntX pmpaddr3,
+	input UIntX pmpaddr4,
+	input UIntX pmpaddr5,
+	input UIntX pmpaddr6,
+	input UIntX pmpaddr7,
 
 	output logic rsp_valid,
 	input logic rsp_ready,
@@ -78,6 +87,13 @@ module address_translation #(
 	logic ptw_leaf_valid;
 	UIntX ptw_leaf_pte;
 	logic [1:0] ptw_leaf_level;
+	logic ptw_mem_valid_raw;
+	logic ptw_mem_pmp_allow;
+	logic ptw_mem_ready_to_ptw;
+	logic ptw_mem_rvalid_to_ptw;
+	logic ptw_mem_error_to_ptw;
+	logic [MEMBUS_DATA_WIDTH-1:0] ptw_mem_rdata_to_ptw;
+	logic ptw_pmp_fault_pending;
 	UInt64 perf_req_count;
 	UInt64 perf_bare_count;
 	UInt64 perf_unsupported_mode_count;
@@ -109,6 +125,11 @@ module address_translation #(
 	assign ptw_start = state == PtwWait && !ptw_started && ptw_ready;
 	assign tlb_lookup_valid = state == Idle && req_valid && satp[63:60] == 4'd8 && req_priv_mode != M;
 	assign tlb_refill_valid = state == Refill && refill_leaf_valid;
+	assign ptw_mem_valid = ptw_mem_valid_raw && ptw_mem_pmp_allow;
+	assign ptw_mem_ready_to_ptw = ptw_mem_pmp_allow ? ptw_mem_ready : 1'b1;
+	assign ptw_mem_rvalid_to_ptw = ptw_mem_rvalid || ptw_pmp_fault_pending;
+	assign ptw_mem_error_to_ptw = ptw_mem_error || ptw_pmp_fault_pending;
+	assign ptw_mem_rdata_to_ptw = ptw_pmp_fault_pending ? '0 : ptw_mem_rdata;
 
 	function automatic CsrCause page_fault_cause(input PmpAccessType access_type);
 		unique case (access_type)
@@ -147,6 +168,23 @@ module address_translation #(
 		.refill_d(refill_leaf_pte[7])
 	);
 
+	pmp_checker ptw_pmp_checker (
+		.priv_mode(S),
+		.access_start(ptw_mem_addr),
+		.access_size(UIntX'(8)),
+		.access_type(PMP_ACCESS_READ),
+		.pmpcfg0(pmpcfg0),
+		.pmpaddr0(pmpaddr0),
+		.pmpaddr1(pmpaddr1),
+		.pmpaddr2(pmpaddr2),
+		.pmpaddr3(pmpaddr3),
+		.pmpaddr4(pmpaddr4),
+		.pmpaddr5(pmpaddr5),
+		.pmpaddr6(pmpaddr6),
+		.pmpaddr7(pmpaddr7),
+		.allow(ptw_mem_pmp_allow)
+	);
+
 	sv39_ptw ptw (
 		.clk(clk),
 		.rst(rst),
@@ -168,13 +206,24 @@ module address_translation #(
 		.leaf_valid(ptw_leaf_valid),
 		.leaf_pte(ptw_leaf_pte),
 		.leaf_level(ptw_leaf_level),
-		.mem_valid(ptw_mem_valid),
+		.mem_valid(ptw_mem_valid_raw),
 		.mem_addr(ptw_mem_addr),
-		.mem_ready(ptw_mem_ready),
-		.mem_rvalid(ptw_mem_rvalid),
-		.mem_error(ptw_mem_error),
-		.mem_rdata(ptw_mem_rdata)
+		.mem_ready(ptw_mem_ready_to_ptw),
+		.mem_rvalid(ptw_mem_rvalid_to_ptw),
+		.mem_error(ptw_mem_error_to_ptw),
+		.mem_rdata(ptw_mem_rdata_to_ptw)
 	);
+
+	always_ff @(posedge clk or negedge rst) begin
+		if (!rst || flush) begin
+			ptw_pmp_fault_pending <= 1'b0;
+		end else begin
+			ptw_pmp_fault_pending <= 1'b0;
+			if (ptw_mem_valid_raw && !ptw_mem_pmp_allow && ptw_mem_ready_to_ptw) begin
+				ptw_pmp_fault_pending <= 1'b1;
+			end
+		end
+	end
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
