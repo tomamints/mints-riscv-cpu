@@ -26,7 +26,11 @@ module sv39_ptw (
 	input logic mem_ready,
 	input logic mem_rvalid,
 	input logic mem_error,
-	input logic [MEMBUS_DATA_WIDTH-1:0] mem_rdata
+	input logic [MEMBUS_DATA_WIDTH-1:0] mem_rdata,
+	output logic perf_state_req,
+	output logic perf_state_wait_resp,
+	output logic perf_state_check,
+	output logic perf_state_done
 );
 
 	typedef enum logic [2:0] {
@@ -73,6 +77,7 @@ module sv39_ptw (
 	logic superpage_misaligned;
 	logic start_va_canonical;
 	logic mem_outstanding;
+	logic mem_fire;
 
 	assign ready = state == Idle;
 	assign done = state == Done;
@@ -87,6 +92,11 @@ module sv39_ptw (
 
 	assign mem_valid = state == Req;
 	assign mem_addr = pte_addr;
+	assign mem_fire = mem_valid && mem_ready;
+	assign perf_state_req = state == Req;
+	assign perf_state_wait_resp = state == WaitResp;
+	assign perf_state_check = state == Check;
+	assign perf_state_done = state == Done;
 
 	assign start_va_canonical = is_sv39_canonical(va);
 
@@ -275,7 +285,7 @@ module sv39_ptw (
 			result_leaf_level <= 2'd0;
 			mem_outstanding <= 1'b0;
 		end else if (flush) begin
-			state <= (mem_outstanding || (state == Req && mem_ready)) ? DrainResp : Idle;
+			state <= (mem_outstanding || mem_fire) ? DrainResp : Idle;
 			req_va <= '0;
 			req_access_type <= PMP_ACCESS_READ;
 			req_priv_mode <= M;
@@ -291,7 +301,7 @@ module sv39_ptw (
 			result_leaf_valid <= 1'b0;
 			result_leaf_pte <= '0;
 			result_leaf_level <= 2'd0;
-			mem_outstanding <= mem_outstanding || (state == Req && mem_ready);
+			mem_outstanding <= mem_outstanding || mem_fire;
 		end else begin
 			case (state)
 				Idle: begin
@@ -315,7 +325,7 @@ module sv39_ptw (
 				end
 
 				Req: begin
-					if (mem_ready) begin
+					if (mem_fire) begin
 						if ($test$plusargs("TRACE_SV39")) begin
 							$display("[SV39] REQ level=%0d va=%h pte_addr=%h base_ppn=%h vpn=%h",
 								level, req_va, pte_addr, base_ppn, vpn);

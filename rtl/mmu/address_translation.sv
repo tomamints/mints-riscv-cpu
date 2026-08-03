@@ -75,6 +75,7 @@ module address_translation #(
 	Sv39Fault tlb_fault_detail;
 	logic tlb_lookup_valid;
 	logic tlb_refill_valid;
+	logic req_needs_ptw;
 
 	logic ptw_start;
 	logic ptw_ready;
@@ -94,6 +95,11 @@ module address_translation #(
 	logic ptw_mem_error_to_ptw;
 	logic [MEMBUS_DATA_WIDTH-1:0] ptw_mem_rdata_to_ptw;
 	logic ptw_pmp_fault_pending;
+	logic ptw_pmp_deny_fire;
+	logic ptw_perf_state_req;
+	logic ptw_perf_state_wait_resp;
+	logic ptw_perf_state_check;
+	logic ptw_perf_state_done;
 	UInt64 perf_req_count;
 	UInt64 perf_bare_count;
 	UInt64 perf_unsupported_mode_count;
@@ -113,8 +119,15 @@ module address_translation #(
 	UInt64 perf_refill_count;
 	UInt64 perf_superpage_refill_count;
 	UInt64 perf_flush_count;
+	UInt64 perf_ptw_req_wait_cycle;
+	UInt64 perf_ptw_rsp_wait_cycle;
+	UInt64 perf_ptw_check_cycle;
+	UInt64 perf_ptw_pmp_deny_count;
+	UInt64 perf_ptw_pmp_deny_cycle;
+	UInt64 perf_ptw_other_cycle;
 
-	assign req_ready = state == Idle;
+	assign req_needs_ptw = satp[63:60] == 4'd8 && req_priv_mode != M;
+	assign req_ready = state == Idle && (!req_needs_ptw || ptw_ready);
 	assign rsp_valid = state == Response;
 	assign rsp_pa = result_pa;
 	assign rsp_fault = result_fault;
@@ -123,13 +136,14 @@ module address_translation #(
 	assign rsp_fault_value = result_fault_value;
 
 	assign ptw_start = state == PtwWait && !ptw_started && ptw_ready;
-	assign tlb_lookup_valid = state == Idle && req_valid && satp[63:60] == 4'd8 && req_priv_mode != M;
+	assign tlb_lookup_valid = state == Idle && req_ready && req_valid && req_needs_ptw;
 	assign tlb_refill_valid = state == Refill && refill_leaf_valid;
 	assign ptw_mem_valid = ptw_mem_valid_raw && ptw_mem_pmp_allow;
-	assign ptw_mem_ready_to_ptw = ptw_mem_pmp_allow ? ptw_mem_ready : 1'b1;
+	assign ptw_mem_ready_to_ptw = ptw_mem_pmp_allow ? ptw_mem_ready : !flush;
 	assign ptw_mem_rvalid_to_ptw = ptw_mem_rvalid || ptw_pmp_fault_pending;
 	assign ptw_mem_error_to_ptw = ptw_mem_error || ptw_pmp_fault_pending;
 	assign ptw_mem_rdata_to_ptw = ptw_pmp_fault_pending ? '0 : ptw_mem_rdata;
+	assign ptw_pmp_deny_fire = ptw_mem_valid_raw && !ptw_mem_pmp_allow && ptw_mem_ready_to_ptw;
 
 	function automatic CsrCause page_fault_cause(input PmpAccessType access_type);
 		unique case (access_type)
@@ -211,7 +225,11 @@ module address_translation #(
 		.mem_ready(ptw_mem_ready_to_ptw),
 		.mem_rvalid(ptw_mem_rvalid_to_ptw),
 		.mem_error(ptw_mem_error_to_ptw),
-		.mem_rdata(ptw_mem_rdata_to_ptw)
+		.mem_rdata(ptw_mem_rdata_to_ptw),
+		.perf_state_req(ptw_perf_state_req),
+		.perf_state_wait_resp(ptw_perf_state_wait_resp),
+		.perf_state_check(ptw_perf_state_check),
+		.perf_state_done(ptw_perf_state_done)
 	);
 
 	always_ff @(posedge clk or negedge rst) begin
@@ -219,7 +237,7 @@ module address_translation #(
 			ptw_pmp_fault_pending <= 1'b0;
 		end else begin
 			ptw_pmp_fault_pending <= 1'b0;
-			if (ptw_mem_valid_raw && !ptw_mem_pmp_allow && ptw_mem_ready_to_ptw) begin
+			if (ptw_pmp_deny_fire) begin
 				ptw_pmp_fault_pending <= 1'b1;
 			end
 		end
@@ -246,6 +264,12 @@ module address_translation #(
 			perf_refill_count <= '0;
 			perf_superpage_refill_count <= '0;
 			perf_flush_count <= '0;
+			perf_ptw_req_wait_cycle <= '0;
+			perf_ptw_rsp_wait_cycle <= '0;
+			perf_ptw_check_cycle <= '0;
+			perf_ptw_pmp_deny_count <= '0;
+			perf_ptw_pmp_deny_cycle <= '0;
+			perf_ptw_other_cycle <= '0;
 		end else begin
 			if (tlb_flush) begin
 				perf_flush_count <= perf_flush_count + UInt64'(1);
@@ -273,6 +297,17 @@ module address_translation #(
 
 			if (state == PtwWait) begin
 				perf_miss_cycle_count <= perf_miss_cycle_count + UInt64'(1);
+				if (ptw_perf_state_req && ptw_mem_valid_raw && ptw_mem_pmp_allow && !ptw_mem_ready) begin
+					perf_ptw_req_wait_cycle <= perf_ptw_req_wait_cycle + UInt64'(1);
+				end else if (ptw_perf_state_wait_resp) begin
+					perf_ptw_rsp_wait_cycle <= perf_ptw_rsp_wait_cycle + UInt64'(1);
+				end else if (ptw_perf_state_check) begin
+					perf_ptw_check_cycle <= perf_ptw_check_cycle + UInt64'(1);
+				end else if (ptw_perf_state_req && ptw_mem_valid_raw && !ptw_mem_pmp_allow) begin
+					perf_ptw_pmp_deny_cycle <= perf_ptw_pmp_deny_cycle + UInt64'(1);
+				end else if (!ptw_done) begin
+					perf_ptw_other_cycle <= perf_ptw_other_cycle + UInt64'(1);
+				end
 			end
 			if (ptw_start) begin
 				perf_ptw_start_count <= perf_ptw_start_count + UInt64'(1);
@@ -295,6 +330,9 @@ module address_translation #(
 			end
 			if (ptw_mem_valid && ptw_mem_ready) begin
 				perf_ptw_mem_req_count <= perf_ptw_mem_req_count + UInt64'(1);
+			end
+			if (ptw_pmp_deny_fire) begin
+				perf_ptw_pmp_deny_count <= perf_ptw_pmp_deny_count + UInt64'(1);
 			end
 			if (state == PtwWait && ptw_mem_rvalid) begin
 				perf_ptw_mem_resp_count <= perf_ptw_mem_resp_count + UInt64'(1);
@@ -325,6 +363,14 @@ module address_translation #(
 				perf_miss_cycle_count,
 				perf_ptw_mem_req_count,
 				perf_ptw_mem_resp_count);
+			$display("[PERF-%s] ptw_wait req=%0d rsp=%0d check=%0d pmp_deny=%0d pmp_deny_cycles=%0d other=%0d",
+				PERF_NAME,
+				perf_ptw_req_wait_cycle,
+				perf_ptw_rsp_wait_cycle,
+				perf_ptw_check_cycle,
+				perf_ptw_pmp_deny_count,
+				perf_ptw_pmp_deny_cycle,
+				perf_ptw_other_cycle);
 			$display("[PERF-%s] leaf_l0_4k=%0d leaf_l1_2m=%0d leaf_l2_1g=%0d refill=%0d superpage_refill=%0d flush=%0d",
 				PERF_NAME,
 				perf_leaf_l0_count,
@@ -358,7 +404,7 @@ module address_translation #(
 		end else begin
 			unique case (state)
 				Idle: begin
-					if (req_valid) begin
+					if (req_valid && req_ready) begin
 						pending_va <= req_va;
 						pending_priv_mode <= req_priv_mode;
 						pending_access_type <= req_access_type;
@@ -416,6 +462,8 @@ module address_translation #(
 						refill_leaf_level <= ptw_leaf_level;
 						refill_leaf_valid <= ptw_leaf_valid && !ptw_fault;
 						state <= ptw_fault ? Response : Refill;
+					end else if (ptw_started && ptw_ready) begin
+						ptw_started <= 1'b0;
 					end
 				end
 
