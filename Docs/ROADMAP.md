@@ -254,11 +254,14 @@ ITLB:
   Linux 300Mで hit_rate_x1000=999
 
 DTLB:
-  wrapperは存在
-  memunitへの接続は次作業
+  接続済み
+  8 entry fully associative
+  Sv39 4KiB / 2MiB / 1GiB leaf refill対応
+  satp write / sfence.vma で全flush
+  Linux 300Mで hit_rate_x1000=999
 ```
 
-ITLB導入後の300M Linux測定:
+TLB導入後の300M Linux測定:
 
 ```text
 baseline no TLB/cache:
@@ -268,6 +271,10 @@ baseline no TLB/cache:
 ITLB fixed superpage refill:
   retired=53,176,454
   CPI=5.641
+
+ITLB + I-cache + DTLB:
+  retired=72,705,508
+  CPI=4.126
 ```
 
 ### Phase 2: Small I-cache
@@ -329,9 +336,9 @@ I-cache 4KiB 32B early restart:
 
 ### Phase 3: DTLB / Data Side
 
-次はDTLBを `memunit` 側へ接続します。
+DTLBは `memunit` 側へ接続済みです。
 
-初期方針:
+現在の構成:
 
 ```text
 DTLB: 8 entry fully associative
@@ -351,22 +358,134 @@ sfence.vma/satp: 全flush
 [PERF] dbus_req
 ```
 
-DTLB接続後にdata page walkが小さいと分かった場合は、小さいD-cacheへ進みます。
+Linux 300M測定では、DTLB hit率はほぼ99.9%です。data page walkは主因ではなくなったため、次はD-cacheへ進みました。
+
+### Phase 4: Small D-cache
+
+D-cacheは小型in-order CPU向けの保守的な構成から始めています。
+
+現在の構成:
+
+```text
+capacity: 4KiB
+line size: 32B
+lines: 128
+ways: 1 direct-mapped
+write policy: write-through
+store miss policy: no-write-allocate
+refill: 4 x 8B
+load refill: critical-word-first
+AMO/LR/SC: bypass
+MMIO/uncached: bypass
+```
+
+D-cacheは物理アドレス後段に置きます。
+
+```text
+LSU / memunit
+ -> DTLB / translation
+ -> D-cache
+ -> AMO unit
+ -> membus / MMIO / RAM
+```
+
+AMOはD-cacheをbypassし、対象lineがcache hitしていればlineをinvalidateします。単一core・write-through cacheとして、まず正しさを優先します。
+
+Linux 300M測定:
+
+```text
+ITLB + I-cache + DTLB:
+  retired=72,705,508
+  CPI=4.126
+  primary_mem=76,621,356
+
+with D-cache:
+  retired=72,689,380
+  CPI=4.127
+  primary_mem=76,657,761
+```
+
+D-cache単体では、300M全体では大きな改善は出ませんでした。ただし30Mのearly boot区間ではmem stallを減らし、CPI改善が見えています。
+
+### Phase 5: Store Buffer
+
+write-through storeでCPUが待つ時間を隠すため、D-cache内に小さいstore bufferを追加しました。
+
+現在の構成:
+
+```text
+depth: 4 entry
+対象: 通常RAM store
+完了条件: downstream readyでstore完了
+drain: 背後でwrite-through
+load: cache hitかつstore buffer内の未排出storeと同一8B beat/byte maskで重ならない場合は先行可能
+AMO/MMIO/uncached/load miss: store bufferが空になるまで待つ
+store-to-load forwarding: なし
+unrelated load bypass: cache hit loadのみ対応
+```
+
+30M測定では改善します。
+
+```text
+D-cache only:
+  retired=8,734,585
+  CPI=3.434
+  primary_mem=6,296,080
+
+store buffer fixed:
+  retired=8,927,963
+  CPI=3.360
+  primary_mem=5,743,485
+```
+
+一方、300M測定ではmem stall減少をifetch stall増加が相殺しています。
+
+```text
+D-cache/DTLB before store buffer:
+  retired=72,705,508
+  CPI=4.126
+  primary_mem=76,621,356
+  primary_ifetch=64,488,078
+
+store buffer:
+  retired=72,632,625
+  CPI=4.130
+  primary_mem=68,000,992
+  primary_ifetch=73,268,698
+```
+
+store buffer自体は動作していますが、単一RAM portをI-cache refillと奪い合います。
+そのため、store drainには低優先度sidebandを持たせ、通常時はI-cache refillを優先します。
+ただしstore buffer full時やload/AMO/MMIO/uncachedがbuffer emptyを待つ場合は、store drainを緊急扱いにします。
+
+さらに、cache hit loadについては、store buffer内の未排出storeとbyte範囲が重ならない場合だけ先行可能にしました。
+load missはline fillで古いRAM内容をcacheへ入れる危険があるため、まだstore buffer empty待ちです。
 
 ### Later Performance Work
 
 優先順位:
 
 ```text
-ITLB
-I-cache
-DTLB
-D-cache
-UART FIFO / interrupt reduction
-branch predictor
-store buffer
-mul/div latency
-clock frequency / critical path cleanup
+done:
+  ITLB
+  I-cache
+  DTLB
+  D-cache
+  store buffer initial
+  store drain priority control
+  unrelated load bypass
+
+next:
+  store-to-load forwarding
+  load-use / ALU forwarding cleanup
+  branch predictor / branch penalty reduction
+  D-cache write-back
+  RAM arbiter / I-D memory port pressure reduction
+
+later:
+  UART FIFO / interrupt reduction
+  mul/div latency
+  clock frequency / critical path cleanup
 ```
 
 性能改善は、必ずPhase 0のbaselineと比較します。

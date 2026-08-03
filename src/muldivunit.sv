@@ -175,12 +175,6 @@ module muldivunit(
 	assign du_dividend = generate_div_op1(is_op32,funct3, op1);
 	logic [DIV_WIDTH-1:0] du_divisor;
 	assign du_divisor = generate_div_op1(is_op32,funct3, op2);
-/*
-	always_ff @(posedge clk)begin
-		$display("op1 = %h du_dividend= %h" ,op1,du_dividend);
-		$display("op2 = %h du_divisor= %h" ,op2,du_divisor);
-	end
-*/
 	logic du_signed_overflow;
 	logic du_signed_divzero;
 	logic du_signed_error;

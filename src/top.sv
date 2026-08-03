@@ -99,6 +99,14 @@ module core_top #(
     logic [PLIC_NUM_SOURCES:0] plic_source_irq;
 
     logic memarb_last_i;
+    logic d_membus_low_priority;
+    logic dcache_mem_low_priority;
+    logic memarb_select_d;
+    logic memarb_issue_is_i;
+    UInt64 perf_memarb_i_grant_count;
+    UInt64 perf_memarb_d_grant_count;
+    UInt64 perf_memarb_d_low_grant_count;
+    UInt64 perf_memarb_d_low_defer_count;
 
     always_comb begin
         plic_source_irq = '0;
@@ -117,21 +125,6 @@ module core_top #(
             if (dbg_membus.wen) begin
                 // (A) printf 出力（上位20bitが 01010h）
                 if (dbg_membus.wdata[MEMBUS_DATA_WIDTH-1 -: 20] == 20'h01010) begin
-                    // ====== 入力可視化 ======
-
-                    logic [7:0] ch;
-                    ch = dbg_membus.wdata[7:0];
-
-/*
-                    if (ch == 8'h00) begin
-                        $display("[DEBUG-IO] input = NONE");
-                    end else begin
-                        $display("[DEBUG-IO] input = '%c' (0x%02h)", ch, ch);
-                    end
-                    */
-
-                    // =========================
-
                     $write("%c", dbg_membus.wdata[7:0]);
                     $fflush();
                 end
@@ -157,6 +150,29 @@ module core_top #(
         end
     end
 
+    always_ff @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            perf_memarb_i_grant_count <= '0;
+            perf_memarb_d_grant_count <= '0;
+            perf_memarb_d_low_grant_count <= '0;
+            perf_memarb_d_low_defer_count <= '0;
+        end else begin
+            if (mmio_membus.valid && mmio_membus.ready) begin
+                if (memarb_issue_is_i) begin
+                    perf_memarb_i_grant_count <= perf_memarb_i_grant_count + UInt64'(1);
+                end else begin
+                    perf_memarb_d_grant_count <= perf_memarb_d_grant_count + UInt64'(1);
+                    if (d_membus_low_priority) begin
+                        perf_memarb_d_low_grant_count <= perf_memarb_d_low_grant_count + UInt64'(1);
+                    end
+                end
+            end
+            if (i_membus.valid && d_membus.valid && d_membus_low_priority) begin
+                perf_memarb_d_low_defer_count <= perf_memarb_d_low_defer_count + UInt64'(1);
+            end
+        end
+    end
+
 
 
 
@@ -166,51 +182,25 @@ module core_top #(
         if (!rst) begin
             memarb_last_i     <= 1'b0;
         end else if (mmio_membus.ready && mmio_membus.valid) begin
-            memarb_last_i     <= !d_membus.valid;
+            memarb_last_i     <= memarb_issue_is_i;
         end
     end
-/*
-    always_ff @(posedge clk) begin
-        $display("[TOP-MMIO] mmio_v=%b mmio_rdy=%b mmio_rvalid=%b mmio_addr=%h last_i=%b last_addr=%h i_v=%b i_rdy=%b d_v=%b d_rdy=%b memarb_ready=%b",
-            mmio_membus.valid,
-            mmio_membus.ready,
-            mmio_membus.rvalid,
-            mmio_membus.addr,
-            memarb_last_i,
-            memarb_last_iaddr,
-            i_membus.valid,
-            i_membus.ready,
-            d_membus.valid,
-            d_membus.ready,
-            mmio_membus.ready
-        );
-        if (mmio_membus.valid && mmio_membus.ready) begin
-            $display("[TOP-MMIO] ISSUE addr=%h wen=%b source=%s",
-                mmio_membus.addr,
-                mmio_membus.wen,
-                d_membus.valid ? "DATA" : "IF"
-            );
-        end
-        if (mmio_membus.rvalid) begin
-            $display("[TOP-MMIO] RESP last_i=%b data=%h",
-                memarb_last_i,
-                mmio_membus.rdata
-            );
-        end
-    end
-*/
+
     // I/D → MMIO（要求多重化 & 応答戻し）
     always_comb begin
-        i_membus.ready  = mmio_membus.ready && !d_membus.valid;
+        memarb_select_d = d_membus.valid && !(d_membus_low_priority && i_membus.valid);
+        memarb_issue_is_i = i_membus.valid && !memarb_select_d;
+
+        i_membus.ready  = mmio_membus.ready && !memarb_select_d;
         i_membus.rvalid = mmio_membus.rvalid && memarb_last_i;
         i_membus.rdata  = mmio_membus.rdata;
 
-        d_membus.ready  = mmio_membus.ready;
+        d_membus.ready  = mmio_membus.ready && memarb_select_d;
         d_membus.rvalid = mmio_membus.rvalid && !memarb_last_i;
         d_membus.rdata  = mmio_membus.rdata;
 
         mmio_membus.valid = i_membus.valid | d_membus.valid;
-        if (d_membus.valid) begin
+        if (memarb_select_d) begin
             mmio_membus.addr  = d_membus.addr;
             mmio_membus.wen   = d_membus.wen;
             mmio_membus.wdata = d_membus.wdata;
@@ -222,21 +212,6 @@ module core_top #(
             mmio_membus.wmask = 'x;
         end
     end
-
-/*
-    // mmio <> RAM
-    always_comb begin
-        ram_membus.valid       = mmio_ram_membus.valid;
-        mmio_ram_membus.ready  = ram_membus.ready;
-        ram_membus.addr        = addr_to_ramaddr(mmio_ram_membus.addr);
-        ram_membus.wen         = mmio_ram_membus.wen;
-        ram_membus.wdata       = mmio_ram_membus.wdata;
-        ram_membus.wmask       = mmio_ram_membus.wmask;
-        mmio_ram_membus.rvalid = ram_membus.rvalid;
-        mmio_ram_membus.rdata  = ram_membus.rdata;
-    end
-*/
-
 
     // arbiter後のMembus → RAM(=membus_if) 変換
     always_comb begin
@@ -317,6 +292,7 @@ module core_top #(
         .clk        (clk),
         .rst        (rst),
         .invalidate (1'b0),
+        .mem_low_priority(dcache_mem_low_priority),
         .cpu        (d_membus_core),
         .mem        (dcache_membus_core)
     );
@@ -324,6 +300,8 @@ module core_top #(
     amounit amou (
         .clk    (clk),
         .rst    (rst),
+        .slave_low_priority(dcache_mem_low_priority),
+        .master_low_priority(d_membus_low_priority),
         .slave  (dcache_membus_core),
         .master (d_membus)
     );
@@ -407,5 +385,15 @@ module core_top #(
         .external_seip(plic_seip),
         .aclint   (aclint_core_bus)
     );
+
+    final begin
+        if ($test$plusargs("PERF_SUMMARY")) begin
+            $display("[PERF-MEMARB] i_grant=%0d d_grant=%0d d_low_grant=%0d d_low_defer=%0d",
+                perf_memarb_i_grant_count,
+                perf_memarb_d_grant_count,
+                perf_memarb_d_low_grant_count,
+                perf_memarb_d_low_defer_count);
+        end
+    end
 
 endmodule : core_top

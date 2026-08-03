@@ -225,6 +225,9 @@ baseline no TLB/cache         43,361,299  6.918    0.144    117,731,783  80,757,
 ITLB initial broken path      18,368,225  16.332   0.061    20,994,446   232,922,918
 ITLB fixed superpage refill   53,176,454  5.641    0.177    151,741,249  28,921,100
 I-cache 4KiB 32B early restart 56,871,866 5.275    0.189    144,670,072  29,112,305
+ITLB+I-cache+DTLB             72,705,508  4.126    0.242    76,621,356   64,488,078
+D-cache 4KiB WT no-alloc      72,689,380  4.127    0.242    76,657,761   64,487,299
+Store buffer 4-entry          72,632,625  4.130    0.242    68,000,992   73,268,698
 ```
 
 読み取り:
@@ -243,6 +246,22 @@ I-cache 4KiB 32B early restart:
   retiredがbaseline比で約31.2%増加。
   CPIは 6.918 -> 5.275。
   ITLB修正版からはretiredが約6.9%増加。
+
+ITLB+I-cache+DTLB:
+  data側translation cacheをmemunitへ接続。
+  DTLB hit率はLinux 300Mでほぼ99.9%。
+  retiredはbaseline比で約67.7%増加。
+  CPIは 6.918 -> 4.126。
+
+D-cache 4KiB WT no-alloc:
+  32B line / direct-mapped / write-through / no-write-allocate。
+  300M全体ではDTLB後から大きなCPI改善なし。
+  30M early bootではmem stall減少とCPI改善を確認。
+
+Store buffer 4-entry:
+  通常RAM storeをD-cache内bufferへenqueueし、downstream readyで完了扱い。
+  30M early bootでは CPI 3.434 -> 3.360、primary_mem 6,296,080 -> 5,743,485。
+  300M全体ではprimary_memは減るがprimary_ifetchが増え、CPIはほぼ相殺。
 ```
 
 現在のI-cache構成:
@@ -295,31 +314,34 @@ fill_hit=4,405,593
 現時点の主なボトルネック:
 
 ```text
-primary_mem = 144,670,072
-dbus_req    = 37,873,624
-load        = 11,329,674
-store       = 6,488,419
+primary_mem    = 68,000,992
+primary_ifetch = 73,268,698
+data_hazard    = 16,521,828
 ```
 
-命令側はITLB + I-cacheで改善したため、次の性能改善の本命はdata sideです。
+命令側はITLB + I-cacheで改善し、data側はDTLB + D-cache + store bufferまで入っています。
+store buffer drainは低優先度要求としてRAM arbiterへ渡し、I-cache refillを優先できます。
+また、cache hit loadについては、store buffer内の未排出storeと同じ8B beat/byte maskで重ならない場合だけ、
+store bufferを空にせず先に実行できます。
 
 ```text
 next:
-  1. DTLBをmemunitへ接続
-  2. DTLB counterでdata page walk頻度を確認
-  3. 小さいD-cacheまたはload/store path改善へ進む
+  1. store-to-load forwarding
+  2. load-use / ALU forwarding cleanup
+  3. branch penalty reduction
 ```
 
 ## Current Limitations
 
-現時点で、TLBとI-cacheの概要は `+PERF_SUMMARY` で見えます。
+現時点で、TLB、I-cache、D-cache、store bufferの概要は `+PERF_SUMMARY` で見えます。
 まだ見えていない、または粗いものは次です。
 
 ```text
-D-cache hit/miss
 PTW wait cycleの詳細内訳
 MMIO device別access count
 branch mispredict
+store buffer conflict / load wait reason
+I/D RAM arbiter pressure
 ```
 
 現在のCPIは、リセット解除からシミュレーション終了までの全体平均です。特定区間だけを測る `perf_enable/perf_clear` や専用MMIO制御は次段階で追加します。
@@ -334,6 +356,11 @@ perf_fetch_fifo_full_cycle
 perf_issue_fifo_empty_cycle
 perf_mem_load_stall_cycle
 perf_mem_store_stall_cycle
+perf_storebuf_load_wait_cycle
+perf_storebuf_forward_count
+perf_storebuf_load_bypass_count
+perf_ram_arb_i_grant_count
+perf_ram_arb_d_grant_count
 perf_mmio_req_count
 perf_interrupt_count
 perf_enable / perf_clear

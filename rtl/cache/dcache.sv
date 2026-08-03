@@ -7,6 +7,7 @@ module dcache #(
 	input logic clk,
 	input logic rst,
 	input logic invalidate,
+	output logic mem_low_priority,
 	core_data_if.slave cpu,
 	core_data_if.master mem
 );
@@ -68,8 +69,14 @@ module dcache #(
 	logic [STORE_BUFFER_COUNT_WIDTH-1:0] store_buffer_count;
 	logic store_buffer_issue_valid;
 	logic store_buffer_issue_fire;
+	logic store_buffer_full;
 	logic store_buffer_full_after_issue;
 	logic store_buffer_empty;
+	logic cacheable_store_can_enqueue_without_drain;
+	logic cacheable_load_can_bypass_store_buffer;
+	logic cpu_store_buffer_overlap;
+	logic [(MEMBUS_DATA_WIDTH/8)-1:0] cpu_load_mask;
+	logic store_buffer_drain_urgent;
 	logic fill_allocate;
 
 	logic [INDEX_WIDTH-1:0] cpu_index;
@@ -92,6 +99,8 @@ module dcache #(
 	UInt64 perf_store_buffer_enq_count;
 	UInt64 perf_store_buffer_drain_count;
 	UInt64 perf_store_buffer_full_stall_count;
+	UInt64 perf_store_buffer_load_bypass_count;
+	UInt64 perf_store_buffer_load_wait_count;
 	UInt64 perf_mem_req_count;
 	UInt64 perf_mem_resp_count;
 	UInt64 perf_flush_count;
@@ -112,6 +121,44 @@ module dcache #(
 		return (new_data & expanded) | (old_data & ~expanded);
 	endfunction
 
+	function automatic logic [(MEMBUS_DATA_WIDTH/8)-1:0] access_byte_mask(
+		input logic [2:0] funct3,
+		input logic [2:0] offset
+	);
+		logic [3:0] size;
+		logic [3:0] available;
+		logic [3:0] bytes;
+		logic [(MEMBUS_DATA_WIDTH/8)-1:0] base_mask;
+
+		size = 4'(1 << funct3[1:0]);
+		available = 4'd8 - {1'b0, offset};
+		bytes = (size < available) ? size : available;
+		base_mask = '0;
+		for (int unsigned i = 0; i < MEMBUS_DATA_WIDTH / 8; i++) begin
+			if (i < bytes) begin
+				base_mask[i] = 1'b1;
+			end
+		end
+		return base_mask << offset;
+	endfunction
+
+	function automatic logic store_buffer_overlaps(
+		input Addr addr,
+		input logic [(MEMBUS_DATA_WIDTH/8)-1:0] mask
+	);
+		logic [STORE_BUFFER_INDEX_WIDTH-1:0] idx;
+
+		store_buffer_overlaps = 1'b0;
+		for (int unsigned i = 0; i < STORE_BUFFER_DEPTH; i++) begin
+			idx = store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(i);
+			if (i < store_buffer_count &&
+				store_buffer_addr[idx][XLEN-1:3] == addr[XLEN-1:3] &&
+				(store_buffer_wmask[idx] & mask) != '0) begin
+				store_buffer_overlaps = 1'b1;
+			end
+		end
+	endfunction
+
 	assign cpu_line_addr = {cpu.addr[XLEN-1:LINE_OFFSET_WIDTH], {LINE_OFFSET_WIDTH{1'b0}}};
 	assign cpu_index = cpu.addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
 	assign cpu_tag = cpu.addr[XLEN-1 -: TAG_WIDTH];
@@ -119,17 +166,36 @@ module dcache #(
 	assign cpu_ram_access = is_ram(cpu.addr);
 	assign cpu_cacheable = cpu_ram_access && !cpu.is_amo;
 	assign cache_hit = cpu_cacheable && valid[cpu_index] && tags[cpu_index] == cpu_tag;
-	assign store_buffer_issue_valid = state == Idle && store_buffer_count != '0;
+	assign store_buffer_full = store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH);
+	assign cpu_load_mask = access_byte_mask(cpu.funct3, cpu.addr[2:0]);
+	assign cpu_store_buffer_overlap = store_buffer_overlaps(cpu.addr, cpu_load_mask);
+	assign cacheable_store_can_enqueue_without_drain =
+		cpu.valid && cpu_cacheable && cpu.wen && !store_buffer_full;
+	assign cacheable_load_can_bypass_store_buffer =
+		cpu.valid &&
+		cpu_cacheable &&
+		!cpu.wen &&
+		cache_hit &&
+		!cpu_store_buffer_overlap;
+	assign store_buffer_issue_valid =
+		state == Idle &&
+		store_buffer_count != '0 &&
+		!cacheable_store_can_enqueue_without_drain &&
+		!cacheable_load_can_bypass_store_buffer;
 	assign store_buffer_issue_fire = store_buffer_issue_valid && mem.ready;
 	assign store_buffer_full_after_issue =
-		store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH) &&
+		store_buffer_full &&
 		!store_buffer_issue_fire;
 	assign store_buffer_empty = store_buffer_count == '0;
+	assign store_buffer_drain_urgent =
+		store_buffer_full ||
+		(cpu.valid && !(cpu_cacheable && cpu.wen));
 
 	assign cpu.ready =
 		state == Idle &&
 		!rsp_valid_q &&
-		((cpu_cacheable && cpu.wen) ? !store_buffer_full_after_issue : store_buffer_empty);
+		((cpu_cacheable && cpu.wen) ? !store_buffer_full_after_issue :
+			(cacheable_load_can_bypass_store_buffer || store_buffer_empty));
 
 	always_comb begin
 		cpu.rvalid = rsp_valid_q;
@@ -145,6 +211,7 @@ module dcache #(
 		mem.rl = 1'b0;
 		mem.amoop = AMOOp'(0);
 		mem.funct3 = 3'b011;
+		mem_low_priority = 1'b0;
 
 		unique case (state)
 			Idle: begin
@@ -155,6 +222,7 @@ module dcache #(
 					mem.wdata = store_buffer_wdata[store_buffer_head];
 					mem.wmask = store_buffer_wmask[store_buffer_head];
 					mem.funct3 = store_buffer_funct3[store_buffer_head];
+					mem_low_priority = !store_buffer_drain_urgent;
 				end else if (cpu.valid && cpu.ready) begin
 					if (cpu.is_amo || !cpu_cacheable) begin
 						mem.valid = 1'b1;
@@ -251,6 +319,8 @@ module dcache #(
 			perf_store_buffer_enq_count <= '0;
 			perf_store_buffer_drain_count <= '0;
 			perf_store_buffer_full_stall_count <= '0;
+			perf_store_buffer_load_bypass_count <= '0;
+			perf_store_buffer_load_wait_count <= '0;
 			perf_mem_req_count <= '0;
 			perf_mem_resp_count <= '0;
 			perf_flush_count <= '0;
@@ -272,6 +342,13 @@ module dcache #(
 
 			if (state == Idle && cpu.valid && cpu_cacheable && cpu.wen && store_buffer_full_after_issue) begin
 				perf_store_buffer_full_stall_count <= perf_store_buffer_full_stall_count + UInt64'(1);
+			end
+			if (state == Idle && cpu.valid && cpu_cacheable && !cpu.wen && store_buffer_count != '0) begin
+				if (cacheable_load_can_bypass_store_buffer) begin
+					perf_store_buffer_load_bypass_count <= perf_store_buffer_load_bypass_count + UInt64'(1);
+				end else begin
+					perf_store_buffer_load_wait_count <= perf_store_buffer_load_wait_count + UInt64'(1);
+				end
 			end
 
 			if (invalidate) begin
@@ -452,6 +529,9 @@ module dcache #(
 				STORE_BUFFER_DEPTH,
 				store_buffer_count,
 				1'b0);
+			$display("[PERF-STOREBUF-LOAD] bypass=%0d wait=%0d",
+				perf_store_buffer_load_bypass_count,
+				perf_store_buffer_load_wait_count);
 		end
 	end
 

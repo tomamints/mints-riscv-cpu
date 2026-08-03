@@ -4,6 +4,8 @@ module amounit (
     input  logic           clk,
     input  logic           rst,   // active-low reset
     core_data_if.slave     slave,
+    input  logic           slave_low_priority,
+    output logic           master_low_priority,
     Membus.master          master
 );
 
@@ -26,6 +28,7 @@ State state;
 // inst slave_saved: core_data_if;
 // ======================================================
 core_data_if slave_saved();
+logic slave_saved_low_priority;
 
 // ======================================================
 // lr/sc variables (Veryl: var)
@@ -45,6 +48,7 @@ function automatic void reset_master();
     master.wen   = 1'b0;
     master.wdata = '0;
     master.wmask = '0;
+    master_low_priority = 1'b0;
 endfunction
 
 
@@ -55,13 +59,15 @@ function automatic void assign_master(
     input Addr  addr,
     input logic wen,
     input UIntX wdata,
-    input logic [$bits(UIntX)/8-1:0] wmask
+    input logic [$bits(UIntX)/8-1:0] wmask,
+    input logic low_priority
 );
     master.valid = 1'b1;
     master.addr  = addr;
     master.wen   = wen;
     master.wdata = wdata;
     master.wmask = wmask;
+    master_low_priority = low_priority;
 endfunction
 
 
@@ -177,7 +183,7 @@ function automatic void accept_request_comb();
         if (slave.is_amo) begin
             unique case (slave.amoop)
                 LR: begin
-                    assign_master(slave.addr, 1'b0, '0, '0);
+                    assign_master(slave.addr, 1'b0, '0, '0, 1'b0);
                 end
 
                 SC: begin
@@ -186,19 +192,20 @@ function automatic void accept_request_comb();
                             slave.addr,
                             1'b1,
                             slave.wdata,
-                            slave.wmask
+                            slave.wmask,
+                            1'b0
                         );
                     end
                 end
 
                 default: begin
                     if (slave.is_Zaamo()) begin
-                        assign_master(slave.addr, 1'b0, '0, '0);
+                        assign_master(slave.addr, 1'b0, '0, '0, 1'b0);
                     end
                 end
             endcase
         end else begin
-            assign_master(slave.addr, slave.wen, slave.wdata, slave.wmask);
+            assign_master(slave.addr, slave.wen, slave.wdata, slave.wmask, slave_low_priority);
         end
     end
 endfunction
@@ -262,13 +269,14 @@ always_comb begin
         WaitReady: begin
             if (slave_saved.is_amo) begin
                 unique case (slave_saved.amoop)
-                    LR: assign_master(slave_saved.addr, 1'b0, '0, '0);
+                    LR: assign_master(slave_saved.addr, 1'b0, '0, '0, 1'b0);
 
                     SC: assign_master(
                         slave_saved.addr,
                         1'b1,
                         slave_saved.wdata,
-                        slave_saved.wmask
+                        slave_saved.wmask,
+                        1'b0
                     );
 
                     default: begin end
@@ -278,7 +286,8 @@ always_comb begin
                     slave_saved.addr,
                     slave_saved.wen,
                     slave_saved.wdata,
-                    slave_saved.wmask
+                    slave_saved.wmask,
+                    slave_saved_low_priority
                 );
             end
         end
@@ -293,7 +302,7 @@ always_comb begin
         end
 
         AMOLoadReady: begin
-            assign_master(slave_saved.addr, 1'b0, '0, '0);
+            assign_master(slave_saved.addr, 1'b0, '0, '0, 1'b0);
         end
 
         AMOLoadValid,
@@ -316,7 +325,8 @@ always_comb begin
                 slave_saved.addr,
                 1'b1,
                 wdata_local,
-                slave_saved.wmask
+                slave_saved.wmask,
+                1'b0
             );
         end
 
@@ -348,6 +358,7 @@ always_ff @(posedge clk or negedge rst) begin
         slave_saved.aq     <= 1'b0;
         slave_saved.rl     <= 1'b0;
         slave_saved.funct3 <= 3'b000;
+        slave_saved_low_priority <= 1'b0;
         is_addr_reserved   <= 1'b0;
         reserved_addr      <= '0;
         zaamo_fetched_data <= '0;
@@ -375,6 +386,7 @@ always_ff @(posedge clk or negedge rst) begin
                     slave_saved.aq     <= slave.aq;
                     slave_saved.rl     <= slave.rl;
                     slave_saved.funct3 <= slave.funct3;
+                    slave_saved_low_priority <= slave_low_priority;
 
                     if (slave.is_amo) begin
                         unique case (slave.amoop)
@@ -444,6 +456,7 @@ always_ff @(posedge clk or negedge rst) begin
                         slave_saved.aq     <= slave.aq;
                         slave_saved.rl     <= slave.rl;
                         slave_saved.funct3 <= slave.funct3;
+                        slave_saved_low_priority <= slave_low_priority;
 
                         if (slave.is_amo) begin
                             unique case (slave.amoop)
@@ -498,6 +511,7 @@ always_ff @(posedge clk or negedge rst) begin
                         slave_saved.aq     <= slave.aq;
                         slave_saved.rl     <= slave.rl;
                         slave_saved.funct3 <= slave.funct3;
+                        slave_saved_low_priority <= slave_low_priority;
 
                         if (slave.is_amo) begin
                             unique case (slave.amoop)
@@ -550,6 +564,7 @@ always_ff @(posedge clk or negedge rst) begin
                     slave_saved.aq     <= slave.aq;
                     slave_saved.rl     <= slave.rl;
                     slave_saved.funct3 <= slave.funct3;
+                    slave_saved_low_priority <= slave_low_priority;
 
                     if (slave.is_amo) begin
                         unique case (slave.amoop)
@@ -632,6 +647,7 @@ always_ff @(posedge clk or negedge rst) begin
                         slave_saved.aq     <= slave.aq;
                         slave_saved.rl     <= slave.rl;
                         slave_saved.funct3 <= slave.funct3;
+                        slave_saved_low_priority <= slave_low_priority;
 
                         if (slave.is_amo) begin
                             unique case (slave.amoop)

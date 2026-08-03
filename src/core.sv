@@ -99,18 +99,6 @@ module core (
 		i_membus.next_pc   = control_hazard_pc_next;
 	end
 
-/*
-	always_ff @(posedge clk) begin
-		if (if_fifo_rvalid) begin
-			$display("[ID] RECEIVED inst(bits)=%h pc=%h",
-				if_fifo_rdata.bits,
-				if_fifo_rdata.addr
-			);
-		end
-	end
-*/
-
-
 ////////////////// ID Stage /////////////////////
 	logic ids_valid = i_membus.rvalid;
 	Addr ids_pc = i_membus.raddr;
@@ -188,22 +176,6 @@ module core (
 	assign exs_mem_data_hazard = mems_valid && mems_ctrl.rwb_en && (mems_rd_addr != 5'd0) && ((mems_rd_addr == exs_rs1_addr) || (mems_rd_addr == exs_rs2_addr));
 	assign exs_wb_data_hazard = wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && (wbs_rd_addr == exs_rs1_addr || wbs_rd_addr == exs_rs2_addr);
 	assign exs_data_hazard = exs_mem_data_hazard || exs_wb_data_hazard;
-/*
-	always_ff @(posedge clk)begin
-		$display("DECODE: inst=%h itype=%0d is_muldiv=%b funct7=%0d imm=%h",
-         ids_inst_bits,
-         ids_ctrl.itype,
-         ids_ctrl.is_muldiv,
-         ids_ctrl.funct7,
-         ids_imm);
-		$display("mem_data_hazard = %d",exs_mem_data_hazard);
-		$display("mems_valid = %d",mems_valid);
-		$display("mems_ctrl.rwb_en = %d",mems_ctrl.rwb_en);
-		$display("mems_rd_addr = %d",mems_rd_addr);
-		$display("exs_rs1_addr = %d",exs_rs1_addr);
-		$display("compare = %d",mems_rd_addr == exs_rs1_addr);
-	end
-*/
 	//ALU
 
 	UIntX exs_op1,exs_op2,exs_alu_result;
