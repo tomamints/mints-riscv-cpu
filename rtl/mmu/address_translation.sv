@@ -109,6 +109,7 @@ module address_translation #(
 	logic ptw_perf_state_wait_resp;
 	logic ptw_perf_state_check;
 	logic ptw_perf_state_done;
+
 	UInt64 perf_req_count;
 	UInt64 perf_bare_count;
 	UInt64 perf_unsupported_mode_count;
@@ -140,50 +141,164 @@ module address_translation #(
 	UInt64 perf_fast_hit_fault_count;
 	UInt64 perf_held_response_count;
 
-	assign req_needs_ptw = satp[63:60] == 4'd8 && req_priv_mode != M;
-	assign req_ready = state == Idle && (!req_needs_ptw || ptw_ready);
-	assign fast_rsp_is_bare = satp[63:60] == 4'd0 || req_priv_mode == M;
-	assign fast_rsp_is_unsupported = satp[63:60] != 4'd8 && !fast_rsp_is_bare;
-	assign fast_rsp_is_tlb_hit = req_needs_ptw && tlb_hit;
+	assign req_needs_ptw =
+		satp[63:60] == 4'd8 &&
+		req_priv_mode != M;
+
+	assign fast_rsp_is_bare =
+		satp[63:60] == 4'd0 ||
+		req_priv_mode == M;
+
+	assign fast_rsp_is_unsupported =
+		satp[63:60] != 4'd8 &&
+		!fast_rsp_is_bare;
+
+	/*
+	 * req_readyを決めるためにtlb_hitを使用する。
+	 * そのため、TLB lookup自体をreq_readyへ依存させてはいけない。
+	 */
+	assign tlb_lookup_valid =
+		state == Idle &&
+		req_valid &&
+		req_needs_ptw &&
+		!flush &&
+		!tlb_flush;
+
+	assign fast_rsp_is_tlb_hit =
+		req_needs_ptw &&
+		tlb_hit;
+
+	/*
+	 * Bare/M-modeまたはunsupported mode:
+	 *   PTWは不要なので、Idleなら受理できる。
+	 *
+	 * Sv39でTLB hit:
+	 *   PTWがbusyまたはflush後の応答をdrain中でも受理できる。
+	 *
+	 * Sv39でTLB miss:
+	 *   PTWがreadyの場合にだけ受理する。
+	 */
+	assign req_ready =
+		state == Idle &&
+		!flush &&
+		!tlb_flush &&
+		(
+			!req_needs_ptw ||
+			tlb_hit ||
+			ptw_ready
+		);
+
 	assign fast_rsp_valid =
 		state == Idle &&
 		req_valid &&
 		req_ready &&
-		(fast_rsp_is_bare || fast_rsp_is_unsupported || fast_rsp_is_tlb_hit);
+		(
+			fast_rsp_is_bare ||
+			fast_rsp_is_unsupported ||
+			fast_rsp_is_tlb_hit
+		);
+
 	assign fast_rsp_pa =
 		fast_rsp_is_bare ? req_va :
 		fast_rsp_is_tlb_hit ? tlb_pa :
 		'0;
-	assign fast_rsp_fault = fast_rsp_is_unsupported || (fast_rsp_is_tlb_hit && tlb_fault);
+
+	assign fast_rsp_fault =
+		fast_rsp_is_unsupported ||
+		(fast_rsp_is_tlb_hit && tlb_fault);
+
 	assign fast_rsp_fault_detail =
 		fast_rsp_is_unsupported ? SV39_FAULT_ADDR_INVALID :
 		(fast_rsp_is_tlb_hit && tlb_fault) ? tlb_fault_detail :
 		SV39_FAULT_NONE;
+
 	assign fast_rsp_fault_cause =
-		fast_rsp_fault ? page_fault_cause(req_access_type) : CsrCause'(0);
+		fast_rsp_fault ?
+			page_fault_cause(req_access_type) :
+			CsrCause'(0);
+
 	assign fast_rsp_fault_value = req_va;
-	assign rsp_valid = fast_rsp_valid || state == Response;
-	assign rsp_pa = fast_rsp_valid ? fast_rsp_pa : result_pa;
-	assign rsp_fault = fast_rsp_valid ? fast_rsp_fault : result_fault;
-	assign rsp_fault_detail = fast_rsp_valid ? fast_rsp_fault_detail : result_fault_detail;
-	assign rsp_fault_cause = fast_rsp_valid ? fast_rsp_fault_cause : result_fault_cause;
-	assign rsp_fault_value = fast_rsp_valid ? fast_rsp_fault_value : result_fault_value;
 
-	assign ptw_start = state == PtwWait && !ptw_started && ptw_ready;
-	assign tlb_lookup_valid = state == Idle && req_ready && req_valid && req_needs_ptw;
-	assign tlb_refill_valid = state == Refill && refill_leaf_valid;
-	assign ptw_mem_valid = ptw_mem_valid_raw && ptw_mem_pmp_allow;
-	assign ptw_mem_ready_to_ptw = ptw_mem_pmp_allow ? ptw_mem_ready : !flush;
-	assign ptw_mem_rvalid_to_ptw = ptw_mem_rvalid || ptw_pmp_fault_pending;
-	assign ptw_mem_error_to_ptw = ptw_mem_error || ptw_pmp_fault_pending;
-	assign ptw_mem_rdata_to_ptw = ptw_pmp_fault_pending ? '0 : ptw_mem_rdata;
-	assign ptw_pmp_deny_fire = ptw_mem_valid_raw && !ptw_mem_pmp_allow && ptw_mem_ready_to_ptw;
+	assign rsp_valid =
+		fast_rsp_valid ||
+		state == Response;
 
-	function automatic CsrCause page_fault_cause(input PmpAccessType access_type);
+	assign rsp_pa =
+		fast_rsp_valid ?
+			fast_rsp_pa :
+			result_pa;
+
+	assign rsp_fault =
+		fast_rsp_valid ?
+			fast_rsp_fault :
+			result_fault;
+
+	assign rsp_fault_detail =
+		fast_rsp_valid ?
+			fast_rsp_fault_detail :
+			result_fault_detail;
+
+	assign rsp_fault_cause =
+		fast_rsp_valid ?
+			fast_rsp_fault_cause :
+			result_fault_cause;
+
+	assign rsp_fault_value =
+		fast_rsp_valid ?
+			fast_rsp_fault_value :
+			result_fault_value;
+
+	assign ptw_start =
+		state == PtwWait &&
+		!ptw_started &&
+		ptw_ready;
+
+	assign tlb_refill_valid =
+		state == Refill &&
+		refill_leaf_valid;
+
+	assign ptw_mem_valid =
+		ptw_mem_valid_raw &&
+		ptw_mem_pmp_allow;
+
+	assign ptw_mem_ready_to_ptw =
+		ptw_mem_pmp_allow ?
+			ptw_mem_ready :
+			!flush;
+
+	assign ptw_mem_rvalid_to_ptw =
+		ptw_mem_rvalid ||
+		ptw_pmp_fault_pending;
+
+	assign ptw_mem_error_to_ptw =
+		ptw_mem_error ||
+		ptw_pmp_fault_pending;
+
+	assign ptw_mem_rdata_to_ptw =
+		ptw_pmp_fault_pending ?
+			'0 :
+			ptw_mem_rdata;
+
+	assign ptw_pmp_deny_fire =
+		ptw_mem_valid_raw &&
+		!ptw_mem_pmp_allow &&
+		ptw_mem_ready_to_ptw;
+
+	function automatic CsrCause page_fault_cause(
+		input PmpAccessType access_type
+	);
 		unique case (access_type)
-			PMP_ACCESS_EXEC:  return INSTRUCTION_PAGE_FAULT;
-			PMP_ACCESS_WRITE: return STORE_AMO_PAGE_FAULT;
-			default:          return LOAD_PAGE_FAULT;
+			PMP_ACCESS_EXEC: begin
+				return INSTRUCTION_PAGE_FAULT;
+			end
+
+			PMP_ACCESS_WRITE: begin
+				return STORE_AMO_PAGE_FAULT;
+			end
+
+			default: begin
+				return LOAD_PAGE_FAULT;
+			end
 		endcase
 	endfunction
 
@@ -271,6 +386,7 @@ module address_translation #(
 			ptw_pmp_fault_pending <= 1'b0;
 		end else begin
 			ptw_pmp_fault_pending <= 1'b0;
+
 			if (ptw_pmp_deny_fire) begin
 				ptw_pmp_fault_pending <= 1'b1;
 			end
@@ -311,94 +427,210 @@ module address_translation #(
 			perf_held_response_count <= '0;
 		end else begin
 			if (tlb_flush) begin
-				perf_flush_count <= perf_flush_count + UInt64'(1);
+				perf_flush_count <=
+					perf_flush_count +
+					UInt64'(1);
 			end
 
 			if (state == Idle && req_valid && req_ready) begin
-				perf_req_count <= perf_req_count + UInt64'(1);
+				perf_req_count <=
+					perf_req_count +
+					UInt64'(1);
 
-				if (satp[63:60] == 4'd0 || req_priv_mode == M) begin
-					perf_bare_count <= perf_bare_count + UInt64'(1);
+				if (
+					satp[63:60] == 4'd0 ||
+					req_priv_mode == M
+				) begin
+					perf_bare_count <=
+						perf_bare_count +
+						UInt64'(1);
 				end else if (satp[63:60] != 4'd8) begin
-					perf_unsupported_mode_count <= perf_unsupported_mode_count + UInt64'(1);
+					perf_unsupported_mode_count <=
+						perf_unsupported_mode_count +
+						UInt64'(1);
 				end else begin
-					perf_lookup_count <= perf_lookup_count + UInt64'(1);
+					perf_lookup_count <=
+						perf_lookup_count +
+						UInt64'(1);
+
 					if (tlb_hit) begin
-						perf_hit_count <= perf_hit_count + UInt64'(1);
+						perf_hit_count <=
+							perf_hit_count +
+							UInt64'(1);
+
 						if (tlb_fault) begin
-							perf_hit_fault_count <= perf_hit_fault_count + UInt64'(1);
+							perf_hit_fault_count <=
+								perf_hit_fault_count +
+								UInt64'(1);
 						end
 					end else begin
-						perf_miss_count <= perf_miss_count + UInt64'(1);
+						perf_miss_count <=
+							perf_miss_count +
+							UInt64'(1);
 					end
 				end
 			end
+
 			if (fast_rsp_valid && rsp_ready) begin
 				if (fast_rsp_is_bare) begin
-					perf_fast_bare_count <= perf_fast_bare_count + UInt64'(1);
+					perf_fast_bare_count <=
+						perf_fast_bare_count +
+						UInt64'(1);
 				end else if (fast_rsp_is_unsupported) begin
-					perf_fast_unsupported_count <= perf_fast_unsupported_count + UInt64'(1);
+					perf_fast_unsupported_count <=
+						perf_fast_unsupported_count +
+						UInt64'(1);
 				end else begin
-					perf_fast_hit_count <= perf_fast_hit_count + UInt64'(1);
+					perf_fast_hit_count <=
+						perf_fast_hit_count +
+						UInt64'(1);
+
 					if (fast_rsp_fault) begin
-						perf_fast_hit_fault_count <= perf_fast_hit_fault_count + UInt64'(1);
+						perf_fast_hit_fault_count <=
+							perf_fast_hit_fault_count +
+							UInt64'(1);
 					end
 				end
 			end else if (fast_rsp_valid) begin
-				perf_held_response_count <= perf_held_response_count + UInt64'(1);
+				perf_held_response_count <=
+					perf_held_response_count +
+					UInt64'(1);
 			end
 
 			if (state == PtwWait) begin
-				perf_miss_cycle_count <= perf_miss_cycle_count + UInt64'(1);
-				if (ptw_perf_state_req && ptw_mem_valid_raw && ptw_mem_pmp_allow && !ptw_mem_ready) begin
-					perf_ptw_req_wait_cycle <= perf_ptw_req_wait_cycle + UInt64'(1);
+				perf_miss_cycle_count <=
+					perf_miss_cycle_count +
+					UInt64'(1);
+
+				if (
+					ptw_perf_state_req &&
+					ptw_mem_valid_raw &&
+					ptw_mem_pmp_allow &&
+					!ptw_mem_ready
+				) begin
+					perf_ptw_req_wait_cycle <=
+						perf_ptw_req_wait_cycle +
+						UInt64'(1);
 				end else if (ptw_perf_state_wait_resp) begin
-					perf_ptw_rsp_wait_cycle <= perf_ptw_rsp_wait_cycle + UInt64'(1);
+					perf_ptw_rsp_wait_cycle <=
+						perf_ptw_rsp_wait_cycle +
+						UInt64'(1);
 				end else if (ptw_perf_state_check) begin
-					perf_ptw_check_cycle <= perf_ptw_check_cycle + UInt64'(1);
-				end else if (ptw_perf_state_req && ptw_mem_valid_raw && !ptw_mem_pmp_allow) begin
-					perf_ptw_pmp_deny_cycle <= perf_ptw_pmp_deny_cycle + UInt64'(1);
+					perf_ptw_check_cycle <=
+						perf_ptw_check_cycle +
+						UInt64'(1);
+				end else if (
+					ptw_perf_state_req &&
+					ptw_mem_valid_raw &&
+					!ptw_mem_pmp_allow
+				) begin
+					perf_ptw_pmp_deny_cycle <=
+						perf_ptw_pmp_deny_cycle +
+						UInt64'(1);
 				end else if (!ptw_done) begin
-					perf_ptw_other_cycle <= perf_ptw_other_cycle + UInt64'(1);
+					perf_ptw_other_cycle <=
+						perf_ptw_other_cycle +
+						UInt64'(1);
 				end
 			end
+
 			if (ptw_start) begin
-				perf_ptw_start_count <= perf_ptw_start_count + UInt64'(1);
+				perf_ptw_start_count <=
+					perf_ptw_start_count +
+					UInt64'(1);
 			end
+
 			if (ptw_done) begin
-				perf_ptw_done_count <= perf_ptw_done_count + UInt64'(1);
+				perf_ptw_done_count <=
+					perf_ptw_done_count +
+					UInt64'(1);
+
 				if (ptw_fault) begin
-					perf_ptw_fault_count <= perf_ptw_fault_count + UInt64'(1);
+					perf_ptw_fault_count <=
+						perf_ptw_fault_count +
+						UInt64'(1);
 				end else if (ptw_leaf_valid) begin
 					unique case (ptw_leaf_level)
-						2'd0: perf_leaf_l0_count <= perf_leaf_l0_count + UInt64'(1);
-						2'd1: perf_leaf_l1_count <= perf_leaf_l1_count + UInt64'(1);
-						2'd2: perf_leaf_l2_count <= perf_leaf_l2_count + UInt64'(1);
-						default: begin end
+						2'd0: begin
+							perf_leaf_l0_count <=
+								perf_leaf_l0_count +
+								UInt64'(1);
+						end
+
+						2'd1: begin
+							perf_leaf_l1_count <=
+								perf_leaf_l1_count +
+								UInt64'(1);
+						end
+
+						2'd2: begin
+							perf_leaf_l2_count <=
+								perf_leaf_l2_count +
+								UInt64'(1);
+						end
+
+						default: begin
+						end
 					endcase
+
 					if (ptw_leaf_level != 2'd0) begin
-						perf_superpage_refill_count <= perf_superpage_refill_count + UInt64'(1);
+						perf_superpage_refill_count <=
+							perf_superpage_refill_count +
+							UInt64'(1);
 					end
 				end
 			end
+
 			if (ptw_mem_valid && ptw_mem_ready) begin
-				perf_ptw_mem_req_count <= perf_ptw_mem_req_count + UInt64'(1);
+				perf_ptw_mem_req_count <=
+					perf_ptw_mem_req_count +
+					UInt64'(1);
 			end
+
 			if (ptw_pmp_deny_fire) begin
-				perf_ptw_pmp_deny_count <= perf_ptw_pmp_deny_count + UInt64'(1);
+				perf_ptw_pmp_deny_count <=
+					perf_ptw_pmp_deny_count +
+					UInt64'(1);
 			end
+
 			if (state == PtwWait && ptw_mem_rvalid) begin
-				perf_ptw_mem_resp_count <= perf_ptw_mem_resp_count + UInt64'(1);
+				perf_ptw_mem_resp_count <=
+					perf_ptw_mem_resp_count +
+					UInt64'(1);
 			end
+
 			if (tlb_refill_valid) begin
-				perf_refill_count <= perf_refill_count + UInt64'(1);
+				perf_refill_count <=
+					perf_refill_count +
+					UInt64'(1);
 			end
 		end
 	end
 
+`ifndef SYNTHESIS
+	always_ff @(posedge clk) begin
+		if (rst && !flush && !tlb_flush) begin
+			if (
+				state == Idle &&
+				req_valid &&
+				req_needs_ptw &&
+				tlb_hit
+			) begin
+				assert (req_ready)
+					else $error(
+						"[TRANSLATION] TLB hit was blocked: ptw_ready=%b va=%h",
+						ptw_ready,
+						req_va
+					);
+			end
+		end
+	end
+`endif
+
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
-			$display("[PERF-%s] req=%0d bare=%0d unsupported=%0d lookup=%0d hit=%0d miss=%0d hit_fault=%0d hit_rate_x1000=%0d",
+			$display(
+				"[PERF-%s] req=%0d bare=%0d unsupported=%0d lookup=%0d hit=%0d miss=%0d hit_fault=%0d hit_rate_x1000=%0d",
 				PERF_NAME,
 				perf_req_count,
 				perf_bare_count,
@@ -407,38 +639,54 @@ module address_translation #(
 				perf_hit_count,
 				perf_miss_count,
 				perf_hit_fault_count,
-				(perf_lookup_count == 0) ? UInt64'(0) : (perf_hit_count * UInt64'(1000)) / perf_lookup_count);
-			$display("[PERF-%s] ptw start=%0d done=%0d fault=%0d miss_cycles=%0d mem_req=%0d mem_resp=%0d",
+				(perf_lookup_count == 0) ?
+					UInt64'(0) :
+					(perf_hit_count * UInt64'(1000)) /
+					perf_lookup_count
+			);
+
+			$display(
+				"[PERF-%s] ptw start=%0d done=%0d fault=%0d miss_cycles=%0d mem_req=%0d mem_resp=%0d",
 				PERF_NAME,
 				perf_ptw_start_count,
 				perf_ptw_done_count,
 				perf_ptw_fault_count,
 				perf_miss_cycle_count,
 				perf_ptw_mem_req_count,
-				perf_ptw_mem_resp_count);
-			$display("[PERF-%s] ptw_wait req=%0d rsp=%0d check=%0d pmp_deny=%0d pmp_deny_cycles=%0d other=%0d",
+				perf_ptw_mem_resp_count
+			);
+
+			$display(
+				"[PERF-%s] ptw_wait req=%0d rsp=%0d check=%0d pmp_deny=%0d pmp_deny_cycles=%0d other=%0d",
 				PERF_NAME,
 				perf_ptw_req_wait_cycle,
 				perf_ptw_rsp_wait_cycle,
 				perf_ptw_check_cycle,
 				perf_ptw_pmp_deny_count,
 				perf_ptw_pmp_deny_cycle,
-				perf_ptw_other_cycle);
-			$display("[PERF-%s] leaf_l0_4k=%0d leaf_l1_2m=%0d leaf_l2_1g=%0d refill=%0d superpage_refill=%0d flush=%0d",
+				perf_ptw_other_cycle
+			);
+
+			$display(
+				"[PERF-%s] leaf_l0_4k=%0d leaf_l1_2m=%0d leaf_l2_1g=%0d refill=%0d superpage_refill=%0d flush=%0d",
 				PERF_NAME,
 				perf_leaf_l0_count,
 				perf_leaf_l1_count,
 				perf_leaf_l2_count,
 				perf_refill_count,
 				perf_superpage_refill_count,
-				perf_flush_count);
-			$display("[PERF-%s-FAST] bare=%0d unsupported=%0d hit=%0d hit_fault=%0d held=%0d",
+				perf_flush_count
+			);
+
+			$display(
+				"[PERF-%s-FAST] bare=%0d unsupported=%0d hit=%0d hit_fault=%0d held=%0d",
 				PERF_NAME,
 				perf_fast_bare_count,
 				perf_fast_unsupported_count,
 				perf_fast_hit_count,
 				perf_fast_hit_fault_count,
-				perf_held_response_count);
+				perf_held_response_count
+			);
 		end
 	end
 
@@ -481,14 +729,23 @@ module address_translation #(
 						if (fast_rsp_valid) begin
 							result_pa <= fast_rsp_pa;
 							result_fault <= fast_rsp_fault;
-							result_fault_detail <= fast_rsp_fault_detail;
-							result_fault_cause <= fast_rsp_fault_cause;
-							state <= rsp_ready ? Idle : Response;
+							result_fault_detail <=
+								fast_rsp_fault_detail;
+							result_fault_cause <=
+								fast_rsp_fault_cause;
+
+							state <=
+								rsp_ready ?
+									Idle :
+									Response;
 						end else begin
 							result_pa <= '0;
 							result_fault <= 1'b0;
-							result_fault_detail <= SV39_FAULT_NONE;
-							result_fault_cause <= CsrCause'(0);
+							result_fault_detail <=
+								SV39_FAULT_NONE;
+							result_fault_cause <=
+								CsrCause'(0);
+
 							state <= PtwWait;
 						end
 					end
@@ -502,15 +759,34 @@ module address_translation #(
 					if (ptw_done) begin
 						result_pa <= ptw_pa;
 						result_fault <= ptw_fault;
-						result_fault_detail <= ptw_fault_detail;
-						result_fault_cause <= ptw_fault_cause;
-						result_fault_value <= ptw_fault_value;
+						result_fault_detail <=
+							ptw_fault_detail;
+						result_fault_cause <=
+							ptw_fault_cause;
+						result_fault_value <=
+							ptw_fault_value;
+
 						refill_pa <= ptw_pa;
-						refill_leaf_pte <= ptw_leaf_pte;
-						refill_leaf_level <= ptw_leaf_level;
-						refill_leaf_valid <= ptw_leaf_valid && !ptw_fault;
-						state <= ptw_fault ? Response : Refill;
-					end else if (ptw_started && ptw_ready) begin
+						refill_leaf_pte <=
+							ptw_leaf_pte;
+						refill_leaf_level <=
+							ptw_leaf_level;
+						refill_leaf_valid <=
+							ptw_leaf_valid &&
+							!ptw_fault;
+
+						state <=
+							ptw_fault ?
+								Response :
+								Refill;
+					end else if (
+						ptw_started &&
+						ptw_ready
+					) begin
+						/*
+						 * flushなどによって、開始済みPTWが
+						 * 完了通知なしでIdleへ戻った場合の回復。
+						 */
 						ptw_started <= 1'b0;
 					end
 				end
@@ -531,4 +807,5 @@ module address_translation #(
 			endcase
 		end
 	end
+
 endmodule : address_translation
