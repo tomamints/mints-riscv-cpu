@@ -131,6 +131,16 @@ docker run "${docker_args[@]}" \
       -e BLK_DEV_INITRD \
       -e BINFMT_ELF \
       -e BINFMT_SCRIPT \
+      -e TTY \
+      -e HAS_IOMEM \
+      -e SERIAL_8250 \
+      -e SERIAL_8250_CONSOLE \
+      -e SERIAL_8250_16550 \
+      -e SERIAL_OF_PLATFORM \
+      -e SERIAL_EARLYCON \
+      -e TMPFS \
+      -e DEVTMPFS \
+      -e DEVTMPFS_MOUNT \
       --set-str INITRAMFS_SOURCE $initramfs_out_repo/initramfs.linux.list
 
     case \"$LINUX_PREEMPT\" in
