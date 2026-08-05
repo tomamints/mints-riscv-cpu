@@ -334,6 +334,10 @@ module inst_fetcher (
 
     FetchState fetch_state;
 
+`ifndef SYNTHESIS
+    UInt64 fetch_debug_cycle;
+`endif
+
     assign satp_sv39 = satp[63:60] == 4'd8;
     assign need_translate = satp_sv39 && (priv_mode != M);
     assign fetch_translation_req_valid =
@@ -613,18 +617,18 @@ module inst_fetcher (
                             if (need_translate) begin
                                 if (fetch_translation_req_ready) begin
                                     fetch_req_vaddr <= fetch_pc;
-                                    if ($test$plusargs("TRACE_FETCH")) begin
+                                    if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                         $display("[FETCH] translate va=%h priv=%0d satp=%h", fetch_pc, priv_mode, satp);
                                     end
                                     fetch_state <= FetchTranslate;
                                 end
                             end else if (!fetch_pmp_allow) begin
-                                if ($test$plusargs("TRACE_FETCH")) begin
+                                if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                     $display("[FETCH] pmp fault physical pc=%h", fetch_pc);
                                 end
                                 fetch_pc <= fetch_pc + 2;
                             end else if (fetch_inst_mem_fire) begin
-                                if ($test$plusargs("TRACE_FETCH")) begin
+                                if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                     $display("[FETCH] request physical pc=%h", fetch_pc);
                                 end
                                 fetch_req_vaddr <= fetch_pc;
@@ -638,7 +642,7 @@ module inst_fetcher (
                     FetchTranslate: begin
                         if (fetch_translation_rsp_valid) begin
                             if (fetch_translation_fault) begin
-                                if ($test$plusargs("TRACE_FETCH")) begin
+                                if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                     $display("[FETCH] ptw fault va=%h cause=%0d detail=%0d value=%h",
                                         fetch_req_vaddr, fetch_translation_fault_cause, fetch_translation_fault_detail, fetch_translation_fault_value);
                                 end
@@ -648,7 +652,7 @@ module inst_fetcher (
                                 fetch_pc <= fetch_pc + 2;
                                 fetch_state <= FetchFault;
                             end else begin
-                                if ($test$plusargs("TRACE_FETCH")) begin
+                                if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                     $display("[FETCH] ptw ok va=%h pa=%h", fetch_req_vaddr, fetch_translation_pa);
                                 end
                                 fetch_req_paddr <= fetch_translation_pa;
@@ -659,7 +663,7 @@ module inst_fetcher (
 
                     FetchAccess: begin
                         if (!fetch_pmp_allow) begin
-                            if ($test$plusargs("TRACE_FETCH")) begin
+                            if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                 $display("[FETCH] pmp fault translated va=%h pa=%h", fetch_req_vaddr, fetch_req_paddr);
                             end
                             fetch_fault_expt.valid <= 1'b1;
@@ -668,7 +672,7 @@ module inst_fetcher (
                             fetch_pc <= fetch_pc + 2;
                             fetch_state <= FetchFault;
                         end else if (fetch_inst_mem_fire) begin
-                            if ($test$plusargs("TRACE_FETCH")) begin
+                            if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                 $display("[FETCH] request translated va=%h pa=%h", fetch_req_vaddr, fetch_req_paddr);
                             end
                             fetch_pc <= fetch_pc + 8;
@@ -678,7 +682,7 @@ module inst_fetcher (
 
                     FetchWaitResp: begin
                         if (fetch_inst_mem_rvalid) begin
-                            if ($test$plusargs("TRACE_FETCH")) begin
+                            if ($test$plusargs("TRACE_FETCH_EVENT")) begin
                                 $display("[FETCH] response va=%h data=%h", fetch_req_vaddr, icache_rsp_data);
                             end
                             fetch_state <= FetchIdle;
@@ -697,6 +701,55 @@ module inst_fetcher (
             end
         end
     end
+
+`ifndef SYNTHESIS
+    always_ff @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            fetch_debug_cycle <= '0;
+        end else begin
+            fetch_debug_cycle <= fetch_debug_cycle + UInt64'(1);
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (
+            $test$plusargs("TRACE_FETCH_STATE") &&
+            fetch_debug_cycle[15:0] == 16'h0000
+        ) begin
+            $display("[FETCH-STATE] cycle=%h state=%0d pc=%h req_va=%h req_pa=%h priv=%0d sv39=%b translate=%b hazard=%b recovery=%b fetch_fifo_wrdy=%b fetch_fifo_rv=%b fetch_fifo_rrdy=%b issue_fifo_wrdy=%b issue_fifo_rv=%b issue_fifo_rrdy=%b tr_req_v=%b tr_req_r=%b tr_rsp_v=%b tr_rsp_r=%b ic_req_v=%b ic_req_r=%b ic_rsp_v=%b ic_rsp_r=%b pmp=%b owner=%0d mem_v=%b mem_r=%b mem_rv=%b",
+                fetch_debug_cycle,
+                fetch_state,
+                fetch_pc,
+                fetch_req_vaddr,
+                fetch_req_paddr,
+                priv_mode,
+                satp_sv39,
+                need_translate,
+                core_if.is_hazard,
+                fetch_recovery_active,
+                fetch_fifo_wready,
+                fetch_fifo_rvalid,
+                fetch_fifo_rready,
+                issue_fifo_wready,
+                issue_fifo_rvalid,
+                issue_fifo_rready,
+                fetch_translation_req_valid,
+                fetch_translation_req_ready,
+                fetch_translation_rsp_valid,
+                fetch_translation_rsp_ready,
+                icache_req_valid,
+                icache_req_ready,
+                icache_rsp_valid,
+                icache_rsp_ready,
+                fetch_pmp_allow,
+                fetch_mem_owner,
+                mem_if.valid,
+                mem_if.ready,
+                mem_if.rvalid
+            );
+        end
+    end
+`endif
 
     final begin
         if ($test$plusargs("PERF_SUMMARY")) begin

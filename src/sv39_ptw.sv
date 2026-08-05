@@ -285,23 +285,37 @@ module sv39_ptw (
 			result_leaf_level <= 2'd0;
 			mem_outstanding <= 1'b0;
 		end else if (flush) begin
-			state <= (mem_outstanding || mem_fire) ? DrainResp : Idle;
-			req_va <= '0;
-			req_access_type <= PMP_ACCESS_READ;
-			req_priv_mode <= M;
-			req_sum <= 1'b0;
-			req_mxr <= 1'b0;
-			level <= 2'd2;
-			base_ppn <= '0;
-			pte <= '0;
-			result_fault <= 1'b0;
-			result_fault_detail <= SV39_FAULT_NONE;
-			result_pa <= '0;
-			result_fault_cause <= CsrCause'(0);
-			result_leaf_valid <= 1'b0;
-			result_leaf_pte <= '0;
-			result_leaf_level <= 2'd0;
-			mem_outstanding <= mem_outstanding || mem_fire;
+		/*
+		* flushとメモリ応答が同じサイクルに発生した場合、
+		* その応答はこのサイクルでdrain済みとして扱う。
+		*
+		* mem_rvalidを無視してDrainRespへ入ると、外側のarbiterは
+		* 応答を既に消費してownerを解除するため、PTWは永久に
+		* DrainRespで待ち続けてしまう。
+		*/
+		if ((mem_outstanding || mem_fire) && !mem_rvalid) begin
+			state <= DrainResp;
+			mem_outstanding <= 1'b1;
+		end else begin
+			state <= Idle;
+			mem_outstanding <= 1'b0;
+		end
+
+		req_va <= '0;
+		req_access_type <= PMP_ACCESS_READ;
+		req_priv_mode <= M;
+		req_sum <= 1'b0;
+		req_mxr <= 1'b0;
+		level <= 2'd2;
+		base_ppn <= '0;
+		pte <= '0;
+		result_fault <= 1'b0;
+		result_fault_detail <= SV39_FAULT_NONE;
+		result_pa <= '0;
+		result_fault_cause <= CsrCause'(0);
+		result_leaf_valid <= 1'b0;
+		result_leaf_pte <= '0;
+		result_leaf_level <= 2'd0;
 		end else begin
 			case (state)
 				Idle: begin
