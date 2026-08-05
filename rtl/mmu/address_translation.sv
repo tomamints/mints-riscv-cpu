@@ -303,23 +303,31 @@ module address_translation #(
 	endfunction
 
 	tlb #(
-		.ENTRY_COUNT(8)
+		.ENTRY_COUNT(8),
+		.VPN_WIDTH(27),
+		.PPN_WIDTH(44),
+		.ASID_WIDTH(16)
 	) translation_tlb (
 		.clk(clk),
 		.rst(rst),
 		.flush(tlb_flush),
+
 		.lookup_valid(tlb_lookup_valid),
 		.lookup_va(req_va),
+		.lookup_asid(satp[59:44]),
 		.lookup_priv_mode(req_priv_mode),
 		.lookup_access_type(req_access_type),
 		.lookup_sum(req_sum),
 		.lookup_mxr(req_mxr),
+
 		.hit(tlb_hit),
 		.pa(tlb_pa),
 		.fault(tlb_fault),
 		.fault_detail(tlb_fault_detail),
+
 		.refill_valid(tlb_refill_valid),
 		.refill_va(pending_va),
+		.refill_asid(pending_satp[59:44]),
 		.refill_ppn(refill_leaf_pte[53:10]),
 		.refill_level(refill_leaf_level),
 		.refill_r(refill_leaf_pte[1]),
