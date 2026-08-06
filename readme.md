@@ -551,3 +551,21 @@ TEST_RUNNER=tools/run_riscv_tests.py
 - `boost_1_88_0/`, `whisper/`, `.DS_Store`, `obj_dir/`, `obj_dir_input/` は Git 管理対象外です。
 - `Docs/DMA.md` は DMA の現在仕様です。
 - 現状の README は、実装の現状を説明するためのものであり、RISC-V 仕様適合性を保証するものではありません。
+
+
+## Execute Codes
+export OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin
+export LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-irqcause-min-initramfs
+
+make run-opensbi-input \
+OPENSBI_CYCLES=0 \
+SIM_EXTRA_ARGS="+TRACE_HEARTBEAT"
+
+
+
+obj_dir_input/sim \
+  build/platform/bootrom_linux.hex \
+  build/smoke/smoke_ram.hex \
+  1000 \
+  +TRACE_RETIRE \
+  > build/smoke/rtl_mem.log 2>&1
