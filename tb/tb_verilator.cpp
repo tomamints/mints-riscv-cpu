@@ -273,6 +273,17 @@ bool compare_commit(
     }
 
     if (!ok) {
+        if (rtl_mem_valid) {
+            differences
+                << "\n  - mem_context:"
+                << " rtl_addr=0x" << std::hex
+                << static_cast<std::uint64_t>(dut.retire_mem_addr)
+                << " ref_pa=0x" << ref.mem_pa1
+                << " ref_va=0x" << ref.mem_va
+                << " ref_size=" << std::dec << ref.mem_size
+                << " rtl_write=" << (dut.retire_mem_write != 0);
+        }
+
         std::cerr
             << "\n[LOCKSTEP-MISMATCH]"
             << " order=" << std::dec << order
@@ -480,7 +491,12 @@ int main(int argc, char** argv)
                     static_cast<std::uint32_t>(dut->retire_inst),
                     static_cast<bool>(dut->retire_rd_we),
                     static_cast<unsigned>(dut->retire_rd_addr),
-                    static_cast<std::uint64_t>(dut->retire_rd_data));
+                    static_cast<std::uint64_t>(dut->retire_rd_data),
+                    static_cast<bool>(dut->retire_mem_valid),
+                    static_cast<bool>(dut->retire_mem_write),
+                    static_cast<std::uint64_t>(dut->retire_mem_addr),
+                    static_cast<std::uint8_t>(dut->retire_mem_mask),
+                    static_cast<std::uint64_t>(dut->retire_mem_data));
 
                 if (!compare_commit(compared_order, *dut, ref)) {
                     lockstep_failed = true;

@@ -640,8 +640,11 @@ module core (
 			!memu_expt.valid;
 
 		wbq_wdata.mem_write =
-			inst_is_store(mems_ctrl) ||
-			mems_ctrl.is_amo;
+			inst_is_store(mems_ctrl) &&
+			!(
+				mems_ctrl.is_amo &&
+				(mems_inst_bits[31:27] == 5'b00010) // LR is read-only
+			);
 		wbq_wdata.mem_addr = memu_addr;
 
 		wbq_wdata.mem_mask =
@@ -650,11 +653,22 @@ module core (
 				: 8'h00;
 
 		wbq_wdata.mem_data =
-			mems_ctrl.is_amo
-				? amo_commit_wdata
-				: inst_is_store(mems_ctrl)
-					? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
-					: memu_rdata;
+			(
+				mems_ctrl.is_amo &&
+				(mems_inst_bits[31:27] == 5'b00011) // SC
+			)
+				? retire_store_data(
+					mems_ctrl.funct3,
+					memu_addr,
+					memq_rdata.rs2_data)
+				: mems_ctrl.is_amo
+					? amo_commit_wdata
+					: inst_is_store(mems_ctrl)
+						? retire_store_data(
+							mems_ctrl.funct3,
+							memu_addr,
+							memq_rdata.rs2_data)
+						: memu_rdata;
 	end
 
 	//////////WB Stage //////////
@@ -727,7 +741,10 @@ module core (
 	assign retire_valid_o = architectural_retire;
 	assign retire_pc_o = architectural_retire ? wbs_pc : Addr'(0);
 	assign retire_inst_o = architectural_retire ? wbs_inst_bits : Inst'(0);
-	assign retire_priv_o = csru_priv_mode;
+	assign retire_priv_o =
+		(wbs_inst_bits == 32'h30200073) ? M : // MRET executes in M-mode
+		(wbs_inst_bits == 32'h10200073) ? S : // SRET executes in S-mode
+		csru_priv_mode;
 
 	assign retire_rd_we_o = retire_rd_we;
 	assign retire_rd_addr_o = retire_rd_addr;

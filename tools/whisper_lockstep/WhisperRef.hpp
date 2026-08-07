@@ -58,15 +58,20 @@ public:
 
     /*
      * rtl_* describes the RTL instruction retiring in lockstep with this
-     * Whisper step. External counter CSRs such as TIME are synchronized from
-     * the RTL result because they are driven by the RTL clock domain rather
-     * than by Whisper's instruction-step clock.
+     * Whisper step. External counter CSRs such as TIME and MMIO reads are
+     * synchronized from the RTL because they are driven by RTL/external state
+     * rather than by Whisper's instruction-step memory model.
      */
     RefCommit step(
         std::uint32_t rtl_inst,
         bool rtl_rd_we,
         unsigned rtl_rd,
-        std::uint64_t rtl_rd_data);
+        std::uint64_t rtl_rd_data,
+        bool rtl_mem_valid,
+        bool rtl_mem_write,
+        std::uint64_t rtl_mem_addr,
+        std::uint8_t rtl_mem_mask,
+        std::uint64_t rtl_mem_data);
 
     std::uint64_t pc() const;
     std::uint64_t int_reg(unsigned reg) const;

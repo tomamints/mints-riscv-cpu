@@ -104,6 +104,76 @@ bool is_time_csr_instruction(std::uint32_t inst)
 }
 
 
+bool address_in_range(
+    std::uint64_t address,
+    std::uint64_t base,
+    std::uint64_t size)
+{
+    return address >= base &&
+           address - base < size;
+}
+
+bool is_rtl_mmio_address(std::uint64_t address)
+{
+    /*
+     * RTL SoC memory map.
+     *
+     * Keep RAM out of this list: normal memory must remain independently
+     * modeled by Whisper so lockstep still detects RAM/load-store bugs.
+     */
+    constexpr std::uint64_t kAclintBase = 0x02000000ULL;
+    constexpr std::uint64_t kAclintSize = 0x00010000ULL;
+
+    constexpr std::uint64_t kPlicBase = 0x0c000000ULL;
+    constexpr std::uint64_t kPlicSize = 0x04000000ULL;
+
+    constexpr std::uint64_t kUartBase = 0x10000000ULL;
+    constexpr std::uint64_t kUartSize = 0x00000100ULL;
+
+    return
+        address_in_range(address, kAclintBase, kAclintSize) ||
+        address_in_range(address, kPlicBase, kPlicSize) ||
+        address_in_range(address, kUartBase, kUartSize);
+}
+
+unsigned scalar_load_size(std::uint32_t inst)
+{
+    /*
+     * Base scalar loads.
+     */
+    if ((inst & 0x7f) == 0x03) {
+        switch ((inst >> 12) & 0x7) {
+        case 0: return 1;  // LB
+        case 1: return 2;  // LH
+        case 2: return 4;  // LW
+        case 3: return 8;  // LD
+        case 4: return 1;  // LBU
+        case 5: return 2;  // LHU
+        case 6: return 4;  // LWU
+        default: return 0;
+        }
+    }
+
+    /*
+     * RV64 compressed scalar loads:
+     *   C.LW/C.LD and C.LWSP/C.LDSP.
+     */
+    if ((inst & 0x3) != 0x3) {
+        const unsigned quadrant = inst & 0x3;
+        const unsigned funct3 = (inst >> 13) & 0x7;
+
+        if ((quadrant == 0 || quadrant == 2) && funct3 == 2)
+            return 4;
+
+        if ((quadrant == 0 || quadrant == 2) && funct3 == 3)
+            return 8;
+    }
+
+    return 0;
+}
+
+
+
 
 template <typename HartType>
 void configure_rtl_misa(HartType& hart)
@@ -412,9 +482,22 @@ RefCommit WhisperRef::step(
     std::uint32_t rtl_inst,
     bool rtl_rd_we,
     unsigned rtl_rd,
-    std::uint64_t rtl_rd_data)
+    std::uint64_t rtl_rd_data,
+    bool rtl_mem_valid,
+    bool rtl_mem_write,
+    std::uint64_t rtl_mem_addr,
+    std::uint8_t rtl_mem_mask,
+    std::uint64_t rtl_mem_data)
 {
     RefCommit result;
+
+    /*
+     * MMIO writes are still executed independently by Whisper and compared via
+     * RefCommit.  rtl_mem_mask/data are carried in the interface now so write
+     * side-effects can be synchronized later without changing the ABI again.
+     */
+    (void) rtl_mem_mask;
+    (void) rtl_mem_data;
 
     /*
      * RTLのretire traceは、例外を起こした命令そのものをretireしない。
@@ -463,6 +546,81 @@ RefCommit WhisperRef::step(
 
         const bool have_stvec =
             hart_->peekCsr(WdRiscv::CsrNumber::STVEC, stvec);
+
+        /*
+         * MMIO reads are driven by RTL peripheral state, not by ordinary RAM.
+         *
+         * The RTL instruction has already retired when this reference step is
+         * called, so its physical MMIO address and architectural load result
+         * are known.  Seed Whisper's backing memory at exactly that address
+         * immediately before executing the matching load.
+         *
+         * This deliberately does NOT synchronize normal RAM.  RAM remains
+         * independently modeled by Whisper so real memory bugs are still
+         * detected by lockstep.
+         */
+        if (rtl_mem_valid &&
+            !rtl_mem_write &&
+            is_rtl_mmio_address(rtl_mem_addr)) {
+            const unsigned load_size = scalar_load_size(rtl_inst);
+
+            if (load_size == 0) {
+                fail("unable to decode RTL MMIO load size");
+            }
+
+            const std::uint64_t mask =
+                load_size >= 8
+                    ? ~std::uint64_t{0}
+                    : ((std::uint64_t{1} << (load_size * 8)) - 1);
+
+            const std::uint64_t raw_value =
+                rtl_rd_data & mask;
+
+            bool ok = false;
+
+            switch (load_size) {
+            case 1:
+                ok = hart_->pokeMemory(
+                    rtl_mem_addr,
+                    static_cast<std::uint8_t>(raw_value),
+                    false);
+                break;
+
+            case 2:
+                ok = hart_->pokeMemory(
+                    rtl_mem_addr,
+                    static_cast<std::uint16_t>(raw_value),
+                    false);
+                break;
+
+            case 4:
+                ok = hart_->pokeMemory(
+                    rtl_mem_addr,
+                    static_cast<std::uint32_t>(raw_value),
+                    false);
+                break;
+
+            case 8:
+                ok = hart_->pokeMemory(
+                    rtl_mem_addr,
+                    static_cast<std::uint64_t>(raw_value),
+                    false);
+                break;
+
+            default:
+                break;
+            }
+
+            if (!ok) {
+                std::ostringstream message;
+                message
+                    << "failed to seed MMIO read"
+                    << " addr=0x" << std::hex << rtl_mem_addr
+                    << " size=" << std::dec << load_size
+                    << " value=0x" << std::hex << raw_value;
+                fail(message.str());
+            }
+        }
 
         hart_->singleStep(nullptr);
 
