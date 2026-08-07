@@ -67,6 +67,18 @@ module csrunit (
 	localparam logic [3:0] SATP_MODE_BARE = 4'd0;
 	localparam logic [3:0] SATP_MODE_SV39 = 4'd8;
 
+	// Optional hardware-performance-monitor CSR ranges.
+	// Whisper is configured with zero active HPM counters, but these CSRs
+	// remain architecturally accessible and read as zero.
+	localparam logic [11:0] MENVCFG_ADDR         = 12'h30a;
+	localparam logic [11:0] MCOUNTINHIBIT_ADDR   = 12'h320;
+	localparam logic [11:0] MHPMEVENT_FIRST_ADDR = 12'h323;
+	localparam logic [11:0] MHPMEVENT_LAST_ADDR  = 12'h33f;
+	localparam logic [11:0] MHPMCOUNTER_FIRST_ADDR = 12'hb03;
+	localparam logic [11:0] MHPMCOUNTER_LAST_ADDR  = 12'hb1f;
+	localparam logic [11:0] HPMCOUNTER_FIRST_ADDR  = 12'hc03;
+	localparam logic [11:0] HPMCOUNTER_LAST_ADDR   = 12'hc1f;
+
 
 	//read masks
 	localparam UIntX SSTATUS_RMASK  = UIntX'('h8000_0003_018f_e762);
@@ -104,6 +116,24 @@ module csrunit (
 
 	logic csr_implemented;
 	assign csr_implemented = csr_is_implemented(csr_addr);
+
+	logic csr_is_menvcfg;
+	logic csr_is_mcountinhibit;
+	logic csr_is_mhpmevent;
+	logic csr_is_mhpmcounter;
+	logic csr_is_hpmcounter;
+
+	assign csr_is_menvcfg = (csr_addr == MENVCFG_ADDR);
+	assign csr_is_mcountinhibit = (csr_addr == MCOUNTINHIBIT_ADDR);
+	assign csr_is_mhpmevent =
+		(csr_addr >= MHPMEVENT_FIRST_ADDR) &&
+		(csr_addr <= MHPMEVENT_LAST_ADDR);
+	assign csr_is_mhpmcounter =
+		(csr_addr >= MHPMCOUNTER_FIRST_ADDR) &&
+		(csr_addr <= MHPMCOUNTER_LAST_ADDR);
+	assign csr_is_hpmcounter =
+		(csr_addr >= HPMCOUNTER_FIRST_ADDR) &&
+		(csr_addr <= HPMCOUNTER_LAST_ADDR);
 
 	logic expt_unimplemented_csr;
 	assign expt_unimplemented_csr = ctrl.is_csr && !csr_implemented;
@@ -379,6 +409,7 @@ module csrunit (
 			MIP   : rdata = mip;
 			MIE   : rdata = mie;
 			MCOUNTEREN   : rdata = {{(XLEN-32){1'b0}},mcounteren};
+			MENVCFG_ADDR : rdata = '0;
 			PMPCFG0 : rdata = pmpcfg0;
 			PMPADDR0 : rdata = pmpaddr0;
 			PMPADDR1 : rdata = pmpaddr1;
@@ -407,7 +438,16 @@ module csrunit (
 			CYCLE   : rdata = mcycle;
 			TIME    : rdata = aclint.mtime;
 			INSTRET : rdata = minstret;
-			default       : rdata = '0;
+			default: begin
+				if (csr_is_mcountinhibit ||
+					csr_is_mhpmevent ||
+					csr_is_mhpmcounter ||
+					csr_is_hpmcounter) begin
+					rdata = '0;
+				end else begin
+					rdata = '0;
+				end
+			end
 		endcase
 
 		// write mask
@@ -421,6 +461,7 @@ module csrunit (
 				MCYCLE   : wmask = MCYCLE_WMASK;
 				MINSTRET : wmask = MINSTRET_WMASK;
 				MCOUNTEREN : wmask = MCOUNTEREN_WMASK;
+				MENVCFG_ADDR : wmask = '0;
 			PMPCFG0 : wmask = PMPCFG0_WMASK;
 			PMPADDR0 : wmask = PMPADDR_WMASK;
 			PMPADDR1 : wmask = PMPADDR_WMASK;
@@ -444,7 +485,18 @@ module csrunit (
 			SIP : wmask = SIP_WMASK & mideleg;
 			SIE : wmask = SIE_WMASK & mideleg;
 			SATP : wmask = SATP_WMASK;
-			default       : wmask = '0;
+			default: begin
+				// HPM CSRs are implemented as WARL-zero registers while the
+				// reference model is configured with zero active counters.
+				if (csr_is_mcountinhibit ||
+					csr_is_mhpmevent ||
+					csr_is_mhpmcounter ||
+					csr_is_hpmcounter) begin
+					wmask = '0;
+				end else begin
+					wmask = '0;
+				end
+			end
 		endcase
 
 		// wsource
@@ -760,48 +812,61 @@ module csrunit (
 	function automatic logic csr_is_implemented(
 		input logic [11:0] addr
 	);
-		case (addr)
-			MVENDORID,
-			MARCHID,
-			MIMPID,
-			MHARTID,
-			MSTATUS,
-			MISA,
-			MEDELEG,
-			MIDELEG,
-			MIE,
-			MTVEC,
-			MCOUNTEREN,
-			PMPCFG0,
-			PMPADDR0,
-			PMPADDR1,
-			PMPADDR2,
-			PMPADDR3,
-			PMPADDR4,
-			PMPADDR5,
-			PMPADDR6,
-			PMPADDR7,
-			MSCRATCH,
-			MEPC,
-			MCAUSE,
-			MTVAL,
-			MIP,
-			MCYCLE,
-			MINSTRET,
-			SSTATUS,
-			SIE,
-			STVEC,
-			SCOUNTEREN,
-			SSCRATCH,
-			SEPC,
-			SCAUSE,
-			STVAL,
-			SIP,
-			SATP,
-			CYCLE,
-			TIME,
-			INSTRET: csr_is_implemented = 1'b1;
-			default: csr_is_implemented = 1'b0;
-		endcase
+		begin
+			if ((addr == MENVCFG_ADDR) ||
+				(addr == MCOUNTINHIBIT_ADDR) ||
+				((addr >= MHPMEVENT_FIRST_ADDR) &&
+				 (addr <= MHPMEVENT_LAST_ADDR)) ||
+				((addr >= MHPMCOUNTER_FIRST_ADDR) &&
+				 (addr <= MHPMCOUNTER_LAST_ADDR)) ||
+				((addr >= HPMCOUNTER_FIRST_ADDR) &&
+				 (addr <= HPMCOUNTER_LAST_ADDR))) begin
+				csr_is_implemented = 1'b1;
+			end else begin
+				case (addr)
+					MVENDORID,
+					MARCHID,
+					MIMPID,
+					MHARTID,
+					MSTATUS,
+					MISA,
+					MEDELEG,
+					MIDELEG,
+					MIE,
+					MTVEC,
+					MCOUNTEREN,
+					PMPCFG0,
+					PMPADDR0,
+					PMPADDR1,
+					PMPADDR2,
+					PMPADDR3,
+					PMPADDR4,
+					PMPADDR5,
+					PMPADDR6,
+					PMPADDR7,
+					MSCRATCH,
+					MEPC,
+					MCAUSE,
+					MTVAL,
+					MIP,
+					MCYCLE,
+					MINSTRET,
+					SSTATUS,
+					SIE,
+					STVEC,
+					SCOUNTEREN,
+					SSCRATCH,
+					SEPC,
+					SCAUSE,
+					STVAL,
+					SIP,
+					SATP,
+					CYCLE,
+					TIME,
+					INSTRET: csr_is_implemented = 1'b1;
+					default: csr_is_implemented = 1'b0;
+				endcase
+			end
+		end
 	endfunction
 endmodule : csrunit
