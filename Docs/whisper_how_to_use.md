@@ -432,3 +432,17 @@ docker run --rm \
       build/platform/opensbi_ram.hex \
       1000000
   '
+
+
+cd "$HOME/risc-v-cpu"
+
+rm -rf obj_dir_lockstep
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  riscv-lockstep-verilator:5.046 \
+  bash -lc '
+    set -eux
+    make build-lockstep
+  '

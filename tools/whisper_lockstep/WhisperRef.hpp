@@ -71,7 +71,8 @@ public:
         bool rtl_mem_write,
         std::uint64_t rtl_mem_addr,
         std::uint8_t rtl_mem_mask,
-        std::uint64_t rtl_mem_data);
+        std::uint64_t rtl_mem_data,
+        bool rtl_mtip);
 
     std::uint64_t pc() const;
     std::uint64_t int_reg(unsigned reg) const;

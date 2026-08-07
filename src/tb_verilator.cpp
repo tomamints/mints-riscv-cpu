@@ -237,8 +237,8 @@ bool compare_commit(
         if (rtl_mem_addr != ref.mem_va) {
             std::ostringstream text;
             text << "mem_addr: rtl=0x" << std::hex << rtl_mem_addr
-                << " ref_va=0x" << ref.mem_va
-                << " ref_pa=0x" << ref.mem_pa1;
+                 << " ref_va=0x" << ref.mem_va
+                 << " ref_pa=0x" << ref.mem_pa1;
             add_difference(text.str());
         }
 
@@ -456,6 +456,17 @@ int main(int argc, char** argv)
     std::uint64_t compared_order = 0;
     bool lockstep_started = false;
     bool lockstep_failed = false;
+
+    // MTIP is sampled after an RTL instruction retires.  If that sampled
+    // value is fed to Whisper immediately, an interrupt that became pending
+    // at the boundary after the retiring instruction is observed one
+    // instruction too early by the reference model.
+    //
+    // Carry the sampled value to the next retire comparison instead.  This
+    // aligns Whisper's pre-instruction interrupt state with the RTL boundary:
+    // the current RTL instruction retires first, then MTIP may become pending,
+    // then the next architectural instruction can be interrupted.
+    bool lockstep_mtip_for_next_step = false;
 #endif
 
     for (long long half_cycle = 0;
@@ -488,6 +499,10 @@ int main(int argc, char** argv)
 
             if (lockstep_started) {
                 ++compared_order;
+
+                const bool rtl_mtip_after_retire =
+                    static_cast<bool>(dut->lockstep_mtip);
+
                 const auto ref = whisper->step(
                     static_cast<std::uint32_t>(dut->retire_inst),
                     static_cast<bool>(dut->retire_rd_we),
@@ -497,7 +512,15 @@ int main(int argc, char** argv)
                     static_cast<bool>(dut->retire_mem_write),
                     static_cast<std::uint64_t>(dut->retire_mem_addr),
                     static_cast<std::uint8_t>(dut->retire_mem_mask),
-                    static_cast<std::uint64_t>(dut->retire_mem_data));
+                    static_cast<std::uint64_t>(dut->retire_mem_data),
+                    lockstep_mtip_for_next_step);
+
+                // The MTIP visible after this RTL retire belongs to the next
+                // architectural instruction boundary, so use it on the next
+                // Whisper step rather than on the instruction that just
+                // retired.
+                lockstep_mtip_for_next_step =
+                    rtl_mtip_after_retire;
 
                 if (!compare_commit(compared_order, *dut, ref)) {
                     lockstep_failed = true;

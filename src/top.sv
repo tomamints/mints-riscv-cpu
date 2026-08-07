@@ -30,7 +30,9 @@ module core_top #(
     output logic        retire_mem_write,
     output Addr         retire_mem_addr,
     output logic [7:0]  retire_mem_mask,
-    output UIntX        retire_mem_data
+    output UIntX        retire_mem_data,
+
+    output logic        lockstep_mtip
 `endif
 );
 
@@ -59,6 +61,10 @@ module core_top #(
     Membus dma_ram_membus();
 
     aclint_if aclint_core_bus();
+
+`ifdef SVCPU_WHISPER_LOCKSTEP
+    assign lockstep_mtip = aclint_core_bus.mtip;
+`endif
 
     //arbiter出力用のバズ
     Membus arb_ram_membus();
@@ -121,6 +127,7 @@ module core_top #(
     logic dcache_mem_low_priority;
     logic amo_commit_valid;
     UIntX amo_commit_wdata;
+    logic amo_reservation_clear;
     logic memarb_select_d;
     logic memarb_issue_is_i;
     UInt64 perf_memarb_i_grant_count;
@@ -336,6 +343,7 @@ module core_top #(
     amounit amou (
         .clk    (clk),
         .rst    (rst),
+        .reservation_clear(amo_reservation_clear),
         .slave_low_priority(dcache_mem_low_priority),
         .master_low_priority(d_membus_low_priority),
         .slave  (dcache_membus_core),
@@ -407,6 +415,7 @@ module core_top #(
         .amo_commit_valid(amo_commit_valid),
         .amo_commit_wdata(amo_commit_wdata),
         .led      (led),
+        .amo_reservation_clear_o(amo_reservation_clear),
 
 `ifdef SVCPU_WHISPER_LOCKSTEP
         .retire_valid_o    (retire_valid),

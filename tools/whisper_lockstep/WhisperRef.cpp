@@ -202,6 +202,32 @@ void configure_rtl_misa(HartType& hart)
 }
 
 
+template <typename HartType>
+void configure_rtl_mimpid(HartType& hart)
+{
+    /*
+     * Match the RTL machine implementation ID.
+     *
+     * The RTL exposes MIMPID = 1 and treats the CSR as read-only.
+     */
+    constexpr bool implemented = true;
+    constexpr std::uint64_t rtl_mimpid = 1;
+    constexpr std::uint64_t write_mask = 0;
+    constexpr std::uint64_t poke_mask = 0;
+    constexpr bool shared = true;
+
+    if (!hart.configCsr(
+            "mimpid",
+            implemented,
+            rtl_mimpid,
+            write_mask,
+            poke_mask,
+            shared)) {
+        fail("failed to configure RTL MIMPID value");
+    }
+}
+
+
 std::string binary_spec(
     const std::string& path,
     std::uint64_t address)
@@ -268,6 +294,7 @@ WhisperRef::WhisperRef(const WhisperConfig& config)
      * reset.  This avoids correcting MISA reads instruction-by-instruction.
      */
     configure_rtl_misa(*hart_);
+    configure_rtl_mimpid(*hart_);
 
     /*
      * Match the RTL's eight-entry PMP implementation before reset.
@@ -487,7 +514,8 @@ RefCommit WhisperRef::step(
     bool rtl_mem_write,
     std::uint64_t rtl_mem_addr,
     std::uint8_t rtl_mem_mask,
-    std::uint64_t rtl_mem_data)
+    std::uint64_t rtl_mem_data,
+    bool rtl_mtip)
 {
     RefCommit result;
 
@@ -546,6 +574,45 @@ RefCommit WhisperRef::step(
 
         const bool have_stvec =
             hart_->peekCsr(WdRiscv::CsrNumber::STVEC, stvec);
+
+        /*
+         * Synchronize the RTL machine-timer interrupt level into Whisper.
+         *
+         * RTL MTIP is driven asynchronously by the RTL ACLINT.  Whisper has
+         * its own instruction-step timer model, so allowing both sides to
+         * generate MTIP independently eventually makes interrupt entry occur
+         * at different architectural instruction boundaries.
+         *
+         * externalPokeCsr() is intentional here.  For MIP it sets Whisper's
+         * mipPoked_ flag, causing processExternalInterrupt() to preserve this
+         * externally supplied MIP value for the upcoming singleStep instead
+         * of recomputing MTIP from Whisper's internal timer.
+         *
+         * Preserve all other current Whisper MIP bits and replace only MTIP
+         * (bit 7) with the level observed from the RTL.
+         */
+        std::uint64_t mip = 0;
+
+        if (!hart_->peekCsr(
+                WdRiscv::CsrNumber::MIP,
+                mip)) {
+            fail("failed to read MIP while synchronizing RTL MTIP");
+        }
+
+        constexpr std::uint64_t kMtipMask =
+            std::uint64_t{1} << 7;
+
+        if (rtl_mtip)
+            mip |= kMtipMask;
+        else
+            mip &= ~kMtipMask;
+
+        if (!hart_->externalPokeCsr(
+                WdRiscv::CsrNumber::MIP,
+                mip,
+                false)) {
+            fail("failed to synchronize RTL MTIP into Whisper MIP");
+        }
 
         /*
          * MMIO reads are driven by RTL peripheral state, not by ordinary RAM.

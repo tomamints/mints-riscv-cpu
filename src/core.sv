@@ -9,6 +9,7 @@ module core (
 	input logic amo_commit_valid,
 	input UIntX amo_commit_wdata,
 	output UIntX led,
+	output logic amo_reservation_clear_o,
 
 `ifdef SVCPU_WHISPER_LOCKSTEP
 	output logic        retire_valid_o,
@@ -640,11 +641,15 @@ module core (
 			!memu_expt.valid;
 
 		wbq_wdata.mem_write =
-			inst_is_store(mems_ctrl) &&
-			!(
-				mems_ctrl.is_amo &&
-				(mems_inst_bits[31:27] == 5'b00010) // LR is read-only
-			);
+			mems_ctrl.is_amo
+				? (
+					(mems_inst_bits[31:27] == 5'b00010) // LR: read-only
+						? 1'b0
+						: (mems_inst_bits[31:27] == 5'b00011) // SC
+							? (memu_rdata == UIntX'(0)) // SC writes only on success
+							: 1'b1 // Other AMOs always perform a store
+				  )
+				: inst_is_store(mems_ctrl);
 		wbq_wdata.mem_addr = memu_addr;
 
 		wbq_wdata.mem_mask =
@@ -655,19 +660,13 @@ module core (
 		wbq_wdata.mem_data =
 			(
 				mems_ctrl.is_amo &&
-				(mems_inst_bits[31:27] == 5'b00011) // SC
+				(mems_inst_bits[31:27] == 5'b00011) // SC stores rs2 on success
 			)
-				? retire_store_data(
-					mems_ctrl.funct3,
-					memu_addr,
-					memq_rdata.rs2_data)
+				? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
 				: mems_ctrl.is_amo
 					? amo_commit_wdata
 					: inst_is_store(mems_ctrl)
-						? retire_store_data(
-							mems_ctrl.funct3,
-							memu_addr,
-							memq_rdata.rs2_data)
+						? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
 						: memu_rdata;
 	end
 
@@ -766,6 +765,11 @@ module core (
 		mems_is_new &&
 		(csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken || mems_translation_hazard);
 	assign perf_trap_flush_event = mems_valid && mems_is_new && csru_raise_trap && !csru_trap_return;
+	assign amo_reservation_clear_o =
+		mems_valid &&
+		mems_is_new &&
+		csru_raise_trap &&
+		!csru_trap_return;
 	assign perf_load_event = architectural_retire && wbs_ctrl.is_load;
 	assign perf_store_event = architectural_retire && inst_is_store(wbs_ctrl);
 

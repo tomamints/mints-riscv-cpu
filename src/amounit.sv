@@ -3,6 +3,7 @@ import eei::*;
 module amounit (
     input  logic           clk,
     input  logic           rst,   // active-low reset
+    input  logic           reservation_clear,
     core_data_if.slave     slave,
     input  logic           slave_low_priority,
     output logic           master_low_priority,
@@ -705,6 +706,13 @@ always_ff @(posedge clk or negedge rst) begin
             end
 
         endcase
+
+        // A trap/interrupt may invalidate an outstanding LR reservation.
+        // This keeps SC behavior conservative and aligned with the
+        // architectural freedom allowed for LR/SC implementations.
+        if (reservation_clear) begin
+            is_addr_reserved <= 1'b0;
+        end
     end
 end
 

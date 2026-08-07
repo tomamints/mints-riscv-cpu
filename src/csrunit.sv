@@ -654,6 +654,8 @@ module csrunit (
 							mcause <= trap_cause;
 							if (raise_expt) begin
 								mtval <= expt_value;
+							end else begin
+								mtval <= '0;
 							end
 							//save mstatus.mie to mstatus.mpie
 							//and set mstatus.mie = 0
@@ -666,6 +668,8 @@ module csrunit (
 							scause <= trap_cause;
 							if (raise_expt) begin
 								stval <= expt_value;
+							end else begin
+								stval <= '0;
 							end
 							//save sstatus.sie to sstatus.spie
 							//and set sstatus.sie = 0
