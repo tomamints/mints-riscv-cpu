@@ -6,7 +6,27 @@ module core (
 	input logic rst,
 	core_inst_if.master i_membus,
 	core_data_if.master d_membus,
+	input logic amo_commit_valid,
+	input UIntX amo_commit_wdata,
 	output UIntX led,
+
+`ifdef SVCPU_WHISPER_LOCKSTEP
+	output logic        retire_valid_o,
+	output Addr         retire_pc_o,
+	output Inst         retire_inst_o,
+	output PrivMode     retire_priv_o,
+
+	output logic        retire_rd_we_o,
+	output logic [4:0]  retire_rd_addr_o,
+	output UIntX        retire_rd_data_o,
+
+	output logic        retire_mem_valid_o,
+	output logic        retire_mem_write_o,
+	output Addr         retire_mem_addr_o,
+	output logic [7:0]  retire_mem_mask_o,
+	output UIntX        retire_mem_data_o,
+`endif
+
 	output PrivMode pmp_priv_mode,
 	output UIntX pmpcfg0_fetch_value,
 	output UIntX pmpaddr0_fetch_value,
@@ -619,18 +639,22 @@ module core (
 			!mems_expt.valid &&
 			!memu_expt.valid;
 
-		wbq_wdata.mem_write = inst_is_store(mems_ctrl);
+		wbq_wdata.mem_write =
+			inst_is_store(mems_ctrl) ||
+			mems_ctrl.is_amo;
 		wbq_wdata.mem_addr = memu_addr;
 
 		wbq_wdata.mem_mask =
-			inst_is_store(mems_ctrl)
+			(inst_is_store(mems_ctrl) || mems_ctrl.is_amo)
 				? retire_store_mask(mems_ctrl.funct3, memu_addr)
 				: 8'h00;
 
 		wbq_wdata.mem_data =
-			inst_is_store(mems_ctrl)
-				? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
-				: memu_rdata;
+			mems_ctrl.is_amo
+				? amo_commit_wdata
+				: inst_is_store(mems_ctrl)
+					? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
+					: memu_rdata;
 	end
 
 	//////////WB Stage //////////
@@ -698,6 +722,23 @@ module core (
 
 	assign retire_mem_data =
 		retire_mem_valid ? wbq_rdata.mem_data : UIntX'(0);
+
+`ifdef SVCPU_WHISPER_LOCKSTEP
+	assign retire_valid_o = architectural_retire;
+	assign retire_pc_o = architectural_retire ? wbs_pc : Addr'(0);
+	assign retire_inst_o = architectural_retire ? wbs_inst_bits : Inst'(0);
+	assign retire_priv_o = csru_priv_mode;
+
+	assign retire_rd_we_o = retire_rd_we;
+	assign retire_rd_addr_o = retire_rd_addr;
+	assign retire_rd_data_o = retire_rd_data;
+
+	assign retire_mem_valid_o = retire_mem_valid;
+	assign retire_mem_write_o = retire_mem_write;
+	assign retire_mem_addr_o = retire_mem_addr;
+	assign retire_mem_mask_o = retire_mem_mask;
+	assign retire_mem_data_o = retire_mem_data;
+`endif
 	assign perf_ifetch_stall = !ids_valid && !control_hazard;
 	assign perf_data_hazard_stall = exs_valid && exs_data_hazard;
 	assign perf_muldiv_stall = exs_muldiv_stall;

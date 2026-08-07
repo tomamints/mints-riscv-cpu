@@ -341,3 +341,94 @@ ELF 64-bit LSB relocatable
 ```text
 Mach-O 64-bit object
 ```
+
+
+
+===========================
+
+
+cd "$HOME/risc-v-cpu"
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  ubuntu:24.04 \
+  bash -lc '
+    set -eux
+
+    apt-get update
+
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      build-essential \
+      git \
+      autoconf \
+      flex \
+      bison \
+      help2man \
+      perl \
+      python3 \
+      libfl-dev \
+      linux-libc-dev \
+      libboost-dev \
+      zlib1g-dev
+
+    git clone \
+      --depth 1 \
+      --branch v5.046 \
+      https://github.com/verilator/verilator.git \
+      /tmp/verilator
+
+    cd /tmp/verilator
+    autoconf
+    ./configure
+    make -j"$(nproc)"
+    make install
+
+    cd /work
+
+    rm -rf obj_dir_lockstep
+    make build-lockstep
+  '
+
+  ビビルド
+
+
+cd "$HOME/risc-v-cpu"
+
+rm -rf obj_dir_lockstep
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  ubuntu:24.04 \
+  bash -lc '
+    set -eux
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      build-essential \
+      make \
+      g++ \
+      verilator \
+      zlib1g-dev
+
+    make build-lockstep
+  '
+
+成功後↓↓↓
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  ubuntu:24.04 \
+  bash -lc '
+    set -eux
+
+    WHISPER_OPENSBI_ELF=/work/build/external/opensbi/build/platform/generic/firmware/fw_jump.elf \
+    WHISPER_DTB=/work/build/platform/riscv_cpu.dtb \
+    DBG_ADDR=0x40000000 \
+    ./obj_dir_lockstep/sim \
+      build/platform/bootrom_linux.hex \
+      build/platform/opensbi_ram.hex \
+      1000000
+  '

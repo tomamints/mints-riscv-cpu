@@ -23,6 +23,32 @@ SRC_DIR   = src
 OBJ_DIR   = obj_dir
 INPUT_OBJ_DIR = obj_dir_input
 TRACE_OBJ_DIR = obj_dir_trace
+LOCKSTEP_OBJ_DIR = obj_dir_lockstep
+
+# Whisper differential lockstep
+WHISPER_DIR ?= whisper
+WHISPER_BUILD_DIR ?= $(WHISPER_DIR)/build-Linux
+WHISPER_LIB ?= $(WHISPER_BUILD_DIR)/librvcore.a
+WHISPER_LOCKSTEP_DIR ?= tools/whisper_lockstep
+
+LOCKSTEP_CPP_SRCS = \
+	$(WHISPER_LOCKSTEP_DIR)/WhisperRef.cpp \
+	$(WHISPER_DIR)/virtual_memory/VirtMem.cpp \
+	$(WHISPER_DIR)/virtual_memory/Tlb.cpp \
+	$(WHISPER_DIR)/pci/Pci.cpp \
+	$(WHISPER_DIR)/pci/PciDev.cpp \
+	$(WHISPER_DIR)/pci/virtio/Blk.cpp \
+	$(WHISPER_DIR)/pci/virtio/Virtio.cpp
+
+LOCKSTEP_CPPFLAGS = \
+	-I$(abspath $(WHISPER_DIR)) \
+	-I$(abspath $(WHISPER_DIR)/pci) \
+	-I$(abspath $(WHISPER_DIR)/pci/virtio) \
+	-I$(abspath $(WHISPER_LOCKSTEP_DIR))
+
+LOCKSTEP_LDFLAGS = $(abspath $(WHISPER_LIB)) -pthread -lz
+
+OPENSBI_ELF ?= build/external/opensbi/build/platform/generic/firmware/fw_jump.elf
 
 # トップモジュール名
 TOP       = core_top
@@ -38,6 +64,7 @@ RTL_SRCS  = $(shell sed '/^\#/d;/^$$/d' $(FILELIST))
 SIM       = $(OBJ_DIR)/sim
 INPUT_SIM = $(INPUT_OBJ_DIR)/sim
 TRACE_SIM = $(TRACE_OBJ_DIR)/sim
+LOCKSTEP_SIM = $(LOCKSTEP_OBJ_DIR)/sim
 SIM_NAME = sim
 
 # ラン用パラメータ
@@ -102,7 +129,7 @@ LINUX_IMAGE_OFFSET ?= 0x200000
 # ルール
 # =====================================================
 
-.PHONY: all build build-input build-trace run clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs opensbi-payload-build test-opensbi-payload opensbi-ram-image run-opensbi run-opensbi-input test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-input test-uart-regs test-uart-tx-irq test-uart-tx-seip test-uart-rx-seip test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
+.PHONY: all build build-input build-trace build-lockstep run run-lockstep run-opensbi-lockstep clean dtb linux-bootrom-build linux-ram-image test-linux-bootargs opensbi-payload-build test-opensbi-payload opensbi-ram-image run-opensbi run-opensbi-input test test-one test-suite test-rv32ui test-rv32um test-rv32ua test-rv32uc test-rv32mi test-rv32si test-rv64ui test-rv64um test-rv64ua test-rv64uc test-rv64mi test-rv64si test-smoke bootrom-build c-test c-test-build test-output test-input test-input-interactive test-dma test-uart test-uart-input test-uart-regs test-uart-tx-irq test-uart-tx-seip test-uart-rx-seip test-mswi test-mtime os2-min-build test-os2-min test-os2-min-input test-os2-min-strap test-os2-min-sv39 test-os2-min-pmp test-os2-min-user test-custom-all test-riscv-all trace-c-test trace-output trace-dma
 
 
 
@@ -118,6 +145,23 @@ $(INPUT_SIM): $(RTL_SRCS) $(TB) $(FILELIST)
 
 $(TRACE_SIM): $(RTL_SRCS) $(TB) $(FILELIST)
 	$(MAKE) build-trace
+
+$(LOCKSTEP_SIM): $(RTL_SRCS) $(TB) $(FILELIST) \
+		$(WHISPER_LOCKSTEP_DIR)/WhisperRef.hpp \
+		$(WHISPER_LOCKSTEP_DIR)/WhisperRef.cpp \
+		$(WHISPER_LIB) \
+		$(LOCKSTEP_CPP_SRCS)
+	$(MAKE) build-lockstep
+
+# Lockstep executable run.
+# ROM/RAM are the same images consumed by the RTL simulator.
+run-lockstep: $(LOCKSTEP_SIM)
+	test -f "$(OPENSBI_ELF)" || (echo "Missing OPENSBI_ELF=$(OPENSBI_ELF)"; exit 1)
+	test -f "$(DTB)" || (echo "Missing DTB=$(DTB)"; exit 1)
+	WHISPER_OPENSBI_ELF="$(abspath $(OPENSBI_ELF))" \
+	WHISPER_DTB="$(abspath $(DTB))" \
+	DBG_ADDR="$(DBG_ADDR)" \
+	$(LOCKSTEP_SIM) "$(ROM)" "$(RAM)" "$(CYCLES)" $(SIM_EXTRA_ARGS)
 
 # 単体テスト実行
 # 例: make test TEST=rv32ui-p-add
@@ -244,6 +288,22 @@ run-opensbi: $(SIM) linux-bootrom-build opensbi-ram-image
 
 run-opensbi-input: $(INPUT_SIM) linux-bootrom-build opensbi-ram-image
 	DBG_ADDR=$(DBG_ADDR) $(INPUT_SIM) $(LINUX_BOOTROM_HEX) $(OPENSBI_RAM_HEX) $(OPENSBI_CYCLES) $(SIM_EXTRA_ARGS)
+
+run-opensbi-lockstep: $(LOCKSTEP_SIM) linux-bootrom-build opensbi-ram-image
+	test -f "$(OPENSBI_ELF)" || (echo "Missing OPENSBI_ELF=$(OPENSBI_ELF)"; exit 1)
+	test -f "$(DTB)" || (echo "Missing DTB=$(DTB)"; exit 1)
+	if test -n "$(LINUX_IMAGE_BIN)"; then \
+		WHISPER_OPENSBI_ELF="$(abspath $(OPENSBI_ELF))" \
+		WHISPER_DTB="$(abspath $(DTB))" \
+		WHISPER_LINUX="$(abspath $(LINUX_IMAGE_BIN))" \
+		DBG_ADDR="$(DBG_ADDR)" \
+		$(LOCKSTEP_SIM) "$(LINUX_BOOTROM_HEX)" "$(OPENSBI_RAM_HEX)" "$(OPENSBI_CYCLES)" $(SIM_EXTRA_ARGS); \
+	else \
+		WHISPER_OPENSBI_ELF="$(abspath $(OPENSBI_ELF))" \
+		WHISPER_DTB="$(abspath $(DTB))" \
+		DBG_ADDR="$(DBG_ADDR)" \
+		$(LOCKSTEP_SIM) "$(LINUX_BOOTROM_HEX)" "$(OPENSBI_RAM_HEX)" "$(OPENSBI_CYCLES)" $(SIM_EXTRA_ARGS); \
+	fi
 
 test-output: C_TEST=debug_output
 test-output: CYCLES=10000
@@ -374,6 +434,7 @@ clean:
 	rm -rf $(OBJ_DIR)
 	rm -rf $(INPUT_OBJ_DIR)
 	rm -rf $(TRACE_OBJ_DIR)
+	rm -rf $(LOCKSTEP_OBJ_DIR)
 	rm -rf build
 sim:
 	verilator --cc $(VERILATOR_FLAGS) -f $(FILELIST) --exe $(TB_PROGRAM) --top-module $(TOP_MODULE) --Mdir $(OBJ_DIR)
@@ -398,3 +459,19 @@ build-trace:
 	make -C $(TRACE_OBJ_DIR) -f V$(TOP).mk
 	mv $(TRACE_OBJ_DIR)/V$(TOP) $(TRACE_OBJ_DIR)/$(SIM_NAME)
 	@echo "✅ Trace build complete. Run with: make trace-output or make trace-dma"
+
+
+build-lockstep:
+	test -f "$(WHISPER_LIB)" || (echo "Missing Whisper library: $(WHISPER_LIB)"; exit 1)
+	$(VERILATOR) --cc \
+		-DSVCPU_WHISPER_LOCKSTEP \
+		-CFLAGS "-DSVCPU_WHISPER_LOCKSTEP -std=c++20 $(LOCKSTEP_CPPFLAGS)" \
+		-LDFLAGS "$(LOCKSTEP_LDFLAGS)" \
+		-f $(FILELIST) \
+		--exe $(TB) $(LOCKSTEP_CPP_SRCS) \
+		--top-module $(TOP) \
+		--Mdir $(LOCKSTEP_OBJ_DIR)
+	$(MAKE) -C $(LOCKSTEP_OBJ_DIR) -f V$(TOP).mk \
+		VM_CFLAGS="-std=gnu++20 -Os"
+	mv $(LOCKSTEP_OBJ_DIR)/V$(TOP) $(LOCKSTEP_OBJ_DIR)/$(SIM_NAME)
+	@echo "✅ Lockstep build complete: $(LOCKSTEP_SIM)"

@@ -1,0 +1,28 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        build-essential \
+        git \
+        make \
+        autoconf \
+        flex \
+        bison \
+        help2man \
+        perl \
+        python3 \
+        zlib1g-dev \
+        libfl2 \
+        libfl-dev \
+        libboost-all-dev && \
+    git clone --depth 1 --branch v5.046 \
+        https://github.com/verilator/verilator.git \
+        /tmp/verilator && \
+    cd /tmp/verilator && \
+    autoconf && \
+    ./configure && \
+    make -j"$(nproc)" && \
+    make install && \
+    rm -rf /tmp/verilator /var/lib/apt/lists/*
+
+WORKDIR /work

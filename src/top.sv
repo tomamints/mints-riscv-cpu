@@ -14,6 +14,24 @@ module core_top #(
     input  logic rst,
     input  Addr  MMAP_DBG_ADDR,
     output UIntX led
+
+`ifdef SVCPU_WHISPER_LOCKSTEP
+    ,
+    output logic        retire_valid,
+    output Addr         retire_pc,
+    output Inst         retire_inst,
+    output PrivMode     retire_priv,
+
+    output logic        retire_rd_we,
+    output logic [4:0]  retire_rd_addr,
+    output UIntX        retire_rd_data,
+
+    output logic        retire_mem_valid,
+    output logic        retire_mem_write,
+    output Addr         retire_mem_addr,
+    output logic [7:0]  retire_mem_mask,
+    output UIntX        retire_mem_data
+`endif
 );
 
     // アドレスをデータ単位に変換
@@ -101,6 +119,8 @@ module core_top #(
     logic memarb_last_i;
     logic d_membus_low_priority;
     logic dcache_mem_low_priority;
+    logic amo_commit_valid;
+    UIntX amo_commit_wdata;
     logic memarb_select_d;
     logic memarb_issue_is_i;
     UInt64 perf_memarb_i_grant_count;
@@ -319,7 +339,9 @@ module core_top #(
         .slave_low_priority(dcache_mem_low_priority),
         .master_low_priority(d_membus_low_priority),
         .slave  (dcache_membus_core),
-        .master (d_membus)
+        .master (d_membus),
+        .amo_commit_valid(amo_commit_valid),
+        .amo_commit_wdata(amo_commit_wdata)
     );
 
     dma u_dma(
@@ -382,7 +404,27 @@ module core_top #(
         .rst      (rst),
         .i_membus (i_membus_core),
         .d_membus (d_membus_core),
+        .amo_commit_valid(amo_commit_valid),
+        .amo_commit_wdata(amo_commit_wdata),
         .led      (led),
+
+`ifdef SVCPU_WHISPER_LOCKSTEP
+        .retire_valid_o    (retire_valid),
+        .retire_pc_o       (retire_pc),
+        .retire_inst_o     (retire_inst),
+        .retire_priv_o     (retire_priv),
+
+        .retire_rd_we_o    (retire_rd_we),
+        .retire_rd_addr_o  (retire_rd_addr),
+        .retire_rd_data_o  (retire_rd_data),
+
+        .retire_mem_valid_o(retire_mem_valid),
+        .retire_mem_write_o(retire_mem_write),
+        .retire_mem_addr_o (retire_mem_addr),
+        .retire_mem_mask_o (retire_mem_mask),
+        .retire_mem_data_o (retire_mem_data),
+`endif
+
         .pmp_priv_mode(pmp_priv_mode),
         .pmpcfg0_fetch_value(pmpcfg0_fetch_value),
         .pmpaddr0_fetch_value(pmpaddr0_fetch_value),

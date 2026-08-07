@@ -6,7 +6,9 @@ module amounit (
     core_data_if.slave     slave,
     input  logic           slave_low_priority,
     output logic           master_low_priority,
-    Membus.master          master
+    Membus.master          master,
+    output logic           amo_commit_valid,
+    output UIntX           amo_commit_wdata
 );
 
 // ======================================================
@@ -40,6 +42,10 @@ Addr  reserved_addr;
 // amo variable
 // ======================================================
 UIntX zaamo_fetched_data;
+UIntX zaamo_written_data;
+
+assign amo_commit_valid = (state == AMOStoreValid) && master.rvalid;
+assign amo_commit_wdata = zaamo_written_data;
 
 
 function automatic void reset_master();
@@ -362,8 +368,17 @@ always_ff @(posedge clk or negedge rst) begin
         is_addr_reserved   <= 1'b0;
         reserved_addr      <= '0;
         zaamo_fetched_data <= '0;
+        zaamo_written_data <= '0;
 
     end else begin
+
+        // Capture the exact data accepted by the lower memory for a
+        // Zaamo store.  This is the architectural new memory value
+        // used by the retire/lockstep trace.
+        if ((state == AMOLoadValid || state == AMOStoreReady) &&
+            master.valid && master.ready && master.wen) begin
+            zaamo_written_data <= master.wdata;
+        end
 
         // ======================================================
         // 全状態のメイン FSM
