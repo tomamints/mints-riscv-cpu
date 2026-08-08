@@ -32,7 +32,8 @@ module core_top #(
     output logic [7:0]  retire_mem_mask,
     output UIntX        retire_mem_data,
 
-    output logic        lockstep_mtip
+    output logic        lockstep_mtip,
+    output logic        lockstep_mtip_trap_taken
 `endif
 );
 
@@ -432,6 +433,8 @@ module core_top #(
         .retire_mem_addr_o (retire_mem_addr),
         .retire_mem_mask_o (retire_mem_mask),
         .retire_mem_data_o (retire_mem_data),
+
+        .lockstep_mtip_trap_taken_o(lockstep_mtip_trap_taken),
 `endif
 
         .pmp_priv_mode(pmp_priv_mode),

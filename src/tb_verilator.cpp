@@ -457,16 +457,19 @@ int main(int argc, char** argv)
     bool lockstep_started = false;
     bool lockstep_failed = false;
 
-    // MTIP is sampled after an RTL instruction retires.  If that sampled
-    // value is fed to Whisper immediately, an interrupt that became pending
-    // at the boundary after the retiring instruction is observed one
-    // instruction too early by the reference model.
+    // Do not synchronize the raw MTIP level continuously.
     //
-    // Carry the sampled value to the next retire comparison instead.  This
-    // aligns Whisper's pre-instruction interrupt state with the RTL boundary:
-    // the current RTL instruction retires first, then MTIP may become pending,
-    // then the next architectural instruction can be interrupted.
-    bool lockstep_mtip_for_next_step = false;
+    // RTL explicitly tells us when it actually accepted
+    // MACHINE_TIMER_INTERRUPT. Record that as a pending one-shot injection.
+    // The injection is consumed by the next Whisper step, which first performs
+    // the matching non-retiring interrupt transition and then returns the first
+    // retired trap-handler instruction.
+    //
+    // Keeping MTIP asserted across subsequent Whisper steps is wrong: RTL may
+    // still have its physical MTIP level high while software is servicing the
+    // already accepted interrupt, and continuously re-poking MIP.MTIP can make
+    // Whisper take a second machine-timer interrupt too early.
+    bool lockstep_mtimer_pending = false;
 #endif
 
     for (long long half_cycle = 0;
@@ -480,6 +483,30 @@ int main(int argc, char** argv)
         dut->eval();
 
 #ifdef SVCPU_WHISPER_LOCKSTEP
+        const bool mtimer_event_this_edge =
+            dut->clk == 1 &&
+            dut->lockstep_mtip_trap_taken;
+
+        if (mtimer_event_this_edge) {
+            std::cerr
+                << "[LOCKSTEP-MTIMER-EVENT]"
+                << " compared_order=" << std::dec << compared_order
+                << " rtl_retire_order=" << rtl_retire_order
+                << " retire_valid=" << static_cast<unsigned>(dut->retire_valid)
+                << " retire_pc=0x" << std::hex
+                << static_cast<std::uint64_t>(dut->retire_pc)
+                << " mtip=" << std::dec
+                << static_cast<unsigned>(dut->lockstep_mtip)
+                << '\n';
+
+            // If no instruction retires on this edge, the interrupt has already
+            // won the current architectural boundary.  The next RTL retirement
+            // will therefore be the first trap-handler instruction, so arm the
+            // matching Whisper interrupt immediately.
+            if (!dut->retire_valid)
+                lockstep_mtimer_pending = true;
+        }
+
         // Observe retire once, immediately after the rising-edge evaluation.
         if (dut->clk == 1 && dut->retire_valid) {
             ++rtl_retire_order;
@@ -500,8 +527,20 @@ int main(int argc, char** argv)
             if (lockstep_started) {
                 ++compared_order;
 
-                const bool rtl_mtip_after_retire =
-                    static_cast<bool>(dut->lockstep_mtip);
+                const bool inject_mtimer =
+                    lockstep_mtimer_pending;
+
+                if (inject_mtimer) {
+                    std::cerr
+                        << "[LOCKSTEP-MTIMER-INJECT]"
+                        << " compared_order=" << std::dec << compared_order
+                        << " rtl_pc=0x" << std::hex << rtl_pc
+                        << " rtl_inst=0x"
+                        << static_cast<std::uint32_t>(dut->retire_inst)
+                        << " rtl_mtip=" << std::dec
+                        << static_cast<unsigned>(dut->lockstep_mtip)
+                        << '\n';
+                }
 
                 const auto ref = whisper->step(
                     static_cast<std::uint32_t>(dut->retire_inst),
@@ -513,14 +552,19 @@ int main(int argc, char** argv)
                     static_cast<std::uint64_t>(dut->retire_mem_addr),
                     static_cast<std::uint8_t>(dut->retire_mem_mask),
                     static_cast<std::uint64_t>(dut->retire_mem_data),
-                    lockstep_mtip_for_next_step);
+                    inject_mtimer);
 
-                // The MTIP visible after this RTL retire belongs to the next
-                // architectural instruction boundary, so use it on the next
-                // Whisper step rather than on the instruction that just
-                // retired.
-                lockstep_mtip_for_next_step =
-                    rtl_mtip_after_retire;
+                // Consume the interrupt event that belonged before this
+                // retirement.
+                lockstep_mtimer_pending = false;
+
+                // If RTL reported M_TIMER on the very same edge as a valid
+                // retirement, that retirement still happened architecturally
+                // before the interrupt.  Arm the event only after comparing the
+                // current instruction, so Whisper takes it before the following
+                // RTL retirement.
+                if (mtimer_event_this_edge)
+                    lockstep_mtimer_pending = true;
 
                 if (!compare_commit(compared_order, *dut, ref)) {
                     lockstep_failed = true;

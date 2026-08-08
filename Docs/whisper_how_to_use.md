@@ -434,6 +434,18 @@ docker run --rm \
   '
 
 
+Whisper変更後
+docker run --rm \
+  -v "$HOME/risc-v-cpu:/work" \
+  -w /work/whisper \
+  riscv-lockstep-verilator:5.046 \
+  bash -lc '
+    set -eux
+    make -f GNUmakefile BUILD_DIR=build-Linux build-Linux/librvcore.a
+  '
+
+
+ビルド
 cd "$HOME/risc-v-cpu"
 
 rm -rf obj_dir_lockstep

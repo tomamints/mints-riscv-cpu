@@ -19,6 +19,8 @@ module csrunit (
 	output logic raise_trap,
 	output Addr  trap_vector,
 	output logic trap_return,
+	output logic trap_interrupt_o,
+	output CsrCause trap_cause_o,
 	output PrivMode mem_priv_mode,
 	output logic minstret_wen,
 	output UInt64 minstret_wdata,
@@ -372,6 +374,9 @@ module csrunit (
     raise_expt      ? expt_cause :
     raise_interrupt ? interrupt_cause :
                       UIntX'(0);
+
+	assign trap_interrupt_o = raise_interrupt;
+	assign trap_cause_o = CsrCause'(trap_cause);
 
 	assign trap_vector =
 		raise_expt      ? expt_vector :

@@ -26,6 +26,10 @@ module core (
 	output Addr         retire_mem_addr_o,
 	output logic [7:0]  retire_mem_mask_o,
 	output UIntX        retire_mem_data_o,
+
+	// Pulses only when RTL actually takes MACHINE_TIMER_INTERRUPT.
+	// This is used only by Whisper lockstep to align interrupt acceptance.
+	output logic        lockstep_mtip_trap_taken_o,
 `endif
 
 	output PrivMode pmp_priv_mode,
@@ -392,6 +396,8 @@ module core (
 			logic csru_raise_trap;
 			Addr csru_trap_vector;
 			logic csru_trap_return;
+			logic csru_trap_interrupt;
+			CsrCause csru_trap_cause;
 			UInt64 minstret;
 			logic minstret_wen;
 			UInt64 minstret_wdata;
@@ -461,7 +467,8 @@ module core (
 		end
 
 
-	// Convert a store size/address into an architectural byte mask.
+	// Bus-lane mask used by AMO retire tracing.  AMOs are naturally aligned, so
+	// representing their write value in bus lanes remains unambiguous.
 	function automatic logic [7:0] retire_store_mask(
 		input logic [2:0] funct3,
 		input Addr addr
@@ -471,15 +478,15 @@ module core (
 			case (funct3)
 				3'b000: base_mask = 8'h01; // SB
 				3'b001: base_mask = 8'h03; // SH
-				3'b010: base_mask = 8'h0f; // SW
-				3'b011: base_mask = 8'hff; // SD
+				3'b010: base_mask = 8'h0f; // SW / AMO.W
+				3'b011: base_mask = 8'hff; // SD / AMO.D
 				default: base_mask = 8'h00;
 			endcase
 			retire_store_mask = base_mask << addr[2:0];
 		end
 	endfunction
 
-	// Align store data to the byte lanes selected by retire_store_mask.
+	// Bus-lane-aligned data used by existing AMO tracing.
 	function automatic UIntX retire_store_data(
 		input logic [2:0] funct3,
 		input Addr addr,
@@ -495,6 +502,46 @@ module core (
 				default: narrowed_data = UIntX'(0);
 			endcase
 			retire_store_data = narrowed_data << (addr[2:0] * 8);
+		end
+	endfunction
+
+	// Architectural store-size mask for lockstep retirement.
+	//
+	// Unlike a bus byte-enable mask, this mask is intentionally NOT shifted by
+	// addr[2:0].  A misaligned store may cross an 8-byte bus boundary (for
+	// example SD at address ...001).  Encoding that access as an 8-bit
+	// lane-aligned mask would truncate one or more bytes.  Lockstep needs the
+	// instruction's architectural access size, not the first physical bus beat.
+	function automatic logic [7:0] retire_arch_store_mask(
+		input logic [2:0] funct3
+	);
+		begin
+			case (funct3)
+				3'b000: retire_arch_store_mask = 8'h01; // SB
+				3'b001: retire_arch_store_mask = 8'h03; // SH
+				3'b010: retire_arch_store_mask = 8'h0f; // SW
+				3'b011: retire_arch_store_mask = 8'hff; // SD
+				default: retire_arch_store_mask = 8'h00;
+			endcase
+		end
+	endfunction
+
+	// Architectural store value for lockstep retirement.
+	//
+	// This is the unshifted rs2 value narrowed to the instruction width.  The
+	// exact virtual address is already carried separately in mem_addr.
+	function automatic UIntX retire_arch_store_data(
+		input logic [2:0] funct3,
+		input UIntX rs2_data
+	);
+		begin
+			case (funct3)
+				3'b000: retire_arch_store_data = UIntX'(rs2_data[7:0]);
+				3'b001: retire_arch_store_data = UIntX'(rs2_data[15:0]);
+				3'b010: retire_arch_store_data = UIntX'(rs2_data[31:0]);
+				3'b011: retire_arch_store_data = rs2_data;
+				default: retire_arch_store_data = UIntX'(0);
+			endcase
 		end
 	endfunction
 
@@ -599,6 +646,8 @@ module core (
 				.raise_trap  (csru_raise_trap),
 				.trap_vector (csru_trap_vector),
 				.trap_return (csru_trap_return),
+				.trap_interrupt_o(csru_trap_interrupt),
+				.trap_cause_o(csru_trap_cause),
 				.mem_priv_mode(csru_mem_priv_mode),
 				.minstret_wen(minstret_wen),
 				.minstret_wdata(minstret_wdata),
@@ -653,20 +702,26 @@ module core (
 		wbq_wdata.mem_addr = memu_addr;
 
 		wbq_wdata.mem_mask =
-			(inst_is_store(mems_ctrl) || mems_ctrl.is_amo)
-				? retire_store_mask(mems_ctrl.funct3, memu_addr)
-				: 8'h00;
+			mems_ctrl.is_amo
+				? (
+					(mems_inst_bits[31:27] == 5'b00011) // SC
+						? retire_arch_store_mask(mems_ctrl.funct3)
+						: retire_store_mask(mems_ctrl.funct3, memu_addr)
+				  )
+				: inst_is_store(mems_ctrl)
+					? retire_arch_store_mask(mems_ctrl.funct3)
+					: 8'h00;
 
 		wbq_wdata.mem_data =
 			(
 				mems_ctrl.is_amo &&
 				(mems_inst_bits[31:27] == 5'b00011) // SC stores rs2 on success
 			)
-				? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
+				? retire_arch_store_data(mems_ctrl.funct3, memq_rdata.rs2_data)
 				: mems_ctrl.is_amo
 					? amo_commit_wdata
 					: inst_is_store(mems_ctrl)
-						? retire_store_data(mems_ctrl.funct3, memu_addr, memq_rdata.rs2_data)
+						? retire_arch_store_data(mems_ctrl.funct3, memq_rdata.rs2_data)
 						: memu_rdata;
 	end
 
@@ -754,6 +809,14 @@ module core (
 	assign retire_mem_addr_o = retire_mem_addr;
 	assign retire_mem_mask_o = retire_mem_mask;
 	assign retire_mem_data_o = retire_mem_data;
+
+	assign lockstep_mtip_trap_taken_o =
+		mems_valid &&
+		mems_is_new &&
+		csru_raise_trap &&
+		!csru_trap_return &&
+		csru_trap_interrupt &&
+		(csru_trap_cause == MACHINE_TIMER_INTERRUPT);
 `endif
 	assign perf_ifetch_stall = !ids_valid && !control_hazard;
 	assign perf_data_hazard_stall = exs_valid && exs_data_hazard;
