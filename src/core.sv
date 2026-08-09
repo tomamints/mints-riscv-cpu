@@ -24,11 +24,25 @@ module core (
 	output logic        retire_mem_valid_o,
 	output logic        retire_mem_write_o,
 	output Addr         retire_mem_addr_o,
+	output Addr         retire_mem_pa_o,
 	output logic [7:0]  retire_mem_mask_o,
 	output UIntX        retire_mem_data_o,
 
-	// Pulses only when RTL actually takes MACHINE_TIMER_INTERRUPT.
-	// This is used only by Whisper lockstep to align interrupt acceptance.
+	// Pulses when RTL actually takes any interrupt. The cause is exported
+	// separately so the lockstep harness can observe which asynchronous event
+	// won the architectural boundary.
+	output logic        lockstep_interrupt_trap_taken_o,
+	output CsrCause     lockstep_interrupt_cause_o,
+
+	// Pulses when RTL actually takes a synchronous exception. Export the
+	// architectural cause and the value that csrunit writes to MTVAL/STVAL.
+	// This is observation-only and does not alter trap behavior.
+	output logic        lockstep_exception_trap_taken_o,
+	output CsrCause     lockstep_exception_cause_o,
+	output UIntX        lockstep_exception_value_o,
+
+	// Existing MACHINE_TIMER_INTERRUPT pulse used by the proven MTIMER
+	// one-shot synchronization path. Keep this unchanged.
 	output logic        lockstep_mtip_trap_taken_o,
 `endif
 
@@ -89,6 +103,7 @@ module core (
 		logic        mem_valid;
 		logic        mem_write;
 		Addr         mem_addr;
+		Addr         mem_pa;
 		logic [7:0]  mem_mask;
 		UIntX        mem_data;
 	}wbq_type;
@@ -593,6 +608,7 @@ module core (
 	end
 
 		UIntX memu_rdata;
+		Addr memu_paddr;
 		logic memu_stall;
 		ExceptionInfo memu_expt;
 		ExceptionInfo csru_expt_info;
@@ -623,6 +639,7 @@ module core (
 			.addr   (memu_addr),
 			.rs2    (memq_rdata.rs2_data),
 			.rdata  (memu_rdata),
+			.paddr  (memu_paddr),
 			.stall  (memu_stall),
 			.expt   (memu_expt),
 			.membus (d_membus)
@@ -700,6 +717,7 @@ module core (
 				  )
 				: inst_is_store(mems_ctrl);
 		wbq_wdata.mem_addr = memu_addr;
+		wbq_wdata.mem_pa = memu_paddr;
 
 		wbq_wdata.mem_mask =
 			mems_ctrl.is_amo
@@ -748,6 +766,7 @@ module core (
 	logic        retire_mem_valid;
 	logic        retire_mem_write;
 	Addr         retire_mem_addr;
+	Addr         retire_mem_pa;
 	logic [7:0]  retire_mem_mask;
 	UIntX        retire_mem_data;
 	logic perf_ifetch_stall;
@@ -785,6 +804,9 @@ module core (
 	assign retire_mem_addr =
 		retire_mem_valid ? wbq_rdata.mem_addr : Addr'(0);
 
+	assign retire_mem_pa =
+		retire_mem_valid ? wbq_rdata.mem_pa : Addr'(0);
+
 	assign retire_mem_mask =
 		retire_mem_valid ? wbq_rdata.mem_mask : 8'h00;
 
@@ -807,15 +829,35 @@ module core (
 	assign retire_mem_valid_o = retire_mem_valid;
 	assign retire_mem_write_o = retire_mem_write;
 	assign retire_mem_addr_o = retire_mem_addr;
+	assign retire_mem_pa_o = retire_mem_pa;
 	assign retire_mem_mask_o = retire_mem_mask;
 	assign retire_mem_data_o = retire_mem_data;
 
-	assign lockstep_mtip_trap_taken_o =
+	assign lockstep_interrupt_trap_taken_o =
 		mems_valid &&
 		mems_is_new &&
 		csru_raise_trap &&
 		!csru_trap_return &&
-		csru_trap_interrupt &&
+		csru_trap_interrupt;
+
+	assign lockstep_interrupt_cause_o =
+		lockstep_interrupt_trap_taken_o ? csru_trap_cause : CsrCause'(0);
+
+	assign lockstep_exception_trap_taken_o =
+		mems_valid &&
+		mems_is_new &&
+		csru_raise_trap &&
+		!csru_trap_return &&
+		!csru_trap_interrupt;
+
+	assign lockstep_exception_cause_o =
+		lockstep_exception_trap_taken_o ? csru_trap_cause : CsrCause'(0);
+
+	assign lockstep_exception_value_o =
+		lockstep_exception_trap_taken_o ? csru_expt_info.value : UIntX'(0);
+
+	assign lockstep_mtip_trap_taken_o =
+		lockstep_interrupt_trap_taken_o &&
 		(csru_trap_cause == MACHINE_TIMER_INTERRUPT);
 `endif
 	assign perf_ifetch_stall = !ids_valid && !control_hazard;

@@ -71,7 +71,7 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null
 mount -t tmpfs tmpfs /tmp 2>/dev/null
 exec </dev/ttyS0 >/dev/ttyS0 2>&1
 
-echo "BusyBox userspace on MiNTs-CPU"
+echo "BusyBox userspace on SystemVerilog RISC-V CPU"
 echo "Type commands. Example: uname -a"
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh
 INIT
@@ -85,7 +85,7 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev 2>/dev/null
 
-echo "BusyBox userspace on MiNTs-CPU"
+echo "BusyBox userspace on SystemVerilog RISC-V CPU"
 echo "Type commands. Example: uname -a"
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh
 INIT
@@ -102,7 +102,7 @@ mount -t sysfs sysfs /sys
 echo "[init] mounted sys"
 mount -t devtmpfs devtmpfs /dev 2>/dev/null
 echo "[init] mounted dev"
-echo "BusyBox userspace on MiNTs-CPU"
+echo "BusyBox userspace on SystemVerilog RISC-V CPU"
 echo "[init] after banner"
 echo "Type commands. Example: uname -a"
 echo "[init] before shell"
@@ -380,84 +380,6 @@ while :; do
 done
 INIT
     ;;
-  cmdloop-stty-set-ttyS0)
-    cat > "$OUT_DIR/init" <<'INIT'
-#!/bin/sh
-
-/bin/busybox mount -t proc proc /proc || echo "WARN: proc mount failed: $?"
-/bin/busybox mount -t sysfs sysfs /sys || echo "WARN: sysfs mount failed: $?"
-/bin/busybox mount -t devtmpfs devtmpfs /dev || echo "WARN: devtmpfs mount failed: $?"
-
-/bin/busybox mkdir -p /tmp
-/bin/busybox mount -t tmpfs tmpfs /tmp || echo "WARN: tmpfs mount failed: $?"
-
-exec </dev/ttyS0 >/dev/ttyS0 2>&1
-
-echo "CMDLOOP-STTY-SET-TTYS0"
-echo "TERM-A: before stty sane"
-/bin/busybox stty -F /dev/ttyS0 sane
-echo "TERM-B: before canonical settings"
-/bin/busybox stty -F /dev/ttyS0 icrnl icanon echo
-echo "TERM-C: stty done"
-echo "MARK-A: before loop"
-
-while :; do
-	echo "MARK-B: before read"
-	line=
-	IFS= read -r line
-	read_status=$?
-	echo "MARK-C: read returned"
-	echo "status=$read_status"
-	echo "line=[$line]"
-
-	case "$line" in
-		"")
-			echo "empty command"
-			;;
-		"echo OK")
-			echo "OK"
-			;;
-		"uname -a")
-			/bin/busybox uname -a
-			echo "command-status=$?"
-			;;
-		"ls /")
-			/bin/busybox ls /
-			echo "command-status=$?"
-			;;
-		"cat /proc/cpuinfo")
-			/bin/busybox cat /proc/cpuinfo
-			echo "command-status=$?"
-			;;
-		"cat /proc/interrupts")
-			/bin/busybox cat /proc/interrupts
-			echo "command-status=$?"
-			;;
-		"filetest")
-			/bin/busybox mkdir -p /tmp/test || {
-				echo "mkdir failed: $?"
-				continue
-			}
-			/bin/busybox sh -c 'echo hello > /tmp/test/message.txt' || {
-				echo "write failed: $?"
-				continue
-			}
-			/bin/busybox cat /tmp/test/message.txt
-			/bin/busybox rm -f /tmp/test/message.txt
-			/bin/busybox rmdir /tmp/test
-			echo "filetest complete"
-			;;
-		"shell")
-			echo "starting plain interactive shell"
-			exec /bin/sh -i
-			;;
-		*)
-			echo "unknown command: [$line]"
-			;;
-	esac
-done
-INIT
-    ;;
   setsid-ttyS0)
     cat > "$OUT_DIR/init" <<'INIT'
 #!/bin/sh
@@ -547,10 +469,106 @@ INIT
 #!/bin/sh
 exec </dev/console >/dev/console 2>&1
 
-echo "BusyBox userspace on MiNTs-CPU
+echo "BusyBox userspace on SystemVerilog RISC-V CPU
 Type commands. Example: uname -a
 [init] before shell"
 exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh
+INIT
+    ;;
+  autotest)
+    cat > "$OUT_DIR/init" <<'INIT'
+#!/bin/sh
+
+/bin/busybox mount -t proc proc /proc || {
+	echo "BUSYBOX-TEST-FAIL: mount-proc status=$?"
+	exec /bin/busybox sh
+}
+
+/bin/busybox mount -t sysfs sysfs /sys || {
+	echo "BUSYBOX-TEST-FAIL: mount-sysfs status=$?"
+	exec /bin/busybox sh
+}
+
+/bin/busybox mount -t devtmpfs devtmpfs /dev || {
+	echo "BUSYBOX-TEST-FAIL: mount-devtmpfs status=$?"
+	exec /bin/busybox sh
+}
+
+/bin/busybox mkdir -p /tmp || {
+	echo "BUSYBOX-TEST-FAIL: mkdir-tmp status=$?"
+	exec /bin/busybox sh
+}
+
+/bin/busybox mount -t tmpfs tmpfs /tmp || {
+	echo "BUSYBOX-TEST-FAIL: mount-tmpfs status=$?"
+	exec /bin/busybox sh
+}
+
+exec </dev/ttyS0 >/dev/ttyS0 2>&1
+
+echo "BUSYBOX-TEST-BEGIN"
+
+echo "[TEST] uname"
+/bin/busybox uname -a || {
+	echo "BUSYBOX-TEST-FAIL: uname status=$?"
+	exec /bin/busybox sh
+}
+
+echo "[TEST] ls-root"
+/bin/busybox ls / || {
+	echo "BUSYBOX-TEST-FAIL: ls-root status=$?"
+	exec /bin/busybox sh
+}
+
+echo "[TEST] pwd"
+pwd_result=$(/bin/busybox pwd) || {
+	echo "BUSYBOX-TEST-FAIL: pwd status=$?"
+	exec /bin/busybox sh
+}
+echo "$pwd_result"
+if [ "$pwd_result" != "/" ]; then
+	echo "BUSYBOX-TEST-FAIL: pwd-value=[$pwd_result]"
+	exec /bin/busybox sh
+fi
+
+echo "[TEST] mkdir"
+/bin/busybox mkdir -p /tmp/test || {
+	echo "BUSYBOX-TEST-FAIL: mkdir status=$?"
+	exec /bin/busybox sh
+}
+
+echo "[TEST] write"
+/bin/busybox sh -c 'echo hello > /tmp/test/a' || {
+	echo "BUSYBOX-TEST-FAIL: write status=$?"
+	exec /bin/busybox sh
+}
+
+echo "[TEST] read"
+read_result=$(/bin/busybox cat /tmp/test/a) || {
+	echo "BUSYBOX-TEST-FAIL: cat status=$?"
+	exec /bin/busybox sh
+}
+echo "$read_result"
+if [ "$read_result" != "hello" ]; then
+	echo "BUSYBOX-TEST-FAIL: read-value=[$read_result]"
+	exec /bin/busybox sh
+fi
+
+echo "[TEST] cleanup"
+/bin/busybox rm -f /tmp/test/a || {
+	echo "BUSYBOX-TEST-FAIL: rm status=$?"
+	exec /bin/busybox sh
+}
+/bin/busybox rmdir /tmp/test || {
+	echo "BUSYBOX-TEST-FAIL: rmdir status=$?"
+	exec /bin/busybox sh
+}
+
+echo "BUSYBOX-TEST-PASS"
+
+while :; do
+	/bin/busybox sleep 1
+done
 INIT
     ;;
   *)

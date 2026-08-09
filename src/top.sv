@@ -29,10 +29,16 @@ module core_top #(
     output logic        retire_mem_valid,
     output logic        retire_mem_write,
     output Addr         retire_mem_addr,
+    output Addr         retire_mem_pa,
     output logic [7:0]  retire_mem_mask,
     output UIntX        retire_mem_data,
 
     output logic        lockstep_mtip,
+    output logic        lockstep_interrupt_trap_taken,
+    output CsrCause     lockstep_interrupt_cause,
+    output logic        lockstep_exception_trap_taken,
+    output CsrCause     lockstep_exception_cause,
+    output UIntX        lockstep_exception_value,
     output logic        lockstep_mtip_trap_taken
 `endif
 );
@@ -431,9 +437,15 @@ module core_top #(
         .retire_mem_valid_o(retire_mem_valid),
         .retire_mem_write_o(retire_mem_write),
         .retire_mem_addr_o (retire_mem_addr),
+        .retire_mem_pa_o   (retire_mem_pa),
         .retire_mem_mask_o (retire_mem_mask),
         .retire_mem_data_o (retire_mem_data),
 
+        .lockstep_interrupt_trap_taken_o(lockstep_interrupt_trap_taken),
+        .lockstep_interrupt_cause_o(lockstep_interrupt_cause),
+        .lockstep_exception_trap_taken_o(lockstep_exception_trap_taken),
+        .lockstep_exception_cause_o(lockstep_exception_cause),
+        .lockstep_exception_value_o(lockstep_exception_value),
         .lockstep_mtip_trap_taken_o(lockstep_mtip_trap_taken),
 `endif
 

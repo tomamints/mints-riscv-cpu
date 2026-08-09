@@ -242,6 +242,18 @@ bool compare_commit(
             add_difference(text.str());
         }
 
+        const std::uint64_t rtl_mem_pa =
+            static_cast<std::uint64_t>(dut.retire_mem_pa);
+
+        if (rtl_mem_pa != ref.mem_pa1) {
+            std::ostringstream text;
+            text << "mem_pa: rtl=0x" << std::hex << rtl_mem_pa
+                 << " ref=0x" << ref.mem_pa1
+                 << " rtl_va=0x" << rtl_mem_addr
+                 << " ref_va=0x" << ref.mem_va;
+            add_difference(text.str());
+        }
+
         // Current RTL emits a byte mask only for writes. For loads, size is
         // already checked indirectly through destination-register effects.
         if (rtl_mem_write && rtl_mem_size != ref.mem_size) {
@@ -279,6 +291,8 @@ bool compare_commit(
                 << "\n  - mem_context:"
                 << " rtl_addr=0x" << std::hex
                 << static_cast<std::uint64_t>(dut.retire_mem_addr)
+                << " rtl_pa=0x"
+                << static_cast<std::uint64_t>(dut.retire_mem_pa)
                 << " ref_pa=0x" << ref.mem_pa1
                 << " ref_va=0x" << ref.mem_va
                 << " ref_size=" << std::dec << ref.mem_size
@@ -470,6 +484,11 @@ int main(int argc, char** argv)
     // already accepted interrupt, and continuously re-poking MIP.MTIP can make
     // Whisper take a second machine-timer interrupt too early.
     bool lockstep_mtimer_pending = false;
+
+    // Supervisor external interrupts come from the RTL PLIC/UART state.
+    // Synchronize the accepted cause=9 boundary as a one-shot, exactly like
+    // MTIMER, rather than copying the raw SEIP level continuously.
+    bool lockstep_seip_pending = false;
 #endif
 
     for (long long half_cycle = 0;
@@ -483,6 +502,53 @@ int main(int argc, char** argv)
         dut->eval();
 
 #ifdef SVCPU_WHISPER_LOCKSTEP
+        const bool exception_event_this_edge =
+            dut->clk == 1 &&
+            dut->lockstep_exception_trap_taken;
+
+        if (exception_event_this_edge) {
+            std::cerr
+                << "[LOCKSTEP-EXPT-EVENT]"
+                << " compared_order=" << std::dec << compared_order
+                << " rtl_retire_order=" << rtl_retire_order
+                << " retire_valid=" << static_cast<unsigned>(dut->retire_valid)
+                << " retire_pc=0x" << std::hex
+                << static_cast<std::uint64_t>(dut->retire_pc)
+                << " cause=" << std::dec
+                << static_cast<unsigned>(dut->lockstep_exception_cause)
+                << " value=0x" << std::hex
+                << static_cast<std::uint64_t>(dut->lockstep_exception_value)
+                << '\n';
+        }
+
+        const bool interrupt_event_this_edge =
+            dut->clk == 1 &&
+            dut->lockstep_interrupt_trap_taken;
+
+        if (interrupt_event_this_edge) {
+            const unsigned interrupt_cause =
+                static_cast<unsigned>(dut->lockstep_interrupt_cause);
+
+            std::cerr
+                << "[LOCKSTEP-INTR-EVENT]"
+                << " compared_order=" << std::dec << compared_order
+                << " rtl_retire_order=" << rtl_retire_order
+                << " retire_valid=" << static_cast<unsigned>(dut->retire_valid)
+                << " retire_pc=0x" << std::hex
+                << static_cast<std::uint64_t>(dut->retire_pc)
+                << " cause=" << std::dec
+                << interrupt_cause
+                << '\n';
+
+            // Cause 9 is Supervisor External Interrupt.  If no instruction
+            // retires on this edge, the interrupt already owns the current
+            // architectural boundary, so inject it before the next reference
+            // retirement.  If an instruction retires on this edge, arm it
+            // only after comparing that instruction below.
+            if (interrupt_cause == 9 && !dut->retire_valid)
+                lockstep_seip_pending = true;
+        }
+
         const bool mtimer_event_this_edge =
             dut->clk == 1 &&
             dut->lockstep_mtip_trap_taken;
@@ -529,6 +595,8 @@ int main(int argc, char** argv)
 
                 const bool inject_mtimer =
                     lockstep_mtimer_pending;
+                const bool inject_seip =
+                    lockstep_seip_pending;
 
                 if (inject_mtimer) {
                     std::cerr
@@ -542,6 +610,16 @@ int main(int argc, char** argv)
                         << '\n';
                 }
 
+                if (inject_seip) {
+                    std::cerr
+                        << "[LOCKSTEP-SEIP-INJECT]"
+                        << " compared_order=" << std::dec << compared_order
+                        << " rtl_pc=0x" << std::hex << rtl_pc
+                        << " rtl_inst=0x"
+                        << static_cast<std::uint32_t>(dut->retire_inst)
+                        << '\n';
+                }
+
                 const auto ref = whisper->step(
                     static_cast<std::uint32_t>(dut->retire_inst),
                     static_cast<bool>(dut->retire_rd_we),
@@ -550,13 +628,16 @@ int main(int argc, char** argv)
                     static_cast<bool>(dut->retire_mem_valid),
                     static_cast<bool>(dut->retire_mem_write),
                     static_cast<std::uint64_t>(dut->retire_mem_addr),
+                    static_cast<std::uint64_t>(dut->retire_mem_pa),
                     static_cast<std::uint8_t>(dut->retire_mem_mask),
                     static_cast<std::uint64_t>(dut->retire_mem_data),
-                    inject_mtimer);
+                    inject_mtimer,
+                    inject_seip);
 
-                // Consume the interrupt event that belonged before this
-                // retirement.
+                // Consume one-shot interrupt events that belonged before
+                // this retirement.
                 lockstep_mtimer_pending = false;
+                lockstep_seip_pending = false;
 
                 // If RTL reported M_TIMER on the very same edge as a valid
                 // retirement, that retirement still happened architecturally
@@ -565,6 +646,13 @@ int main(int argc, char** argv)
                 // RTL retirement.
                 if (mtimer_event_this_edge)
                     lockstep_mtimer_pending = true;
+
+                // Same boundary rule for SEIP: an accepted cause=9 event on
+                // the same edge as a retirement belongs after that retirement
+                // and before the next one.
+                if (interrupt_event_this_edge &&
+                    static_cast<unsigned>(dut->lockstep_interrupt_cause) == 9)
+                    lockstep_seip_pending = true;
 
                 if (!compare_commit(compared_order, *dut, ref)) {
                     lockstep_failed = true;

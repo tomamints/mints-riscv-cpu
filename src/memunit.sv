@@ -24,6 +24,7 @@ module memunit (
 	input Addr addr,
 	input UIntX rs2,
 	output UIntX rdata,
+	output Addr paddr,
 	output logic stall,
 	output ExceptionInfo expt,
 	core_data_if.master membus
@@ -202,6 +203,12 @@ module memunit (
 		shift_bits = (6'd8 - {3'b000, offset}) << 3;
 		split_store_second_wdata = data >> shift_bits;
 		endfunction
+
+		// Physical address corresponding to the architectural data access.
+		// req_paddr is latched from the input address in Bare/M-mode and replaced
+		// by the Sv39 translation result before the access is issued.  Exporting
+		// it is observation-only and does not alter the memory transaction.
+		assign paddr = req_paddr;
 
 		assign satp_sv39 = satp[63:60] == 4'd8;
 		assign need_translate = satp_sv39 && (priv_mode != M);

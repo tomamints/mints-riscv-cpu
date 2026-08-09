@@ -61,6 +61,9 @@ public:
      * Whisper step. External counter CSRs such as TIME and MMIO reads are
      * synchronized from the RTL because they are driven by RTL/external state
      * rather than by Whisper's instruction-step memory model.
+     *
+     * rtl_mem_addr is the architectural virtual address. rtl_mem_pa is the
+     * physical address actually used by the RTL data-memory path.
      */
     RefCommit step(
         std::uint32_t rtl_inst,
@@ -70,9 +73,11 @@ public:
         bool rtl_mem_valid,
         bool rtl_mem_write,
         std::uint64_t rtl_mem_addr,
+        std::uint64_t rtl_mem_pa,
         std::uint8_t rtl_mem_mask,
         std::uint64_t rtl_mem_data,
-        bool rtl_mtip);
+        bool rtl_mtip,
+        bool rtl_seip);
 
     std::uint64_t pc() const;
     std::uint64_t int_reg(unsigned reg) const;

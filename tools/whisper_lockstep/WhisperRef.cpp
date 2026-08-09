@@ -513,9 +513,11 @@ RefCommit WhisperRef::step(
     bool rtl_mem_valid,
     bool rtl_mem_write,
     std::uint64_t rtl_mem_addr,
+    std::uint64_t rtl_mem_pa,
     std::uint8_t rtl_mem_mask,
     std::uint64_t rtl_mem_data,
-    bool rtl_mtip)
+    bool rtl_mtip,
+    bool rtl_seip)
 {
     RefCommit result;
 
@@ -576,42 +578,48 @@ RefCommit WhisperRef::step(
             hart_->peekCsr(WdRiscv::CsrNumber::STVEC, stvec);
 
         /*
-         * Synchronize the RTL machine-timer interrupt level into Whisper.
+         * Synchronize only interrupt events that come from asynchronous RTL
+         * state and whose exact architectural acceptance boundary is supplied
+         * by the lockstep harness.
          *
-         * RTL MTIP is driven asynchronously by the RTL ACLINT.  Whisper has
-         * its own instruction-step timer model, so allowing both sides to
-         * generate MTIP independently eventually makes interrupt entry occur
-         * at different architectural instruction boundaries.
+         * MTIP (bit 7) is driven by the RTL ACLINT and SEIP (bit 9) by the
+         * RTL PLIC/UART path.  Whisper has independent device/timer state, so
+         * letting those sources fire independently can move trap entry by one
+         * or more retired instructions.
          *
-         * externalPokeCsr() is intentional here.  For MIP it sets Whisper's
-         * mipPoked_ flag, causing processExternalInterrupt() to preserve this
-         * externally supplied MIP value for the upcoming singleStep instead
-         * of recomputing MTIP from Whisper's internal timer.
-         *
-         * Preserve all other current Whisper MIP bits and replace only MTIP
-         * (bit 7) with the level observed from the RTL.
+         * The booleans passed here are one-shot injections, not continuously
+         * sampled raw levels.  externalPokeCsr() intentionally marks MIP as
+         * externally supplied for the upcoming singleStep.  Preserve every
+         * other MIP bit and replace only MTIP/SEIP.
          */
         std::uint64_t mip = 0;
 
         if (!hart_->peekCsr(
                 WdRiscv::CsrNumber::MIP,
                 mip)) {
-            fail("failed to read MIP while synchronizing RTL MTIP");
+            fail("failed to read MIP while synchronizing RTL interrupts");
         }
 
         constexpr std::uint64_t kMtipMask =
             std::uint64_t{1} << 7;
+        constexpr std::uint64_t kSeipMask =
+            std::uint64_t{1} << 9;
 
         if (rtl_mtip)
             mip |= kMtipMask;
         else
             mip &= ~kMtipMask;
 
+        if (rtl_seip)
+            mip |= kSeipMask;
+        else
+            mip &= ~kSeipMask;
+
         if (!hart_->externalPokeCsr(
                 WdRiscv::CsrNumber::MIP,
                 mip,
                 false)) {
-            fail("failed to synchronize RTL MTIP into Whisper MIP");
+            fail("failed to synchronize RTL interrupts into Whisper MIP");
         }
 
         /*
@@ -628,7 +636,7 @@ RefCommit WhisperRef::step(
          */
         if (rtl_mem_valid &&
             !rtl_mem_write &&
-            is_rtl_mmio_address(rtl_mem_addr)) {
+            is_rtl_mmio_address(rtl_mem_pa)) {
             const unsigned load_size = scalar_load_size(rtl_inst);
 
             if (load_size == 0) {
@@ -648,28 +656,28 @@ RefCommit WhisperRef::step(
             switch (load_size) {
             case 1:
                 ok = hart_->pokeMemory(
-                    rtl_mem_addr,
+                    rtl_mem_pa,
                     static_cast<std::uint8_t>(raw_value),
                     false);
                 break;
 
             case 2:
                 ok = hart_->pokeMemory(
-                    rtl_mem_addr,
+                    rtl_mem_pa,
                     static_cast<std::uint16_t>(raw_value),
                     false);
                 break;
 
             case 4:
                 ok = hart_->pokeMemory(
-                    rtl_mem_addr,
+                    rtl_mem_pa,
                     static_cast<std::uint32_t>(raw_value),
                     false);
                 break;
 
             case 8:
                 ok = hart_->pokeMemory(
-                    rtl_mem_addr,
+                    rtl_mem_pa,
                     static_cast<std::uint64_t>(raw_value),
                     false);
                 break;
@@ -682,7 +690,8 @@ RefCommit WhisperRef::step(
                 std::ostringstream message;
                 message
                     << "failed to seed MMIO read"
-                    << " addr=0x" << std::hex << rtl_mem_addr
+                    << " va=0x" << std::hex << rtl_mem_addr
+                    << " pa=0x" << rtl_mem_pa
                     << " size=" << std::dec << load_size
                     << " value=0x" << std::hex << raw_value;
                 fail(message.str());
