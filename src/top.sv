@@ -36,10 +36,16 @@ module core_top #(
     output logic        lockstep_mtip,
     output logic        lockstep_interrupt_trap_taken,
     output CsrCause     lockstep_interrupt_cause,
+    output Addr         lockstep_interrupt_pc,
+    output Inst         lockstep_interrupt_inst,
     output logic        lockstep_exception_trap_taken,
     output CsrCause     lockstep_exception_cause,
     output UIntX        lockstep_exception_value,
-    output logic        lockstep_mtip_trap_taken
+    output Addr         lockstep_exception_pc,
+    output Inst         lockstep_exception_inst,
+    output logic        lockstep_mtip_trap_taken,
+    output logic        lockstep_uart_tx_valid,
+    output logic [7:0]  lockstep_uart_tx_char
 `endif
 );
 
@@ -125,6 +131,8 @@ module core_top #(
     logic sstatus_sum_fetch_value;
     logic sstatus_mxr_fetch_value;
     logic uart_irq;
+    logic uart_tx_char_valid;
+    logic [7:0] uart_tx_char;
     logic plic_meip;
     logic plic_seip;
     logic [PLIC_NUM_SOURCES:0] plic_source_irq;
@@ -367,10 +375,12 @@ module core_top #(
     );
 
     uart_ns16550 uart0 (
-        .clk    (clk),
-        .rst    (rst),
-        .membus (uart_membus),
-        .irq    (uart_irq)
+        .clk           (clk),
+        .rst           (rst),
+        .membus        (uart_membus),
+        .irq           (uart_irq),
+        .tx_char_valid (uart_tx_char_valid),
+        .tx_char       (uart_tx_char)
     );
 
     plic plic0 (
@@ -443,9 +453,13 @@ module core_top #(
 
         .lockstep_interrupt_trap_taken_o(lockstep_interrupt_trap_taken),
         .lockstep_interrupt_cause_o(lockstep_interrupt_cause),
+        .lockstep_interrupt_pc_o(lockstep_interrupt_pc),
+        .lockstep_interrupt_inst_o(lockstep_interrupt_inst),
         .lockstep_exception_trap_taken_o(lockstep_exception_trap_taken),
         .lockstep_exception_cause_o(lockstep_exception_cause),
         .lockstep_exception_value_o(lockstep_exception_value),
+        .lockstep_exception_pc_o(lockstep_exception_pc),
+        .lockstep_exception_inst_o(lockstep_exception_inst),
         .lockstep_mtip_trap_taken_o(lockstep_mtip_trap_taken),
 `endif
 
@@ -481,5 +495,10 @@ module core_top #(
                 perf_memarb_d_low_wait_cycle);
         end
     end
+
+`ifdef SVCPU_WHISPER_LOCKSTEP
+    assign lockstep_uart_tx_valid = uart_tx_char_valid;
+    assign lockstep_uart_tx_char = uart_tx_char;
+`endif
 
 endmodule : core_top

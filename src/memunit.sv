@@ -174,6 +174,19 @@ module memunit (
 			endcase
 		endfunction
 
+		function automatic logic amo_needs_write_permission(input AMOOp amoop);
+			return amoop != LR;
+		endfunction
+
+		function automatic logic mem_access_needs_write_permission(
+			input logic access_wen,
+			input logic access_is_amo,
+			input AMOOp access_amoop
+		);
+			return access_wen &&
+				(!access_is_amo || amo_needs_write_permission(access_amoop));
+		endfunction
+
 		function automatic logic is_normal_memory(input Addr paddr);
 			return (paddr >= MMAP_RAM_BEGIN && paddr < MMAP_RAM_END) ||
 				(paddr >= MMAP_ROM_BEGIN && paddr <= MMAP_ROM_END);
@@ -210,11 +223,21 @@ module memunit (
 		// it is observation-only and does not alter the memory transaction.
 		assign paddr = req_paddr;
 
+		logic req_needs_write_permission;
+		logic current_needs_write_permission;
+		assign req_needs_write_permission =
+			mem_access_needs_write_permission(req_wen, req_is_amo, req_amoop);
+		assign current_needs_write_permission =
+			mem_access_needs_write_permission(
+				inst_is_store(ctrl),
+				ctrl.is_amo,
+				AMOOp'(ctrl.funct7[6:2]));
+
 		assign satp_sv39 = satp[63:60] == 4'd8;
 		assign need_translate = satp_sv39 && (priv_mode != M);
 		assign translation_req_valid = valid && state == TranslateWait;
 		assign translation_rsp_ready = valid && state == TranslateWait;
-		assign translation_access_type = (req_wen || req_is_amo) ? PMP_ACCESS_WRITE : PMP_ACCESS_READ;
+		assign translation_access_type = req_needs_write_permission ? PMP_ACCESS_WRITE : PMP_ACCESS_READ;
 		assign translation_mem_rvalid = membus.rvalid && mem_owner == MemOwnerTranslation;
 		assign data_mem_rvalid = membus.rvalid && mem_owner == MemOwnerData;
 		assign translation_mem_fire = valid && translation_mem_valid && membus.ready;
@@ -232,7 +255,7 @@ module memunit (
 		assign data_pmp_size =
 			(state == TranslateWait) ? UIntX'(req_size) : UIntX'(access_size_bytes(ctrl.funct3[1:0]));
 		assign data_pmp_access_type =
-			((state == TranslateWait) ? (req_wen || req_is_amo) : (inst_is_store(ctrl) || ctrl.is_amo)) ?
+			((state == TranslateWait) ? req_needs_write_permission : current_needs_write_permission) ?
 				PMP_ACCESS_WRITE : PMP_ACCESS_READ;
 
 	pmp_checker data_pmp_checker (
@@ -328,7 +351,9 @@ module memunit (
 			membus.funct3 = req_funct3;
 		end
 
-		if (req_crosses_word && state == SplitAccessWaitValid && data_mem_rvalid) begin
+		if (req_is_amo && req_amoop == SC) begin
+			rdata = membus.rdata;
+		end else if (req_crosses_word && state == SplitAccessWaitValid && data_mem_rvalid) begin
 			rdata = extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3);
 		end else if (req_crosses_word) begin
 			rdata = load_result;
@@ -543,7 +568,7 @@ module memunit (
 									state <= Fault;
 								end else if (!need_translate && !data_pmp_allow) begin
 									fault_detail <= SV39_FAULT_NONE;
-									fault_cause <= (inst_is_store(ctrl) || ctrl.is_amo) ? STORE_AMO_ACCESS_FAULT : LOAD_ACCESS_FAULT;
+									fault_cause <= current_needs_write_permission ? STORE_AMO_ACCESS_FAULT : LOAD_ACCESS_FAULT;
 									fault_value <= addr;
 									state <= Fault;
 								end else if (need_translate) begin
@@ -578,7 +603,7 @@ module memunit (
 									state <= Fault;
 								end else if (!data_pmp_allow) begin
 									fault_detail <= SV39_FAULT_NONE;
-									fault_cause <= (req_wen || req_is_amo) ? STORE_AMO_ACCESS_FAULT : LOAD_ACCESS_FAULT;
+									fault_cause <= req_needs_write_permission ? STORE_AMO_ACCESS_FAULT : LOAD_ACCESS_FAULT;
 									fault_value <= req_vaddr;
 									state <= Fault;
 								end else begin

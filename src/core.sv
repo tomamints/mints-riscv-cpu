@@ -33,6 +33,8 @@ module core (
 	// won the architectural boundary.
 	output logic        lockstep_interrupt_trap_taken_o,
 	output CsrCause     lockstep_interrupt_cause_o,
+	output Addr         lockstep_interrupt_pc_o,
+	output Inst         lockstep_interrupt_inst_o,
 
 	// Pulses when RTL actually takes a synchronous exception. Export the
 	// architectural cause and the value that csrunit writes to MTVAL/STVAL.
@@ -40,6 +42,8 @@ module core (
 	output logic        lockstep_exception_trap_taken_o,
 	output CsrCause     lockstep_exception_cause_o,
 	output UIntX        lockstep_exception_value_o,
+	output Addr         lockstep_exception_pc_o,
+	output Inst         lockstep_exception_inst_o,
 
 	// Existing MACHINE_TIMER_INTERRUPT pulse used by the proven MTIMER
 	// one-shot synchronization path. Keep this unchanged.
@@ -835,7 +839,6 @@ module core (
 
 	assign lockstep_interrupt_trap_taken_o =
 		mems_valid &&
-		mems_is_new &&
 		csru_raise_trap &&
 		!csru_trap_return &&
 		csru_trap_interrupt;
@@ -843,9 +846,14 @@ module core (
 	assign lockstep_interrupt_cause_o =
 		lockstep_interrupt_trap_taken_o ? csru_trap_cause : CsrCause'(0);
 
+	assign lockstep_interrupt_pc_o =
+		lockstep_interrupt_trap_taken_o ? mems_pc : Addr'(0);
+
+	assign lockstep_interrupt_inst_o =
+		lockstep_interrupt_trap_taken_o ? mems_inst_bits : Inst'(0);
+
 	assign lockstep_exception_trap_taken_o =
 		mems_valid &&
-		mems_is_new &&
 		csru_raise_trap &&
 		!csru_trap_return &&
 		!csru_trap_interrupt;
@@ -855,6 +863,12 @@ module core (
 
 	assign lockstep_exception_value_o =
 		lockstep_exception_trap_taken_o ? csru_expt_info.value : UIntX'(0);
+
+	assign lockstep_exception_pc_o =
+		lockstep_exception_trap_taken_o ? mems_pc : Addr'(0);
+
+	assign lockstep_exception_inst_o =
+		lockstep_exception_trap_taken_o ? mems_inst_bits : Inst'(0);
 
 	assign lockstep_mtip_trap_taken_o =
 		lockstep_interrupt_trap_taken_o &&
@@ -872,9 +886,7 @@ module core (
 	assign perf_trap_flush_event = mems_valid && mems_is_new && csru_raise_trap && !csru_trap_return;
 	assign amo_reservation_clear_o =
 		mems_valid &&
-		mems_is_new &&
-		csru_raise_trap &&
-		!csru_trap_return;
+		csru_raise_trap;
 	assign perf_load_event = architectural_retire && wbs_ctrl.is_load;
 	assign perf_store_event = architectural_retire && inst_is_store(wbs_ctrl);
 

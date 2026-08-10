@@ -138,6 +138,24 @@ module inst_fetcher (
 
     assign issue_pmp_allow = need_translate ? 1'b1 : issue_pmp_allow_raw;
 
+    function automatic ExceptionInfo adjust_instruction_fetch_exception(
+        input ExceptionInfo expt,
+        input Addr issue_addr,
+        input logic fault_value_already_precise
+    );
+        ExceptionInfo adjusted;
+        adjusted = expt;
+        if (adjusted.valid &&
+            !fault_value_already_precise &&
+            (
+                adjusted.cause == INSTRUCTION_ACCESS_FAULT ||
+                adjusted.cause == INSTRUCTION_PAGE_FAULT
+            )) begin
+            adjusted.value = issue_addr;
+        end
+        return adjusted;
+    endfunction
+
     always_comb begin
         issue_pmp_addr = {fetch_fifo_rdata.addr[$bits(Addr)-1:3], issue_pc_offset};
         issue_pmp_size = rvcc_is_rvc ? UIntX'(2) : UIntX'(4);
@@ -183,10 +201,14 @@ module inst_fetcher (
         Addr                      raddr;
         logic [MEMBUS_DATA_WIDTH-1:0] rdata;
         logic [2:0]              offset;
+        Addr                      issue_addr;
 
         raddr  = fetch_fifo_rdata.addr;
         rdata  = fetch_fifo_rdata.bits;
         offset = issue_pc_offset;
+        issue_addr = issue_is_rdata_saved
+            ? {issue_saved_addr[$bits(Addr)-1:3], offset}
+            : {raddr[$bits(Addr)-1:3], offset};
 
         fetch_fifo_rready = 1'b0;
         issue_fifo_wvalid = 1'b0;
@@ -194,7 +216,20 @@ module inst_fetcher (
 
         if (!core_if.is_hazard && fetch_fifo_rvalid) begin
             if (issue_fifo_wready) begin
-                if (offset == 3'd6) begin
+                if (fetch_fifo_rdata.expt.valid) begin
+                    fetch_fifo_rready       = 1'b1;
+                    issue_fifo_wvalid       = 1'b1;
+                    issue_fifo_wdata.addr   = issue_addr;
+                    issue_fifo_wdata.bits   = '0;
+                    issue_fifo_wdata.is_rvc = 1'b0;
+                    issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                        fetch_fifo_rdata.expt,
+                        issue_fifo_wdata.addr,
+                        // If a 32-bit instruction crosses an 8-byte fetch block and
+                        // the second block faults, the fetch fault value already
+                        // names the faulting fetch portion.
+                        issue_is_rdata_saved);
+                end else if (offset == 3'd6) begin
                     // offset が 6 な 32ビット命令の場合、
                     // 命令は {rdata_next[15:0], rdata[63:48]} になる
                     if (issue_is_rdata_saved) begin
@@ -202,7 +237,10 @@ module inst_fetcher (
                         issue_fifo_wdata.addr   = {issue_saved_addr[$bits(Addr)-1:3], offset};
                         issue_fifo_wdata.bits   = {rdata[15:0], issue_saved_bits};
                         issue_fifo_wdata.is_rvc = 1'b0;
-                        issue_fifo_wdata.expt   = fetch_fifo_rdata.expt;
+                        issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                            fetch_fifo_rdata.expt,
+                            issue_fifo_wdata.addr,
+                            1'b1);
                         if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
                             issue_fifo_wdata.expt.valid = 1'b1;
                             issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
@@ -215,7 +253,10 @@ module inst_fetcher (
                             issue_fifo_wdata.addr   = {raddr[$bits(Addr)-1:3], offset};
                             issue_fifo_wdata.is_rvc = 1'b1;
                             issue_fifo_wdata.bits   = rvcc_inst32;
-                            issue_fifo_wdata.expt   = fetch_fifo_rdata.expt;
+                            issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                                fetch_fifo_rdata.expt,
+                                issue_fifo_wdata.addr,
+                                1'b0);
                             if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
                                 issue_fifo_wdata.expt.valid = 1'b1;
                                 issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
@@ -241,7 +282,10 @@ module inst_fetcher (
                         endcase
                     end
                     issue_fifo_wdata.is_rvc = rvcc_is_rvc;
-                    issue_fifo_wdata.expt   = fetch_fifo_rdata.expt;
+                    issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                        fetch_fifo_rdata.expt,
+                        issue_fifo_wdata.addr,
+                        1'b0);
                     if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
                         issue_fifo_wdata.expt.valid = 1'b1;
                         issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
@@ -308,6 +352,7 @@ module inst_fetcher (
     logic fetch_recovery_active;
     logic trace_fetch_event;
     logic trace_fetch_fault;
+    logic trace_fetch_fault_match;
     UInt64 perf_fetch_fifo_full_cycle;
     UInt64 perf_fetch_control_recovery_cycle;
     UInt64 perf_fetch_translation_issue_cycle;
@@ -338,16 +383,26 @@ module inst_fetcher (
 
 `ifndef SYNTHESIS
     UInt64 fetch_debug_cycle;
+    Addr trace_fetch_fault_pc;
+    logic trace_fetch_fault_pc_valid;
 `endif
 
     assign satp_sv39 = satp[63:60] == 4'd8;
     assign need_translate = satp_sv39 && (priv_mode != M);
     assign trace_fetch_event =
-        $test$plusargs("TRACE_FETCH") ||
+        $test$plusargs("TRACE_FETCH_ALL") ||
         $test$plusargs("TRACE_FETCH_EVENT");
     assign trace_fetch_fault =
         trace_fetch_event ||
         $test$plusargs("TRACE_FETCH_FAULT");
+`ifndef SYNTHESIS
+    assign trace_fetch_fault_match =
+        !trace_fetch_fault_pc_valid ||
+        (fetch_req_vaddr[$bits(Addr)-1:3] == trace_fetch_fault_pc[$bits(Addr)-1:3]) ||
+        (fetch_translation_fault_value[$bits(Addr)-1:3] == trace_fetch_fault_pc[$bits(Addr)-1:3]);
+`else
+    assign trace_fetch_fault_match = 1'b1;
+`endif
     assign fetch_translation_req_valid =
         fetch_state == FetchIdle &&
         fetch_fifo_wready &&
@@ -631,7 +686,7 @@ module inst_fetcher (
                                     fetch_state <= FetchTranslate;
                                 end
                             end else if (!fetch_pmp_allow) begin
-                                if (trace_fetch_fault) begin
+                                if (trace_fetch_fault && trace_fetch_fault_match) begin
                                     $display("[FETCH] pmp fault physical pc=%h", fetch_pc);
                                 end
                                 fetch_pc <= fetch_pc + 2;
@@ -650,7 +705,7 @@ module inst_fetcher (
                     FetchTranslate: begin
                         if (fetch_translation_rsp_valid) begin
                             if (fetch_translation_fault) begin
-                                if (trace_fetch_fault) begin
+                                if (trace_fetch_fault && trace_fetch_fault_match) begin
                                     $display("[FETCH] ptw fault va=%h cause=%0d detail=%0d value=%h",
                                         fetch_req_vaddr, fetch_translation_fault_cause, fetch_translation_fault_detail, fetch_translation_fault_value);
                                 end
@@ -671,7 +726,7 @@ module inst_fetcher (
 
                     FetchAccess: begin
                         if (!fetch_pmp_allow) begin
-                            if (trace_fetch_fault) begin
+                            if (trace_fetch_fault && trace_fetch_fault_match) begin
                                 $display("[FETCH] pmp fault translated va=%h pa=%h", fetch_req_vaddr, fetch_req_paddr);
                             end
                             fetch_fault_expt.valid <= 1'b1;
@@ -711,6 +766,12 @@ module inst_fetcher (
     end
 
 `ifndef SYNTHESIS
+    initial begin
+        trace_fetch_fault_pc = '0;
+        trace_fetch_fault_pc_valid =
+            $value$plusargs("TRACE_FETCH_FAULT_PC=%h", trace_fetch_fault_pc);
+    end
+
     always_ff @(posedge clk or negedge rst) begin
         if (!rst) begin
             fetch_debug_cycle <= '0;

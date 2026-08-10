@@ -505,6 +505,136 @@ std::uint64_t WhisperRef::int_reg(
     return hart_->peekIntReg(reg);
 }
 
+void WhisperRef::synchronize_interrupts(
+    bool rtl_mtip,
+    bool rtl_seip)
+{
+    /*
+     * Synchronize only interrupt events that come from asynchronous RTL
+     * state and whose exact architectural acceptance boundary is supplied
+     * by the lockstep harness.
+     *
+     * MTIP (bit 7) is driven by the RTL ACLINT and SEIP (bit 9) by the
+     * RTL PLIC/UART path.  Whisper has independent device/timer state, so
+     * letting those sources fire independently can move trap entry by one
+     * or more retired instructions.
+     *
+     * The booleans passed here are one-shot injections, not continuously
+     * sampled raw levels.  externalPokeCsr() intentionally marks MIP as
+     * externally supplied for the upcoming singleStep.  Preserve every
+     * other MIP bit and replace only MTIP/SEIP.
+     */
+    std::uint64_t mip = 0;
+
+    if (!hart_->peekCsr(
+            WdRiscv::CsrNumber::MIP,
+            mip)) {
+        fail("failed to read MIP while synchronizing RTL interrupts");
+    }
+
+    constexpr std::uint64_t kMtipMask =
+        std::uint64_t{1} << 7;
+    constexpr std::uint64_t kSeipMask =
+        std::uint64_t{1} << 9;
+
+    if (rtl_mtip)
+        mip |= kMtipMask;
+    else
+        mip &= ~kMtipMask;
+
+    if (rtl_seip)
+        mip |= kSeipMask;
+    else
+        mip &= ~kSeipMask;
+
+    if (!hart_->externalPokeCsr(
+            WdRiscv::CsrNumber::MIP,
+            mip,
+            false)) {
+        fail("failed to synchronize RTL interrupts into Whisper MIP");
+    }
+}
+
+RefCommit WhisperRef::step_non_retiring_trap(
+    bool rtl_mtip,
+    bool rtl_seip)
+{
+    RefCommit result;
+
+    result.pc =
+        hart_->peekPc();
+
+    result.privilege =
+        static_cast<unsigned>(
+            hart_->privilegeMode());
+
+    std::uint64_t mtvec = 0;
+    std::uint64_t stvec = 0;
+
+    const bool have_mtvec =
+        hart_->peekCsr(WdRiscv::CsrNumber::MTVEC, mtvec);
+
+    const bool have_stvec =
+        hart_->peekCsr(WdRiscv::CsrNumber::STVEC, stvec);
+
+    synchronize_interrupts(rtl_mtip, rtl_seip);
+
+    hart_->singleStep(nullptr);
+
+    result.next_pc =
+        hart_->peekPc();
+
+    result.trapped =
+        hart_->lastInstructionTrapped();
+
+    result.interrupted =
+        hart_->lastInstructionInterrupted();
+
+    if (result.trapped || result.interrupted) {
+        result.trap_cause =
+            static_cast<std::uint64_t>(
+                hart_->lastTrapCause());
+    }
+
+    const auto trap_target =
+        [&](std::uint64_t tvec) -> std::uint64_t {
+            const std::uint64_t base = tvec & ~std::uint64_t{3};
+            const std::uint64_t mode = tvec & std::uint64_t{3};
+
+            if (result.interrupted && mode == 1)
+                return base + 4 * result.trap_cause;
+
+            return base;
+        };
+
+    const bool entered_mtvec =
+        have_mtvec &&
+        result.next_pc == trap_target(mtvec);
+
+    const bool entered_stvec =
+        have_stvec &&
+        result.next_pc == trap_target(stvec);
+
+    const bool non_retiring_event =
+        (result.trapped || result.interrupted) &&
+        (entered_mtvec || entered_stvec);
+
+    if (!non_retiring_event) {
+        std::ostringstream message;
+        message
+            << "Whisper did not take a non-retiring trap"
+            << " pc=0x" << std::hex << result.pc
+            << " next_pc=0x" << result.next_pc
+            << " trapped=" << std::dec << result.trapped
+            << " interrupted=" << result.interrupted
+            << " cause=0x" << std::hex << result.trap_cause;
+
+        fail(message.str());
+    }
+
+    return result;
+}
+
 RefCommit WhisperRef::step(
     std::uint32_t rtl_inst,
     bool rtl_rd_we,
@@ -517,7 +647,9 @@ RefCommit WhisperRef::step(
     std::uint8_t rtl_mem_mask,
     std::uint64_t rtl_mem_data,
     bool rtl_mtip,
-    bool rtl_seip)
+    bool rtl_seip,
+    bool rtl_interrupt_from_wfi,
+    std::uint64_t rtl_interrupt_epc)
 {
     RefCommit result;
 
@@ -577,50 +709,7 @@ RefCommit WhisperRef::step(
         const bool have_stvec =
             hart_->peekCsr(WdRiscv::CsrNumber::STVEC, stvec);
 
-        /*
-         * Synchronize only interrupt events that come from asynchronous RTL
-         * state and whose exact architectural acceptance boundary is supplied
-         * by the lockstep harness.
-         *
-         * MTIP (bit 7) is driven by the RTL ACLINT and SEIP (bit 9) by the
-         * RTL PLIC/UART path.  Whisper has independent device/timer state, so
-         * letting those sources fire independently can move trap entry by one
-         * or more retired instructions.
-         *
-         * The booleans passed here are one-shot injections, not continuously
-         * sampled raw levels.  externalPokeCsr() intentionally marks MIP as
-         * externally supplied for the upcoming singleStep.  Preserve every
-         * other MIP bit and replace only MTIP/SEIP.
-         */
-        std::uint64_t mip = 0;
-
-        if (!hart_->peekCsr(
-                WdRiscv::CsrNumber::MIP,
-                mip)) {
-            fail("failed to read MIP while synchronizing RTL interrupts");
-        }
-
-        constexpr std::uint64_t kMtipMask =
-            std::uint64_t{1} << 7;
-        constexpr std::uint64_t kSeipMask =
-            std::uint64_t{1} << 9;
-
-        if (rtl_mtip)
-            mip |= kMtipMask;
-        else
-            mip &= ~kMtipMask;
-
-        if (rtl_seip)
-            mip |= kSeipMask;
-        else
-            mip &= ~kSeipMask;
-
-        if (!hart_->externalPokeCsr(
-                WdRiscv::CsrNumber::MIP,
-                mip,
-                false)) {
-            fail("failed to synchronize RTL interrupts into Whisper MIP");
-        }
+        synchronize_interrupts(rtl_mtip, rtl_seip);
 
         /*
          * MMIO reads are driven by RTL peripheral state, not by ordinary RAM.
@@ -737,6 +826,19 @@ RefCommit WhisperRef::step(
         const bool non_retiring_event =
             (result.trapped || result.interrupted) &&
             (entered_mtvec || entered_stvec);
+
+        if (non_retiring_event &&
+            result.interrupted &&
+            rtl_interrupt_from_wfi) {
+            const auto epc_csr =
+                entered_mtvec
+                    ? WdRiscv::CsrNumber::MEPC
+                    : WdRiscv::CsrNumber::SEPC;
+
+            if (!hart_->externalPokeCsr(epc_csr, rtl_interrupt_epc, false)) {
+                fail("failed to synchronize WFI interrupt EPC");
+            }
+        }
 
         if (!non_retiring_event)
             break;

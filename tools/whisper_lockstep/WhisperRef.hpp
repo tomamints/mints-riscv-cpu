@@ -77,6 +77,12 @@ public:
         std::uint8_t rtl_mem_mask,
         std::uint64_t rtl_mem_data,
         bool rtl_mtip,
+        bool rtl_seip,
+        bool rtl_interrupt_from_wfi,
+        std::uint64_t rtl_interrupt_epc);
+
+    RefCommit step_non_retiring_trap(
+        bool rtl_mtip,
         bool rtl_seip);
 
     std::uint64_t pc() const;
@@ -88,6 +94,8 @@ private:
 
     System64 system_;
     std::shared_ptr<Hart64> hart_;
+
+    void synchronize_interrupts(bool rtl_mtip, bool rtl_seip);
 };
 
 }  // namespace mints::lockstep

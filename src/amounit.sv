@@ -39,6 +39,16 @@ logic slave_saved_low_priority;
 logic is_addr_reserved;
 Addr  reserved_addr;
 
+`ifndef SYNTHESIS
+logic trace_amo_reservation;
+logic trace_amo_addr_valid;
+Addr  trace_amo_addr;
+
+function automatic logic trace_amo_addr_match(input Addr addr);
+    return !trace_amo_addr_valid || addr == trace_amo_addr;
+endfunction
+`endif
+
 // ======================================================
 // amo variable
 // ======================================================
@@ -194,7 +204,9 @@ function automatic void accept_request_comb();
                 end
 
                 SC: begin
-                    if (is_addr_reserved && (slave.addr == reserved_addr)) begin
+                    if (!reservation_clear &&
+                        is_addr_reserved &&
+                        (slave.addr == reserved_addr)) begin
                         assign_master(
                             slave.addr,
                             1'b1,
@@ -216,6 +228,14 @@ function automatic void accept_request_comb();
         end
     end
 endfunction
+
+`ifndef SYNTHESIS
+initial begin
+    trace_amo_addr = '0;
+    trace_amo_reservation = $test$plusargs("TRACE_AMO_RESERVATION");
+    trace_amo_addr_valid = $value$plusargs("TRACE_AMO_ADDR=%h", trace_amo_addr);
+end
+`endif
 
 
 // ======================================================
@@ -278,13 +298,17 @@ always_comb begin
                 unique case (slave_saved.amoop)
                     LR: assign_master(slave_saved.addr, 1'b0, '0, '0, 1'b0);
 
-                    SC: assign_master(
-                        slave_saved.addr,
-                        1'b1,
-                        slave_saved.wdata,
-                        slave_saved.wmask,
-                        1'b0
-                    );
+                    SC: begin
+                        if (!reservation_clear) begin
+                            assign_master(
+                                slave_saved.addr,
+                                1'b1,
+                                slave_saved.wdata,
+                                slave_saved.wmask,
+                                1'b0
+                            );
+                        end
+                    end
 
                     default: begin end
                 endcase
@@ -373,6 +397,49 @@ always_ff @(posedge clk or negedge rst) begin
 
     end else begin
 
+`ifndef SYNTHESIS
+        if (trace_amo_reservation) begin
+            if (reservation_clear &&
+                (!trace_amo_addr_valid ||
+                 is_addr_reserved ||
+                 reserved_addr == trace_amo_addr)) begin
+                $display("[AMO-RES] clear state=%0d reserved=%0b reserved_addr=%h",
+                    state, is_addr_reserved, reserved_addr);
+            end
+
+            if (slave.ready &&
+                slave.valid &&
+                slave.is_amo &&
+                (slave.amoop == LR || slave.amoop == SC) &&
+                trace_amo_addr_match(slave.addr)) begin
+                $display("[AMO-RES] accept op=%0d addr=%h state=%0d reserved=%0b reserved_addr=%h clear=%0b master_ready=%0b sc_success=%0b",
+                    slave.amoop,
+                    slave.addr,
+                    state,
+                    is_addr_reserved,
+                    reserved_addr,
+                    reservation_clear,
+                    master.ready,
+                    slave.amoop == SC &&
+                    !reservation_clear &&
+                    is_addr_reserved &&
+                    slave.addr == reserved_addr);
+            end
+
+            if (state == WaitReady &&
+                slave_saved.is_amo &&
+                slave_saved.amoop == SC &&
+                trace_amo_addr_match(slave_saved.addr)) begin
+                $display("[AMO-RES] waitready-sc addr=%h reserved=%0b reserved_addr=%h clear=%0b master_ready=%0b",
+                    slave_saved.addr,
+                    is_addr_reserved,
+                    reserved_addr,
+                    reservation_clear,
+                    master.ready);
+            end
+        end
+`endif
+
         // Capture the exact data accepted by the lower memory for a
         // Zaamo store.  This is the architectural new memory value
         // used by the retire/lockstep trace.
@@ -420,7 +487,7 @@ always_ff @(posedge clk or negedge rst) begin
                                 prev = is_addr_reserved;
                                 is_addr_reserved <= 1'b0;
                                 //check
-                                if (prev && (slave.addr == reserved_addr))
+                                if (!reservation_clear && prev && (slave.addr == reserved_addr))
                                     state <= master.ready ? SCSuccess : WaitReady;
                                 else
                                     state <= SCFail;
@@ -445,11 +512,16 @@ always_ff @(posedge clk or negedge rst) begin
             WaitReady
             // --------------------------------------------------
             : begin
-                if (master.ready) begin
-                    if (slave_saved.is_amo && slave_saved.amoop == SC)
+                if (slave_saved.is_amo &&
+                    slave_saved.amoop == SC &&
+                    reservation_clear) begin
+                    state <= SCFail;
+                end else if (master.ready) begin
+                    if (slave_saved.is_amo && slave_saved.amoop == SC) begin
                         state <= SCSuccess;
-                    else
+                    end else begin
                         state <= WaitValid;
+                    end
                 end
             end
 
@@ -487,7 +559,7 @@ always_ff @(posedge clk or negedge rst) begin
                                     prev = is_addr_reserved;
                                     is_addr_reserved <= 1'b0;
 
-                                    if (prev && (slave.addr == reserved_addr))
+                                    if (!reservation_clear && prev && (slave.addr == reserved_addr))
                                         state <= master.ready ? SCSuccess : WaitReady;
                                     else
                                         state <= SCFail;
@@ -541,7 +613,7 @@ always_ff @(posedge clk or negedge rst) begin
                                     logic prev;
                                     prev = is_addr_reserved;
                                     is_addr_reserved <= 1'b0;
-                                    if (prev && slave.addr == reserved_addr)
+                                    if (!reservation_clear && prev && slave.addr == reserved_addr)
                                         state <= master.ready ? SCSuccess : WaitReady;
                                     else
                                         state <= SCFail;
@@ -595,7 +667,7 @@ always_ff @(posedge clk or negedge rst) begin
                                 prev = is_addr_reserved;
                                 is_addr_reserved <= 1'b0;
 
-                                if (prev && slave.addr == reserved_addr)
+                                if (!reservation_clear && prev && slave.addr == reserved_addr)
                                     state <= master.ready ? SCSuccess : WaitReady;
                                 else
                                     state <= SCFail;
@@ -678,7 +750,7 @@ always_ff @(posedge clk or negedge rst) begin
                                     prev = is_addr_reserved;
                                     is_addr_reserved <= 1'b0;
 
-                                    if (prev && slave.addr == reserved_addr)
+                                    if (!reservation_clear && prev && slave.addr == reserved_addr)
                                         state <= master.ready ? SCSuccess : WaitReady;
                                     else
                                         state <= SCFail;

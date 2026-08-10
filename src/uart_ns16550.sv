@@ -5,7 +5,9 @@ module uart_ns16550 (
 	input logic clk,
 	input logic rst,
 	Membus.slave membus,
-	output logic irq
+	output logic irq,
+	output logic tx_char_valid,
+	output logic [7:0] tx_char
 );
 
 	logic [7:0] lcr;
@@ -82,6 +84,8 @@ module uart_ns16550 (
 			tx_irq_pending <= 1'b0;
 			tx_empty_event <= 1'b0;
 			bus_wait_valid_low <= 1'b0;
+			tx_char_valid <= 1'b0;
+			tx_char <= 8'h00;
 		end else begin
 			logic bus_fire;
 			logic rbr_read;
@@ -111,6 +115,8 @@ module uart_ns16550 (
 			rx_push = 1'b0;
 			rx_push_data = 8'h00;
 			rx_count_after_pop = rx_count - {4'b0, rx_pop};
+			tx_char_valid <= 1'b0;
+			tx_char <= 8'h00;
 
 			if (bus_fire) begin
 				bus_wait_valid_low <= 1'b1;
@@ -172,6 +178,8 @@ module uart_ns16550 (
 								end else begin
 									$write("%c", wbyte);
 									$fflush();
+									tx_char_valid <= 1'b1;
+									tx_char <= wbyte;
 									tx_irq_pending <= 1'b0;
 									tx_empty_event <= 1'b1;
 								end

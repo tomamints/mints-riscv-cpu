@@ -144,6 +144,30 @@ unsigned size_from_byte_mask(std::uint8_t mask)
     }
 }
 
+bool plusarg_u64(
+    int argc,
+    char** argv,
+    const std::string& key,
+    std::uint64_t& value)
+{
+    const std::string prefix = "+" + key + "=";
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+
+        if (arg.rfind(prefix, 0) != 0)
+            continue;
+
+        const std::string text = arg.substr(prefix.size());
+        char* end = nullptr;
+        value = std::strtoull(text.c_str(), &end, 0);
+
+        return end != text.c_str() && *end == '\0';
+    }
+
+    return false;
+}
+
 std::uint64_t normalize_rtl_store_data(
     std::uint64_t lane_aligned_data,
     std::uint8_t byte_mask)
@@ -306,6 +330,9 @@ bool compare_commit(
             << " rtl_inst=0x" << std::setw(8) << std::setfill('0')
             << rtl_inst
             << " ref_next_pc=0x" << ref.next_pc
+            << " ref_trapped=" << std::dec << ref.trapped
+            << " ref_interrupted=" << ref.interrupted
+            << " ref_cause=0x" << std::hex << ref.trap_cause
             << differences.str()
             << '\n';
     }
@@ -332,8 +359,9 @@ std::unique_ptr<mints::lockstep::WhisperRef> create_whisper_reference()
     if (const char* dtb = std::getenv("WHISPER_DTB"); dtb != nullptr)
         config.dtb_binary = dtb;
 
-    if (const char* linux = std::getenv("WHISPER_LINUX"); linux != nullptr)
-        config.linux_binary = linux;
+    if (const char* linux_image = std::getenv("WHISPER_LINUX");
+        linux_image != nullptr)
+        config.linux_binary = linux_image;
 
     config.start_pc = 0x80000000;
     config.hart_id = 0;
@@ -468,8 +496,33 @@ int main(int argc, char** argv)
     constexpr std::uint64_t lockstep_start_pc = 0x80000000;
     std::uint64_t rtl_retire_order = 0;
     std::uint64_t compared_order = 0;
+    std::uint64_t lockstep_trace_start = 0;
+    std::uint64_t lockstep_trace_end = 0;
+    std::uint64_t lockstep_stop_order = 0;
+    const bool lockstep_trace_enabled =
+        plusarg_u64(
+            argc,
+            argv,
+            "LOCKSTEP_TRACE_START",
+            lockstep_trace_start) &&
+        plusarg_u64(
+            argc,
+            argv,
+            "LOCKSTEP_TRACE_END",
+            lockstep_trace_end) &&
+        lockstep_trace_start <= lockstep_trace_end;
+    const bool lockstep_stop_enabled =
+        plusarg_u64(
+            argc,
+            argv,
+            "LOCKSTEP_STOP_ORDER",
+            lockstep_stop_order);
     bool lockstep_started = false;
     bool lockstep_failed = false;
+    bool lockstep_stop_reached = false;
+    bool lockstep_busybox_pass_reached = false;
+    std::string lockstep_uart_window;
+    constexpr const char* kBusyboxPassToken = "BUSYBOX-TEST-PASS";
 
     // Do not synchronize the raw MTIP level continuously.
     //
@@ -484,11 +537,15 @@ int main(int argc, char** argv)
     // already accepted interrupt, and continuously re-poking MIP.MTIP can make
     // Whisper take a second machine-timer interrupt too early.
     bool lockstep_mtimer_pending = false;
+    std::uint64_t lockstep_mtimer_pending_pc = 0;
+    std::uint32_t lockstep_mtimer_pending_inst = 0;
 
     // Supervisor external interrupts come from the RTL PLIC/UART state.
     // Synchronize the accepted cause=9 boundary as a one-shot, exactly like
     // MTIMER, rather than copying the raw SEIP level continuously.
     bool lockstep_seip_pending = false;
+    std::uint64_t lockstep_seip_pending_pc = 0;
+    std::uint32_t lockstep_seip_pending_inst = 0;
 #endif
 
     for (long long half_cycle = 0;
@@ -502,6 +559,29 @@ int main(int argc, char** argv)
         dut->eval();
 
 #ifdef SVCPU_WHISPER_LOCKSTEP
+        if (dut->clk == 1 && dut->lockstep_uart_tx_valid) {
+            lockstep_uart_window.push_back(
+                static_cast<char>(dut->lockstep_uart_tx_char));
+
+            const std::size_t pass_token_length =
+                std::string(kBusyboxPassToken).size();
+
+            if (lockstep_uart_window.size() > pass_token_length) {
+                lockstep_uart_window.erase(
+                    0,
+                    lockstep_uart_window.size() - pass_token_length);
+            }
+
+            if (lockstep_uart_window == kBusyboxPassToken) {
+                lockstep_busybox_pass_reached = true;
+                Verilated::gotFinish(true);
+                std::cerr
+                    << "\n[LOCKSTEP] BusyBox autotest pass detected"
+                    << " compared_order=" << std::dec << compared_order
+                    << '\n';
+            }
+        }
+
         const bool exception_event_this_edge =
             dut->clk == 1 &&
             dut->lockstep_exception_trap_taken;
@@ -514,11 +594,59 @@ int main(int argc, char** argv)
                 << " retire_valid=" << static_cast<unsigned>(dut->retire_valid)
                 << " retire_pc=0x" << std::hex
                 << static_cast<std::uint64_t>(dut->retire_pc)
+                << " trap_pc=0x"
+                << static_cast<std::uint64_t>(dut->lockstep_exception_pc)
+                << " trap_inst=0x"
+                << static_cast<std::uint32_t>(dut->lockstep_exception_inst)
                 << " cause=" << std::dec
                 << static_cast<unsigned>(dut->lockstep_exception_cause)
                 << " value=0x" << std::hex
                 << static_cast<std::uint64_t>(dut->lockstep_exception_value)
                 << '\n';
+
+            const std::uint64_t trap_pc =
+                static_cast<std::uint64_t>(dut->lockstep_exception_pc);
+            const std::uint64_t ref_pc_before_exception =
+                lockstep_started ? whisper->pc() : 0;
+            const bool can_sync_exception =
+                lockstep_started &&
+                !dut->retire_valid &&
+                !lockstep_mtimer_pending &&
+                !lockstep_seip_pending &&
+                ref_pc_before_exception == trap_pc;
+
+            if (can_sync_exception) {
+                const auto ref_trap =
+                    whisper->step_non_retiring_trap(false, false);
+
+                std::cerr
+                    << "[LOCKSTEP-EXPT-SYNC]"
+                    << " compared_order=" << std::dec << compared_order
+                    << " trap_pc=0x" << std::hex
+                    << static_cast<std::uint64_t>(dut->lockstep_exception_pc)
+                    << " trap_inst=0x"
+                    << static_cast<std::uint32_t>(dut->lockstep_exception_inst)
+                    << " ref_before_pc=0x" << ref_pc_before_exception
+                    << " ref_pc=0x" << ref_trap.pc
+                    << " ref_next_pc=0x" << ref_trap.next_pc
+                    << " ref_trapped=" << std::dec
+                    << ref_trap.trapped
+                    << " ref_interrupted="
+                    << ref_trap.interrupted
+                    << " ref_cause=0x" << std::hex
+                    << ref_trap.trap_cause
+                    << '\n';
+            } else if (lockstep_started && !dut->retire_valid) {
+                std::cerr
+                    << "[LOCKSTEP-EXPT-SKIP]"
+                    << " compared_order=" << std::dec << compared_order
+                    << " trap_pc=0x" << std::hex << trap_pc
+                    << " ref_pc=0x" << ref_pc_before_exception
+                    << " pending_mtimer=" << std::dec
+                    << lockstep_mtimer_pending
+                    << " pending_seip=" << lockstep_seip_pending
+                    << '\n';
+            }
         }
 
         const bool interrupt_event_this_edge =
@@ -536,6 +664,10 @@ int main(int argc, char** argv)
                 << " retire_valid=" << static_cast<unsigned>(dut->retire_valid)
                 << " retire_pc=0x" << std::hex
                 << static_cast<std::uint64_t>(dut->retire_pc)
+                << " trap_pc=0x"
+                << static_cast<std::uint64_t>(dut->lockstep_interrupt_pc)
+                << " trap_inst=0x"
+                << static_cast<std::uint32_t>(dut->lockstep_interrupt_inst)
                 << " cause=" << std::dec
                 << interrupt_cause
                 << '\n';
@@ -545,8 +677,13 @@ int main(int argc, char** argv)
             // architectural boundary, so inject it before the next reference
             // retirement.  If an instruction retires on this edge, arm it
             // only after comparing that instruction below.
-            if (interrupt_cause == 9 && !dut->retire_valid)
+            if (interrupt_cause == 9 && !dut->retire_valid) {
                 lockstep_seip_pending = true;
+                lockstep_seip_pending_pc =
+                    static_cast<std::uint64_t>(dut->lockstep_interrupt_pc);
+                lockstep_seip_pending_inst =
+                    static_cast<std::uint32_t>(dut->lockstep_interrupt_inst);
+            }
         }
 
         const bool mtimer_event_this_edge =
@@ -561,6 +698,10 @@ int main(int argc, char** argv)
                 << " retire_valid=" << static_cast<unsigned>(dut->retire_valid)
                 << " retire_pc=0x" << std::hex
                 << static_cast<std::uint64_t>(dut->retire_pc)
+                << " trap_pc=0x"
+                << static_cast<std::uint64_t>(dut->lockstep_interrupt_pc)
+                << " trap_inst=0x"
+                << static_cast<std::uint32_t>(dut->lockstep_interrupt_inst)
                 << " mtip=" << std::dec
                 << static_cast<unsigned>(dut->lockstep_mtip)
                 << '\n';
@@ -569,8 +710,13 @@ int main(int argc, char** argv)
             // won the current architectural boundary.  The next RTL retirement
             // will therefore be the first trap-handler instruction, so arm the
             // matching Whisper interrupt immediately.
-            if (!dut->retire_valid)
+            if (!dut->retire_valid) {
                 lockstep_mtimer_pending = true;
+                lockstep_mtimer_pending_pc =
+                    static_cast<std::uint64_t>(dut->lockstep_interrupt_pc);
+                lockstep_mtimer_pending_inst =
+                    static_cast<std::uint32_t>(dut->lockstep_interrupt_inst);
+            }
         }
 
         // Observe retire once, immediately after the rising-edge evaluation.
@@ -597,12 +743,30 @@ int main(int argc, char** argv)
                     lockstep_mtimer_pending;
                 const bool inject_seip =
                     lockstep_seip_pending;
+                const std::uint64_t ref_pc_before_retire =
+                    whisper->pc();
+                constexpr std::uint32_t kWfiInstruction = 0x10500073;
+                const bool inject_from_wfi =
+                    (inject_mtimer &&
+                     lockstep_mtimer_pending_inst == kWfiInstruction) ||
+                    (inject_seip &&
+                     lockstep_seip_pending_inst == kWfiInstruction);
+                const std::uint64_t inject_epc =
+                    inject_mtimer
+                        ? lockstep_mtimer_pending_pc + 4
+                        : lockstep_seip_pending_pc + 4;
 
                 if (inject_mtimer) {
                     std::cerr
                         << "[LOCKSTEP-MTIMER-INJECT]"
                         << " compared_order=" << std::dec << compared_order
                         << " rtl_pc=0x" << std::hex << rtl_pc
+                        << " pending_trap_pc=0x"
+                        << lockstep_mtimer_pending_pc
+                        << " pending_trap_inst=0x"
+                        << lockstep_mtimer_pending_inst
+                        << " ref_before_pc=0x"
+                        << ref_pc_before_retire
                         << " rtl_inst=0x"
                         << static_cast<std::uint32_t>(dut->retire_inst)
                         << " rtl_mtip=" << std::dec
@@ -615,6 +779,12 @@ int main(int argc, char** argv)
                         << "[LOCKSTEP-SEIP-INJECT]"
                         << " compared_order=" << std::dec << compared_order
                         << " rtl_pc=0x" << std::hex << rtl_pc
+                        << " pending_trap_pc=0x"
+                        << lockstep_seip_pending_pc
+                        << " pending_trap_inst=0x"
+                        << lockstep_seip_pending_inst
+                        << " ref_before_pc=0x"
+                        << ref_pc_before_retire
                         << " rtl_inst=0x"
                         << static_cast<std::uint32_t>(dut->retire_inst)
                         << '\n';
@@ -632,27 +802,80 @@ int main(int argc, char** argv)
                     static_cast<std::uint8_t>(dut->retire_mem_mask),
                     static_cast<std::uint64_t>(dut->retire_mem_data),
                     inject_mtimer,
-                    inject_seip);
+                    inject_seip,
+                    inject_from_wfi,
+                    inject_epc);
 
                 // Consume one-shot interrupt events that belonged before
                 // this retirement.
                 lockstep_mtimer_pending = false;
+                lockstep_mtimer_pending_pc = 0;
+                lockstep_mtimer_pending_inst = 0;
                 lockstep_seip_pending = false;
+                lockstep_seip_pending_pc = 0;
+                lockstep_seip_pending_inst = 0;
+
+                if (lockstep_trace_enabled &&
+                    compared_order >= lockstep_trace_start &&
+                    compared_order <= lockstep_trace_end) {
+                    std::cerr
+                        << "[LOCKSTEP-TRACE]"
+                        << " order=" << std::dec << compared_order
+                        << " rtl_pc=0x" << std::hex << rtl_pc
+                        << " rtl_inst=0x"
+                        << static_cast<std::uint32_t>(dut->retire_inst)
+                        << " rtl_priv=" << std::dec
+                        << static_cast<unsigned>(dut->retire_priv)
+                        << " rtl_rd=x"
+                        << static_cast<unsigned>(dut->retire_rd_addr)
+                        << " rtl_rd_we="
+                        << static_cast<unsigned>(dut->retire_rd_we)
+                        << " rtl_rd_data=0x" << std::hex
+                        << static_cast<std::uint64_t>(dut->retire_rd_data)
+                        << " rtl_mem="
+                        << static_cast<unsigned>(dut->retire_mem_valid)
+                        << " ref_before_pc=0x" << ref_pc_before_retire
+                        << " ref_pc=0x" << ref.pc
+                        << " ref_next_pc=0x" << ref.next_pc
+                        << " ref_priv=" << std::dec << ref.privilege
+                        << " ref_rd=x" << ref.rd
+                        << " ref_rd_we=" << ref.rd_we
+                        << " ref_rd_data=0x" << std::hex << ref.rd_data
+                        << " ref_mem=" << ref.mem_valid
+                        << " ref_trap=" << std::dec << ref.trapped
+                        << " ref_intr=" << ref.interrupted
+                        << " ref_cause=0x" << std::hex << ref.trap_cause
+                        << '\n';
+                }
 
                 // If RTL reported M_TIMER on the very same edge as a valid
                 // retirement, that retirement still happened architecturally
                 // before the interrupt.  Arm the event only after comparing the
                 // current instruction, so Whisper takes it before the following
                 // RTL retirement.
-                if (mtimer_event_this_edge)
+                if (mtimer_event_this_edge) {
                     lockstep_mtimer_pending = true;
+                    lockstep_mtimer_pending_pc =
+                        static_cast<std::uint64_t>(
+                            dut->lockstep_interrupt_pc);
+                    lockstep_mtimer_pending_inst =
+                        static_cast<std::uint32_t>(
+                            dut->lockstep_interrupt_inst);
+                }
 
                 // Same boundary rule for SEIP: an accepted cause=9 event on
                 // the same edge as a retirement belongs after that retirement
                 // and before the next one.
                 if (interrupt_event_this_edge &&
-                    static_cast<unsigned>(dut->lockstep_interrupt_cause) == 9)
+                    static_cast<unsigned>(dut->lockstep_interrupt_cause) == 9) {
                     lockstep_seip_pending = true;
+                    lockstep_seip_pending_pc =
+                        static_cast<std::uint64_t>(
+                            dut->lockstep_interrupt_pc);
+                    lockstep_seip_pending_inst =
+                        static_cast<std::uint32_t>(
+                            dut->lockstep_interrupt_inst);
+                }
 
                 if (!compare_commit(compared_order, *dut, ref)) {
                     lockstep_failed = true;
@@ -660,6 +883,17 @@ int main(int argc, char** argv)
                     std::cerr
                         << "[LOCKSTEP] passed " << std::dec
                         << compared_order << " instructions"
+                        << " pc=0x" << std::hex << rtl_pc << '\n';
+                }
+
+                if (!lockstep_failed &&
+                    lockstep_stop_enabled &&
+                    compared_order >= lockstep_stop_order) {
+                    lockstep_stop_reached = true;
+                    Verilated::gotFinish(true);
+                    std::cerr
+                        << "[LOCKSTEP] stop order reached: "
+                        << std::dec << compared_order
                         << " pc=0x" << std::hex << rtl_pc << '\n';
                 }
             }
@@ -696,7 +930,15 @@ int main(int argc, char** argv)
 
     std::cerr
         << "[LOCKSTEP] PASS: " << std::dec << compared_order
-        << " instructions compared\n";
+        << " instructions compared";
+
+    if (lockstep_stop_reached)
+        std::cerr << " (stop order reached)";
+
+    if (lockstep_busybox_pass_reached)
+        std::cerr << " (BusyBox autotest passed)";
+
+    std::cerr << '\n';
 #endif
 
 #ifdef TEST_MODE

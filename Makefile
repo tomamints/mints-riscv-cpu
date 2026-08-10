@@ -472,6 +472,7 @@ build-lockstep:
 		--top-module $(TOP) \
 		--Mdir $(LOCKSTEP_OBJ_DIR)
 	$(MAKE) -C $(LOCKSTEP_OBJ_DIR) -f V$(TOP).mk \
-		VM_CFLAGS="-std=gnu++20 -Os"
+		CFG_CXXFLAGS_STD="-std=gnu++20" \
+		VM_CFLAGS="-Os"
 	mv $(LOCKSTEP_OBJ_DIR)/V$(TOP) $(LOCKSTEP_OBJ_DIR)/$(SIM_NAME)
 	@echo "✅ Lockstep build complete: $(LOCKSTEP_SIM)"
