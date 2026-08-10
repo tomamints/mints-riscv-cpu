@@ -1,6 +1,6 @@
 # Roadmap
 
-この文書は、現在の **MiNTs-CPU** と `core/test/os2_min` を、将来的に Linux 起動や RVA23 方向へ近づけるための作業順序を整理したものです。
+この文書は、現在の **MiNTs-CPU** を、Linuxが動くSoCプロトタイプから、測定可能で改善しやすいCPUへ育てるための作業順序を整理したものです。
 
 ## Current Position
 
@@ -22,14 +22,19 @@
 - Linux 6.12.97のearlycon / normal console boot logが出る
 - LinuxがSBI Base/Time/IPI/RFENCE、reserved memory、Sv39 virtual kernel memory layout、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock`、PLIC、8250 UART、`/init` まで到達する
 - BusyBox initramfsの `cmdloop-ttyS0` で `echo OK` が `read()` から戻り、`line=[echo OK]`, `OK`, 次の `MARK-B` まで進む
+- BusyBox initramfsの `autotest` で `BUSYBOX-TEST-PASS` まで到達する
+- Whisper lockstepでBusyBox autotest passを検出し、約61.6M命令比較後に正常停止する
 
-現在のLinux bring-up観測点:
+現在のLinux / lockstep観測点:
 
 - UART THRE interruptは、LinuxのIIR readでpendingをclearする
 - `mip/sip.SEIP` はPLIC外部信号で決まり、CSR writeで内部にラッチしない
 - `sret/mret` は `SPIE/MPIE` を仕様どおり復元する
+- `WFI` が割り込みでtrapへ入る場合、RTLのEPCはWFIの次PCになり、Whisper側もlockstepで補正する
+- instruction fetch page faultのSTVALはfetch block baseではなくarchitectural fault PCを返す
 - RTLでは `mtime` が毎CPUクロック増えるため、DTBの `timebase-frequency` はCPU clock想定の50MHzへ合わせる
-- 次はtraceなしで `cmdloop-ttyS0` の複数回入力、procfs、tmpfs、通常shell化を確認する
+- 次は性能カウンタで見えているMEM側固定レイテンシとcontrol recoveryを順に減らす
+- default対話shellは継続確認するが、回帰基準は `autotest` とlockstep passに置く
 
 注意点:
 
@@ -480,9 +485,9 @@ done:
   unrelated load bypass
 
 next:
-  ALU/WB forwarding Linux perf check
+  MEM-side DTLB-hit / memunit fast path
   branch predictor / branch penalty reduction
-  load-use detail counters
+  load-use and control recovery detail counters
   D-cache write-back
   RAM arbiter / I-D memory port pressure reduction
 
@@ -533,6 +538,50 @@ primary data_hazard減少
 active data_hazard減少
 CPI改善
 ```
+
+現在の状態:
+
+```text
+ALU/WB forwardingは導入済み。
+100M Linux区間ではCPI 3.043 -> 2.938 まで改善した。
+300M区間ではmemory/cache待ちが支配的で、改善効果は他のstallに隠れやすい。
+```
+
+### Phase 7: MEM-Side Fast Path
+
+現在の性能カウンタでは、D-cache単体よりも `memunit` の固定レイテンシが目立っています。
+
+100M Linux測定例:
+
+```text
+[PERF] cycles=100000000 retired=34025923 cpi_x1000=2938 ipc_x1000=340
+[PERF-MEMU-STALL] translation=4238618 access_ready=12605077 response=10749236
+```
+
+次の狙い:
+
+```text
+DTLB hit時のtranslation固定cycle削減
+D-cache hit時のrequest/response固定cycle削減
+load miss / uncached / store drainとの分類維持
+```
+
+最初から完全な組み合わせfast pathへ寄せるのではなく、FPGAでのcritical pathを壊さない範囲で1cycleずつ削る方針です。
+
+### Phase 8: Branch / Control Recovery
+
+`control_flush` とfetch recoveryも大きい候補です。
+
+優先候補:
+
+```text
+branch resolutionをMEM段からEX段へ前倒し
+static backward-taken predictor
+小型2-bit predictor
+BTB
+```
+
+ただし、branch predictorへ進む前に、trap/interrupt/redirectとlockstep同期の観測点を維持します。
 
 ### Correctness Guard: PMP After Translation
 

@@ -2,7 +2,7 @@
 
 この文書は `core/test/share` にある riscv-tests 由来の test binary を、現在の simulator で実行した結果です。
 
-実行日: 2026-07-24
+実行日: 2026-08-11
 
 ## 実行方法
 
@@ -24,7 +24,7 @@ make test-rv64ui TEST_TIMEOUT=20
 
 特に `F`, `D`, `Zb*`, `Zfh` 系は、現状の SystemVerilog 実装に専用 decoder / execution unit が見当たらないため、pass していても正式サポートとは扱いません。trap handler や test binary 側の条件により pass している可能性があります。
 
-現時点で実装から見て主張しやすい範囲は `RV64IMAC`、MMIO、CSR/trap/interrupt の一部、ACLINT、独自 DMA です。
+現時点で実装から見て主張しやすい範囲は `RV64IMAC`、M/S/U privilege、Sv39、PMP、ACLINT、PLIC、NS16550A UART、ITLB/DTLB、I-cache、D-cache、store bufferです。
 
 ## Summary
 
@@ -96,6 +96,8 @@ These suites are outside the currently claimed implementation scope and were not
 | PLIC | WIP: SiFive-compatible minimal PLIC, UART IRQ 10, claim/complete, M-mode external interrupt, and S-mode external interrupt pass |
 | PMP | WIP: 8 entries, allow-all, S-mode load/store/fetch access fault, blocked store side-effect, and OpenSBI PMP domain payload fetch tests pass |
 | Sv39 | WIP: data/fetch 3-level 4KiB identity mapping, satp.PPN switch, L1/L2 superpage, load/store/instruction page fault, SUM, MXR, A/D fault pass |
+| Linux | Pass: OpenSBI -> Linux 6.12 -> BusyBox autotest -> `BUSYBOX-TEST-PASS` |
+| Whisper lockstep | Pass to BusyBox autotest marker: 61,610,275 compared instructions |
 
 ## Custom C Tests
 
@@ -114,7 +116,8 @@ These suites are outside the currently claimed implementation scope and were not
 | `make test-uart-rx-seip INPUT_TEXT=Z` | `core/test/uart_rx_seip.c` | Pass | `ENABLE_DEBUG_INPUT`付きsimulatorでstdin `Z` を受け取り、UART RX interruptがPLIC S-context経由でS-mode external interruptへ届き、handlerで `IIR=0x04` と `RBR=Z` を確認 |
 | `make c-test C_TEST=plic_uart_irq CYCLES=200000` | `core/test/plic_uart_irq.c` | Pass | PLIC priority/enable/threshold readback、UART `IER[1]` によるTHRE interrupt、PLIC claim=10、M-mode external interrupt `mcause=0x800000000000000b` を確認 |
 | `make c-test C_TEST=plic_seip CYCLES=300000` | `core/test/plic_seip.c` | Pass | M-modeでPMP allow-allと`mideleg.SEIP`を設定してS-modeへ入り、UART `IER[1]` によるTHRE interruptをPLIC S-contextでclaimし、S-mode external interrupt `scause=0x8000000000000009` を確認 |
-| `make run-opensbi-input LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-*-initramfs OPENSBI_CYCLES=0` | Linux 6.12.y + BusyBox initramfs | WIP / userland diagnostics | `rv64imac/lp64` soft-float static BusyBoxをinitramfsへ埋め込み、LinuxがPID 1 `/init` を実行。shell promptまでは到達済み。`readloop-ttyS0` で `/dev/ttyS0` の行入力が返ることを確認済み。対話shell入力が実行されないケースを `cmdloop-ttyS0` / `cmdloop-exec-ttyS0` で診断中 |
+| `make run-opensbi-input LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs OPENSBI_CYCLES=0` | Linux 6.12.y + BusyBox autotest initramfs | Pass | `rv64imac/lp64` soft-float static BusyBoxをinitramfsへ埋め込み、LinuxがPID 1 `/init` を実行。proc/sysfs/devtmpfs/tmpfs mount、`uname -a`、`ls /`、`pwd`、`mkdir`、tmpfs write/read、cleanupを実行し、`BUSYBOX-TEST-PASS` まで到達 |
+| `make run-opensbi-lockstep LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs OPENSBI_CYCLES=0` | Linux 6.12.y + BusyBox autotest + Whisper | Pass | Docker上の `riscv-lockstep-verilator:5.046` で実行。`BUSYBOX-TEST-PASS` をUART出力から検出し、`[LOCKSTEP] PASS: 61610275 instructions compared (BusyBox autotest passed)` で自動停止 |
 | `make test-mswi` | `core/test/mswi.c` | Pass | ACLINT machine software interrupt の handler 到達を確認 |
 | `make test-mtime` | `core/test/mtime.c` | Pass | ACLINT machine timer interrupt の handler 到達を確認 |
 | `make test-os2-min` | `core/test/os2_min/kernel.c`, `tests.c` | Pass | 入力不要の統合テスト。PMP NAPOT allow-all設定後、S-mode遷移、SBI debug console putchar、SBI TIME `set_timer`、MTIPからSTIP注入、S-mode timer interrupt、periodic timer 3回を確認 |
@@ -139,6 +142,8 @@ These suites are outside the currently claimed implementation scope and were not
 
 debug MMIO output の重複表示は、`mmio_controller` が device `valid` を response まで出し続けていたことが原因でした。現在は device `ready` で request を issue 済みにし、以後は `rvalid` だけ待つため、debug output / DMA test とも重複なしで pass します。
 
-Linux通常consoleで `BusyBox userspac` の16文字だけ表示されて止まる問題は、16550のTHR empty interruptが再発行されず、Linux 8250 driverがFIFOサイズ分だけ送信して次のTX interrupt待ちになっていたことが原因でした。`src/uart_ns16550.sv` でTHR write後に `IER[1]` が有効なら `tx_irq_pending` を再度立てるように修正しています。`IER[1]` 無効化時はIRQ線だけ下がれば十分なので、内部pendingは消さない方針です。`+TRACE_UART` で `IER` / `IIR` / `THR` / `RX` / `RBR` accessを追跡できます。`INIT_SCRIPT_MODE=short` と `fifo15` ではshell prompt到達まで確認済みです。`readloop-ttyS0` では入力行が返ることを確認済みです。次は `cmdloop-ttyS0` で `MARK-C: read returned` と既知コマンド実行を確認します。
+Linux通常consoleで `BusyBox userspac` の16文字だけ表示されて止まる問題は、16550のTHR empty interruptが再発行されず、Linux 8250 driverがFIFOサイズ分だけ送信して次のTX interrupt待ちになっていたことが原因でした。`src/uart_ns16550.sv` でTHR write後に `IER[1]` が有効なら `tx_irq_pending` を再度立てるように修正しています。その後、THRE pendingはIIR readまたはTHR writeでclearする16550互換動作へ寄せ、PLIC claim/complete後にSEIP stormが残らないことを確認しました。さらにCSR側ではSEIPをCSR writable bitとして内部ラッチしないようにし、PLIC外部信号で決まるread-only相当の扱いに整理しています。
+
+Whisper lockstepでは、非retire同期例外、MTIMER/SEIPのone-shot injection、WFI中断時のEPC補正、instruction fetch page faultのSTVAL補正を入れ、BusyBox autotestの `BUSYBOX-TEST-PASS` まで同期済みです。
 
 S-mode `sepc` 更新失敗は、CSR write mask table に `SEPC` がなく `wmask=0` になっていたことが原因でした。現在は `SEPC_WMASK` を適用し、S-mode trap handler から `sepc` を更新できます。

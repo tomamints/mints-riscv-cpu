@@ -4,6 +4,44 @@
 
 目的は、traceや一時的な診断コードに依存せず、同じRTL、DTB、OpenSBI、Linux Imageで、毎回同じ操作が通ることを確認することです。
 
+現在の主回帰基準は `autotest` initramfs とWhisper lockstepの `BUSYBOX-TEST-PASS` です。
+この文書の `cmdloop-ttyS0` は、手動入力やTTY挙動を確認するための補助baselineとして残します。
+
+主回帰基準:
+
+```bash
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs \
+  OPENSBI_CYCLES=0
+```
+
+lockstep回帰基準:
+
+```bash
+DOCKER_HOST=unix://$HOME/.colima/riscv-build/docker.sock \
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  riscv-lockstep-verilator:5.046 \
+  bash -lc '
+    rm -rf obj_dir_lockstep &&
+    make build-lockstep &&
+    make run-opensbi-lockstep \
+      OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+      OPENSBI_ELF=build/external/opensbi/build/platform/generic/firmware/fw_jump.elf \
+      LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs \
+      OPENSBI_CYCLES=0
+  '
+```
+
+期待する終了ログ:
+
+```text
+[LOCKSTEP] BusyBox autotest pass detected compared_order=...
+[LOCKSTEP] PASS: ... instructions compared (BusyBox autotest passed)
+```
+
 ## Baseline Scope
 
 このbaselineで固定する範囲:

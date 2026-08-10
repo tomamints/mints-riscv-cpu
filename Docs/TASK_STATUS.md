@@ -18,7 +18,8 @@
 
 ## 現在地
 
-短期目標は、Linuxを直接起動する前に、RISC-Vのprivilege / trap / SBI / U-mode / MMUを小さいテストで固めることです。
+短期目標だった「Linuxを起動するためのCPU」は、最初の大きな山を越えました。
+現在は、Linuxが動くCPUを測定しながら高速化する段階です。
 
 現在はここです。
 
@@ -26,17 +27,21 @@
 M-mode trap
   -> S-mode transition
   -> S-mode trap
-  -> minimal SBI putchar/getchar
-  -> SBI set_timer
+  -> minimal SBI
   -> timer / interrupt
   -> PMP
-  -> U-mode transition
   -> U-mode syscall
   -> Sv39
-  -> Linux-oriented platform
+  -> OpenSBI
+  -> Linux 6.12
+  -> BusyBox initramfs
+  -> BusyBox autotest
+  -> Whisper lockstep pass
+  -> performance tuning
 ```
 
-`minimal SBI putchar/getchar`、`SBI set_timer`、`MTIP -> M-mode handler -> STIP -> S-mode stvec`、periodic timer、PMP data access allow-all、PMP禁止TOR領域でのS-mode load/store/fetch access fault、禁止storeのRAM副作用抑止、U-mode transition、U-mode ecallの最小確認、Sv39 data/fetch identity mapping、SUM/MXR基本permission、instruction page fault、NS16550A互換UARTの最小polling TX、UART IRQ -> PLIC source 10 -> M-mode/S-mode external interruptの最小確認、OpenSBI UART banner表示、OpenSBIからS-mode payloadへのhandoff、OpenSBIからLinux 6.12.y `Image` へのhandoffまで到達済みです。現在はLinux 6.12.97のearlyconでboot logが出ており、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock` まで確認済みです。
+OpenSBI v1.3.1、Linux 6.12.x、`rv64imac/lp64` soft-float static BusyBoxを使い、`autotest` initramfsで `BUSYBOX-TEST-PASS` まで到達済みです。
+Whisper lockstepでも同じ到達点を検出し、約61.6M命令比較後に正常停止しています。
 
 重要な前提として、ACLINTのtimer比較結果は `aclint.mtip -> mip.MTIP` に接続されています。`mideleg` だけでは `MTIP` は `STIP` に変換されないため、現在は M-mode timer handler が受けたMTIPをS-mode向けSTIPとして注入する経路を追加しています。将来的にはSstc実装も候補です。
 
@@ -44,10 +49,10 @@ M-mode trap
 
 | Priority | Area | Why |
 |---:|---|---|
-| 1 | Linux cmdloop baseline固定 | `Docs/LINUX_BASELINE.md` に従い、traceなしで `echo OK` 複数回、procfs、簡単なコマンドを確認 |
-| 2 | 性能計測基盤 | CPI、stall理由、TLB/cache/interrupt/MMIO countを測る |
-| 3 | TLB | Linux性能改善の最初の本命。小さいITLB/DTLBから |
-| 4 | I-cache | fetch stall削減。direct-mapped 4KiB/8KiBから |
+| 1 | Lockstep BusyBox pass維持 | `BUSYBOX-TEST-PASS` までのWhisper同期を正しさのゲートにする |
+| 2 | 性能計測基盤 | CPI、stall理由、TLB/cache/store buffer/arbiter countを測る |
+| 3 | MEM-side fast path | DTLB hit時とD-cache hit時の固定レイテンシを減らす |
+| 4 | Control recovery削減 | branch resolution前倒し、static predictor、小型predictorを検討 |
 | 5 | 通常shell化 | `setsid` / `cttyhack` / BusyBox対話shellの安定化 |
 
 ## 機能別ステータス
@@ -70,8 +75,8 @@ M-mode trap
 | U-mode syscall | Pass / minimal | `OS2_MIN_USER` | Linux最短では深追いしない。自作OS検証時にsyscall番号、exit/putchar、trap frameを整理 |
 | PMP | Pass / load/store/fetch fault basic | `make test-os2-min`, `make test-os2-min-input INPUT_TEXT=Z`, `make test-os2-min-strap`, `OS2_MIN_PMP` | MMIO副作用抑止確認、部分重複テスト、firmware領域保護 |
 | Sv39 | Pass / basic data+fetch | `make test-os2-min-sv39` | `sv39_ptw.sv` をdata-sideとinstruction fetchから利用中。identity load/store/fetch、2MiB L1 / 1GiB L2 superpage、unmapped fault、SUM、MXR、A=0 load fault、D=0 store fault、W=0 store permission fault、satp.PPN切り替え、X=0 instruction page faultは確認済み。`Sv39Fault` で内部fault理由も追跡可能。PTW PTE read errorはaccess fault方針。次はPTW error発生源、TLB |
-| PLIC | Pass / minimal RTL | `make c-test C_TEST=plic_uart_irq CYCLES=200000`, `make c-test C_TEST=plic_seip CYCLES=300000` | SiFive PLIC互換寄せの最小レイアウトを追加。base `0x0c000000`、32 sources、UART IRQ 10、M context 0、S context 1。priority / enable / threshold / claim-complete、UART THRE IRQ -> PLIC pending -> claim=10 -> `mip.MEIP` / `mip.SEIP` -> M-mode/S-mode external interruptを確認済み。次はLinux通常console確認 |
-| Linux platform | WIP / Linux early boot progressing | `make test-uart`, `make test-uart-regs`, `make c-test C_TEST=plic_uart_irq CYCLES=200000`, `make c-test C_TEST=plic_seip CYCLES=300000`, `make dtb`, `make test-linux-bootargs`, `make run-opensbi OPENSBI_BIN=...`, `make test-opensbi-payload OPENSBI_BIN=...`, `make run-opensbi OPENSBI_BIN=... LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | `Linux version 6.12.97`、SBI Base/Time/IPI/RFENCE検出、earlycon、memory init、SLUB、RCU、`riscv-intc`、clocksource/sched_clock、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまで確認。DTBにはPLIC nodeとUART `interrupts=<10>`、bootargsには `console=ttyS0,115200` を追加済み。PLIC付きDTBでもOpenSBI platform infoとS-mode payload到達を確認済み。次はLinux通常console登録まで長めに確認 |
+| PLIC | Pass / minimal RTL | `make c-test C_TEST=plic_uart_irq CYCLES=200000`, `make c-test C_TEST=plic_seip CYCLES=300000`, Linux BusyBox autotest | SiFive PLIC互換寄せの最小レイアウトを追加。base `0x0c000000`、32 sources、UART IRQ 10、M context 0、S context 1。priority / enable / threshold / claim-complete、UART THRE IRQ -> PLIC pending -> claim=10 -> `mip.MEIP` / `mip.SEIP` -> M-mode/S-mode external interruptを確認済み。Linux通常consoleとBusyBox autotestでも使用中 |
+| Linux platform | Pass / BusyBox autotest | `make run-opensbi-input ... Image-linux-6.12-riscv64-busybox-autotest-initramfs`, `make run-opensbi-lockstep ...` | OpenSBIからLinux 6.12.xへhandoffし、PID 1 `/init` としてBusyBox autotestを実行。proc/sysfs/devtmpfs/tmpfs mount、`uname -a`、`ls /`、`pwd`、`mkdir`、tmpfs write/read、cleanupを確認し、`BUSYBOX-TEST-PASS` まで到達。Whisper lockstepでも `[LOCKSTEP] PASS: 61610275 instructions compared (BusyBox autotest passed)` を確認 |
 
 ## テスト一覧
 
@@ -134,10 +139,11 @@ Linux boot logの現在地:
 | `make dtb` | Pass | `platform/riscv_cpu.dts` から `build/platform/riscv_cpu.dtb` を生成。RAMは128MiB、UART nodeは `serial@10000000`, `reg-shift=0`, `reg-io-width=1`。PLIC node `interrupt-controller@c000000` とUART IRQ 10も記述 |
 | `make test-linux-bootargs` | Pass | Linux boot ABIの `a0=hartid=0`, `a1=0x87f00000` をpayloadへ渡し、RAM image内にDTBを配置 |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin` | Pass / OpenSBI platform info | OpenSBI `fw_jump.bin` を `0x80000000`、DTBを `0x87f00000`、任意Linux Imageを `0x80200000` に配置して起動するtarget。v1.3.1 `FW_JUMP` で `uart8250` console、`aclint-mswi` IPI、`aclint-mtimer @ 50000000Hz` timerを確認 |
-| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | WIP / Linux early boot progressing | Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoff。`Linux version 6.12.97`、Machine model、SBI Base/Time/IPI/RFENCE、`earlycon: uart8250`、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock`、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまで確認。`console=ttyS0,115200` はbootargsへ反映済み。通常console登録は次に継続確認 |
+| `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64` | Historical / broad kernel image | Linux 6.12.y `Image` を `0x80200000` に配置し、OpenSBIからLinuxへhandoff。`Linux version 6.12.97`、Machine model、SBI Base/Time/IPI/RFENCE、`earlycon: uart8250`、memory init、SLUB、RCU、`riscv-intc`、`riscv_clocksource`、`sched_clock`、devtmpfs、pinctrl、DMA pool、HugeTLB、raid6 initまで確認。現在の通常検証は軽量BusyBox initramfsへ移行済み |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=/private/tmp/linux-out/Image-linux-6.12-riscv64-minbringup` | Pass / expected VFS panic | `allnoconfig` ベースのLinux 6.12.y bring-up用Image。約3MiB。SBI、DTB、RISC-V timer、SiFive PLIC、8250 UART console、proc/sysfs/devtmpfs、ELF/initrd周辺を残し、SCSI/ATA/MD/RAID6/USB/media/sound/PCI/ACPI/network/jitterentropyを削除。Linuxで `riscv-plic: ... mapped 32 interrupts`, `Serial: 8250/16550 driver`, `ttyS0 at MMIO 0x10000000`, `legacy console [ttyS0] enabled` を確認。rootfs未指定のため `VFS: Unable to mount root fs` で期待どおりpanic |
 | `make run-opensbi OPENSBI_BIN=/path/to/fw_jump.bin LINUX_IMAGE_BIN=build/linux-out/Image-linux-6.12-riscv64-hello-initramfs` | Pass / expected PID1 panic | libcなし最小 `/init` をinitramfsへ埋め込み、LinuxがU-mode PID 1を起動し、`write(2)` syscallでconsole出力できることを確認。`exit(0)` でPID1終了panicになるのは期待結果 |
-| `make run-opensbi-input OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-*-initramfs OPENSBI_CYCLES=0` | WIP / BusyBox userland | `rv64imac/lp64` soft-float static BusyBoxをinitramfsへ入れ、Linux PID 1 `/init` とBusyBox shell promptまでは到達。`readloop-ttyS0` では入力行が返ることを確認済み。現在は `cmdloop-ttyS0` で対話shellを避け、read戻り値とコマンド実行経路を診断中 |
+| `make run-opensbi-input OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs OPENSBI_CYCLES=0` | Pass / BusyBox autotest | `rv64imac/lp64` soft-float static BusyBoxをinitramfsへ入れ、Linux PID 1 `/init` からproc/sysfs/devtmpfs/tmpfs mount、`uname -a`、`ls /`、`pwd`、tmpfs file write/read、cleanupを実行し、`BUSYBOX-TEST-PASS` まで到達 |
+| Docker `make run-opensbi-lockstep ... Image-linux-6.12-riscv64-busybox-autotest-initramfs` | Pass / Whisper lockstep | BusyBox autotest pass markerまでRTLとWhisperを同期。`[LOCKSTEP] PASS: 61610275 instructions compared (BusyBox autotest passed)` で自動停止 |
 | `make test-opensbi-payload OPENSBI_BIN=/path/to/fw_jump.bin` | Pass | OpenSBIから `0x80200000` のS-mode payloadへ入り、`a0=hartid=0`, `a1=0x87f00000`, SBI Base call、SBI legacy console putcharを確認。PMPは8 entriesとしてOpenSBIに認識される |
 | `make test-mswi` | Pass | machine software interrupt |
 | `make test-mtime` | Pass | machine timer interrupt |
@@ -150,7 +156,8 @@ Linux boot logの現在地:
 
 ## Current Linux Bring-up Status
 
-現在の大きな到達点は、OpenSBI経由でLinux 6.12.yを起動し、initramfs内のBusyBox `/init` まで到達したことです。BusyBox shell promptは表示済みですが、対話shellで入力行が実行されないケースがあるため、現在は `cmdloop-ttyS0` でTTY readとコマンド実行を分けて確認しています。
+現在の大きな到達点は、OpenSBI経由でLinux 6.12.xを起動し、initramfs内のBusyBox `/init` で自動テストを最後まで通したことです。
+対話shellは継続確認中ですが、CPU/SoCの回帰基準は `autotest` とWhisper lockstep passへ移しています。
 
 確認済み:
 
@@ -164,13 +171,14 @@ Linux boot logの現在地:
 - Linux U-mode `/init` 実行
 - BusyBox shell prompt
 - `readloop-ttyS0` で `/dev/ttyS0` の行入力が `INPUT=...` と返ること
+- `cmdloop-ttyS0` で `echo OK` が返ること
+- `autotest` で `BUSYBOX-TEST-PASS` まで到達すること
+- Whisper lockstepでBusyBox autotest passを検出し正常停止すること
 
 残課題:
 
-- `cmdloop-ttyS0` で `echo OK`, `uname -a`, `ls /`, `cat /proc/cpuinfo`, `filetest` を確認する
 - BusyBox default `/init` の `/dev/ttyS0` + `setsid` + `cttyhack` 構成で対話shellを安定させる
 - BusyBox上で `uname -a`, `ls /`, `cat /proc/cpuinfo`, `cat /proc/interrupts` などを確認する
-- `/tmp` をtmpfsとしてmountし、`mkdir`, `echo > file`, `cat`, `rm` を確認する
 - `ps`, `sleep`, background jobなどでprocess/schedulerを確認する
 - 長期的にはBusyBox init/getty、rootfs、ブロックデバイス、より標準的なconsole/interrupt動作へ進める
 
@@ -184,7 +192,7 @@ Linux boot logの現在地:
 | `rv32um-p` / `rv64um-p` | Pass |
 | `rv32ua-p` / `rv64ua-p` | Pass |
 | `rv32uc-p` / `rv64uc-p` | Pass |
-| `rv32mi-p` / `rv64mi-p` | `rv64mi-p-breakpoint` fail |
+| `rv32mi-p` / `rv64mi-p` | Pass |
 | `rv32si-p` / `rv64si-p` | Pass |
 | `rv64ui-p` | Pass |
 | F/D/Zb/Zfh系 | Not claimed |

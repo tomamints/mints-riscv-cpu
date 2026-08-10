@@ -2,7 +2,7 @@
 
 MiNTs-CPU の性能改善は、まずCPIと大まかなstall内訳を見るところから始めます。
 
-現時点の実装は、RTL内部カウンタをVerilator終了時に表示する最小構成です。LinuxやCSR ABIにはまだ公開しません。
+現時点の実装は、RTL内部カウンタをVerilator終了時に表示する構成です。LinuxやCSR ABIにはまだ公開しません。
 
 ## How To Enable
 
@@ -39,13 +39,22 @@ make run-opensbi-input \
 
 ## Current Output
 
-出力は4行です。
+主な出力は以下です。実装中の性能ブロックに応じて、さらに詳細行が出ます。
 
 ```text
 [PERF] cycles=... retired=... cpi_x1000=... ipc_x1000=...
 [PERF] primary commit=... no_commit=... mem=... muldiv=... data_hazard=... ifetch=... other=...
 [PERF] active mem=... muldiv=... data_hazard=... ifetch=...
 [PERF] events branch=... branch_taken=... control_flush=... trap_flush=... load=... store=... ibus_req=... dbus_req=...
+[PERF-MEMARB] i_grant=... d_grant=... d_low_grant=... d_low_defer=...
+[PERF-MEMARB-STALL] i_wait=... d_high_wait=... d_low_wait=...
+[PERF-ICACHE] req=... hit=... fill_hit=... miss=... hit_rate_x1000=...
+[PERF-DCACHE] req=... hit=... miss=... hit_rate_x1000=...
+[PERF-STOREBUF] enq=... drain=... full_stall=...
+[PERF-FETCH-STALL] fifo_full=... control_recovery=... translation_issue=... icache_req=... icache_rsp=...
+[PERF-MEMU-STALL] translation=... access_ready=... response=...
+[PERF-ITLB] req=... hit=... miss=...
+[PERF-DTLB] req=... hit=... miss=...
 ```
 
 意味:
@@ -334,6 +343,67 @@ next:
 
 ALU/WB forwarding後は、まず既存の `data_hazard` を比較します。
 追加の専用counterはまだ入れず、性能ログを増やさない方針です。
+
+## Current 100M Detailed Measurement
+
+2026-08-11時点では、日常の性能比較は300Mよりも100M区間を基本にします。
+300Mは重く、変更の初期評価には時間がかかるためです。
+
+実行条件:
+
+```bash
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs \
+  OPENSBI_CYCLES=100000000 \
+  SIM_EXTRA_ARGS=+PERF_SUMMARY
+```
+
+代表値:
+
+```text
+[PERF-MEMARB] i_grant=6507368 d_grant=5507213 d_low_grant=2222277 d_low_defer=1042927
+[PERF-MEMARB-STALL] i_wait=3025827 d_high_wait=599338 d_low_wait=3382178
+[PERF-DCACHE] req=8451768 load=5302487 store=3149281 cacheable=6866333 hit=5497249 miss=1369084 uncached=1585435 bypass=1585435 hit_rate_x1000=800 flush=0
+[PERF-DCACHE] mem_req=5488914 mem_resp=2374833 write_through=2612055 lines=128 line_bytes=32
+[PERF-STOREBUF] enq=2612055 drain=2612055 full_stall=64589 depth=4 pending=0 outstanding=0
+[PERF-STOREBUF-LOAD] bypass=94686 wait=202941
+[PERF-DSTALL] load_miss=4162609 uncached=2435563 storebuf_full=64589 storebuf_dep=202941
+[PERF-DCACHE-CPUWAIT] busy=1303176 rsp_pending=0 store_full=64589 load_overlap=1552 load_store_empty=201389 uncached_store_empty=19603 other=0
+[PERF-DCACHE-MEMWAIT] fill_req=140086 fill_rsp=1439675 bypass_req=38668 bypass_rsp=1257888 drain_active=5382442 drain_req_wait=2770387
+[PERF-FETCH-STALL] fifo_full=7535512 control_recovery=19971652 translation_issue=19039016 translation_req_wait=1 translation_rsp=22025 icache_req=2759151 icache_rsp=6680761 fault=0 no_request=0
+[PERF-ITLB] req=19039016 bare=0 unsupported=0 lookup=19039016 hit=19037013 miss=2003 hit_fault=0 hit_rate_x1000=999
+[PERF-ICACHE] req=21913496 cacheable=21913496 hit=17612351 fill_hit=2675298 miss=1625847 uncached=0 hit_rate_x1000=925 flush=2013
+[PERF] cycles=100000000 retired=33081088 cpi_x1000=3022 ipc_x1000=330
+[PERF] primary commit=33081088 no_commit=66918912 mem=22546520 muldiv=3330691 data_hazard=670682 ifetch=20409353 other=19961666
+[PERF] active mem=29075318 muldiv=3421875 data_hazard=3218029 ifetch=32374878
+[PERF] events branch=3858067 branch_taken=1881358 control_flush=2852443 trap_flush=1515 load=5271207 store=3127127 ibus_req=37985497 dbus_req=8451768
+[PERF-MEMU-STALL] translation=6965271 access_ready=9944681 response=8959729 split_ready=74939 split_response=38727 discard=0 fault=0
+[PERF-MEMU-TRANS] req_ready_wait=70901 rsp_wait=70901 ptw_req_wait=13332 ptw_rsp_wait=13974 done=6894370 fault=0
+[PERF-MEMU-ACCESS] ready_load=6515054 ready_store=3385373 ready_amo=44254 ready_split=77447 ready_bus_wait=1546347 response_load=8736752 response_amo=200750 response_split_first=22227 response_bus_wait=3653322
+[PERF-MEMU-SPLIT] ready_load=22339 ready_store=52600 ready_bus_wait=30630 response_load=38727 response_bus_wait=16572
+[PERF-DTLB] req=6894370 bare=0 unsupported=0 lookup=6894370 hit=6890315 miss=4055 hit_fault=0 hit_rate_x1000=999
+```
+
+読み取り:
+
+```text
+CPI ~= 3.022
+IPC ~= 0.330
+DTLB hit率は高いが、memunit translation/access/responseの固定滞在が目立つ
+control_recoveryとI-cache response待ちも大きい
+D-cache hit率は約80.0%、I-cache hit率は約92.5%
+store buffer full stallは小さく、現時点の主因ではない
+```
+
+次の優先候補:
+
+```text
+1. DTLB hit / memunit fast path
+2. D-cache hit request/response latency reduction
+3. branch/control recovery reduction
+4. D-cache容量/way/write-back比較
+```
 
 ## Current Limitations
 

@@ -4,7 +4,7 @@
 
 ## Goal Definition
 
-このプロジェクトでは、単にLinux kernelのboot logが出るだけではなく、BusyBox shellから通常のコマンドを入力して結果が返る段階を、最初の「Linuxが動いた」基準にします。
+このプロジェクトでは、単にLinux kernelのboot logが出るだけではなく、BusyBox userlandが起動し、UART経由で基本コマンドとファイル操作を実行できる段階を、最初の「Linuxが動いた」基準にします。
 
 合格条件:
 
@@ -14,23 +14,27 @@ MiNTs-CPU
   -> Linux kernel
   -> initramfs
   -> BusyBox /init
-  -> 対話shell
-  -> コマンド入力と結果表示
+  -> BusyBox /init
+  -> autotest または command loop
+  -> コマンド実行と結果表示
 ```
 
-具体的には、shell promptから次のような操作ができることを確認します。
+現在の `autotest` initramfsでは、次を自動確認します。
 
-```sh
-echo hello
-pwd
+```text
+mount proc/sysfs/devtmpfs/tmpfs
+echo
 uname -a
 ls /
-ls -l /bin
-cat /proc/cpuinfo
-cat /proc/interrupts
+pwd
+mkdir
+write to tmpfs
+cat from tmpfs
+rm/rmdir cleanup
+BUSYBOX-TEST-PASS
 ```
 
-ここまで通れば、CPU、OpenSBI、Linux kernel、UART console、initramfs、U-mode userland、syscall、基本的なプロセス実行がつながったと判断できます。
+ここまで通れば、CPU、OpenSBI、Linux kernel、UART console、initramfs、U-mode userland、syscall、VFS、tmpfs、基本的なプロセス実行がつながったと判断します。
 
 ## Current Position
 
@@ -45,13 +49,21 @@ cat /proc/interrupts
 - Linuxが `/init` をPID 1として実行する
 - `/dev/ttyS0` 直結の `readloop-ttyS0` で入力行が `INPUT=[...] status=0` と返る
 - `cmdloop-ttyS0` で `echo OK` が `read()` から戻り、`line=[echo OK]`, `OK`, 次の `MARK-B` まで進む
+- `autotest` initramfsで `BUSYBOX-TEST-PASS` まで到達する
+- Whisper lockstepでBusyBox autotest passを検出し、自動停止する
+
+最新のlockstep合格点:
+
+```text
+[LOCKSTEP] BusyBox autotest pass detected compared_order=61610274
+[LOCKSTEP] PASS: 61610275 instructions compared (BusyBox autotest passed)
+```
 
 直近の残り:
 
-- traceなしのnotrace Imageで `echo OK` を複数回安定して通す
-- `cmdloop-ttyS0` から `uname`, `cat /proc/interrupts`, `cat /proc/cpuinfo` を確認する
-- `/tmp` をtmpfsとしてmountし、書き込み可能な作業領域を用意する
 - default BusyBox `/init` で `/dev/ttyS0` + `setsid` + `cttyhack` の対話shellを安定させる
+- `cmdloop-ttyS0` から `uname`, `cat /proc/interrupts`, `cat /proc/cpuinfo` などの手動確認を増やす
+- lockstepの合格点をCI的に再実行しやすい形へ整理する
 
 baseline固定の具体的な実行手順と合格条件は `Docs/LINUX_BASELINE.md` に集約します。
 
@@ -115,7 +127,7 @@ MARK-B: before read
 - `cttyhack-ttyS0`: `/dev/ttyS0` 直結で `setsid + cttyhack + /bin/sh`
 - `cmdloop-stty-ttyS0`: `stty -a`, `stty sane`, `icrnl icanon echo` でTTY状態を表示・固定してから `cmdloop-ttyS0` と同じread診断
 
-`default` は最終候補ですが、現時点では検証中です。対話shellが安定するまでは、`cmdloop-ttyS0` で「入力行を受けて返信する」経路を先に合格させます。
+`default` は最終候補ですが、現時点では検証中です。自動回帰の基準は `autotest`、手動入力の基準は `cmdloop-ttyS0` とします。
 
 ## Milestone A: Kernel Boot
 
@@ -170,7 +182,9 @@ cat /proc/interrupts
 
 状態:
 
-- `cmdloop-ttyS0` で `echo OK` は到達済み。次はtraceなしで複数回の安定性と、`uname` / procfs系コマンドを確認する
+- `autotest` で `BUSYBOX-TEST-PASS` まで到達済み
+- `cmdloop-ttyS0` で `echo OK` は到達済み
+- full interactive shellは継続確認中
 
 ## Milestone C: Basic File Operations
 

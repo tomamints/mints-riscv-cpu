@@ -327,7 +327,7 @@ make test-os2-min-sv39    pass
 
 Linux notrace Imageは、20M cycleの短いOpenSBI smokeで `+PERF_SUMMARY` まで完走確認済み。
 初期の300M cycle Linux比較測定では、ITLB接続後にCPIが悪化し、primary ifetch stallが大きく増えた。
-詳細は `docs/PERFORMANCE_COUNTERS.md` に記録する。
+詳細は `Docs/PERFORMANCE_COUNTERS.md` に記録する。
 
 初回の `[PERF-ITLB]` では、`flush` がcontrol flushと同じ規模になり、さらに `miss_cycles` が非常に大きかった。
 これは、分岐flushでTLB entryまで無効化していたこと、およびPTW待ちがcontrol redirectで頻繁にキャンセルされていたことを示す。
@@ -351,7 +351,7 @@ ITLB fixed superpage refill:
   superpage_refill=1875
 ```
 
-現在のI-cache込みの最新値は `docs/PERFORMANCE_COUNTERS.md` に記録する。
+現在のI-cache込みの最新値は `Docs/PERFORMANCE_COUNTERS.md` に記録する。
 
 ITLB接続後にまず見る値:
 
