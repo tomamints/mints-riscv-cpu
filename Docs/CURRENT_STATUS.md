@@ -2,7 +2,7 @@
 
 This document is the current high-level status of **MiNTs-CPU**.
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## One-Line Status
 
@@ -84,11 +84,14 @@ Implemented performance structures:
 | Store buffer | 4 entries |
 | Store buffer behavior | background drain, unrelated cache-hit load bypass |
 | Arbiter | distinguishes I-side, D-side high priority, D-side low priority drain |
+| Control redirect | JAL, conditional branch, and JALR early redirect |
+| Branch predictor | Static backward-taken / forward-not-taken module |
 
 Not yet implemented:
 
 ```text
-branch predictor
+2-bit branch predictor
+BTB / RAS
 write-back D-cache
 non-blocking caches
 store-to-load forwarding with byte merge
@@ -160,11 +163,18 @@ Historical 300M-cycle Linux measurements:
 | D-cache 4KiB write-through | 72,689,380 | 4.127 | 0.242 |
 | Store buffer initial | 72,632,625 | 4.130 | 0.242 |
 
-Recent 100M-cycle run with additional stall counters:
+Recent 100M-cycle checkpoints:
 
 ```text
-[PERF] cycles=100000000 retired=34025923 cpi_x1000=2938 ipc_x1000=340
-[PERF-MEMU-STALL] translation=4238618 access_ready=12605077 response=10749236 split_ready=68123 split_response=35204 discard=0 fault=0
+Phase 8.3 JALR early redirect:
+  [PERF] cycles=100000000 retired=33557400 cpi_x1000=2979 ipc_x1000=335
+  [PERF] primary commit=33557400 no_commit=66442600 mem=23745865 muldiv=3254573 data_hazard=794093 ifetch=18691860 other=19956209
+  [PERF-CONTROL] branch=1951066 jal=669757 jalr=411594 trap=1531 return=1577 satp=13 sfence=2000 other=0
+
+Phase 9.1 static branch predictor:
+  implemented and 1000-cycle smoke-tested
+  100M measurement pending
+  [PERF-BPRED] is available
 ```
 
 Current bottleneck view:
@@ -194,7 +204,7 @@ Recommended next steps:
 ```text
 1. Keep the BusyBox lockstep PASS as the correctness gate.
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
-3. Reduce MEM-side fixed latency, especially DTLB-hit/memunit fast path.
-4. Then move branch resolution/prediction forward.
+3. Measure Phase 9.1 static branch predictor at 100M cycles.
+4. Run Whisper lockstep after predictor changes.
 5. Revisit D-cache structure only after stall counters show capacity/conflict pressure.
 ```

@@ -76,6 +76,8 @@ module core (
 		InstCtrl ctrl;
 		UIntX imm;
 		ExceptionInfo expt;
+		logic predicted_taken;
+		Addr predicted_next_pc;
 	}exq_type;
 
 
@@ -85,6 +87,8 @@ module core (
 		InstCtrl ctrl;
 		UIntX imm;
 		ExceptionInfo expt;
+		logic predicted_taken;
+		Addr predicted_next_pc;
 		UIntX alu_result;
 		logic[4:0] rs1_addr;
 		UIntX rs1_data;
@@ -150,10 +154,12 @@ module core (
 	logic ex_early_branch_redirect;
 	logic ex_early_branch_taken;
 	logic ex_early_branch_misaligned;
+	logic ex_early_branch_prediction_correct;
 	Addr control_hazard_pc_next;
 	Addr ex_early_jal_pc_next;
 	Addr ex_early_jalr_pc_next;
 	Addr ex_early_branch_pc_next;
+	Addr ex_early_branch_actual_next_pc;
 
 
 	always_comb begin
@@ -185,6 +191,8 @@ module core (
 		exq_wdata.bits = i_membus.rdata;
 		exq_wdata.ctrl = ids_ctrl;
 		exq_wdata.imm  = ids_imm;
+		exq_wdata.predicted_taken = i_membus.predicted_taken;
+		exq_wdata.predicted_next_pc = i_membus.predicted_next_pc;
 		// exception
 		exq_wdata.expt = i_membus.expt;
 		if (!exq_wdata.expt.valid && !ids_inst_valid) begin
@@ -213,6 +221,8 @@ module core (
 	Inst  exs_inst_bits  = exq_rdata.bits;
 	InstCtrl  exs_ctrl   = exq_rdata.ctrl;
 	UIntX  exs_imm       = exq_rdata.imm;
+	logic exs_predicted_taken = exq_rdata.predicted_taken;
+	Addr  exs_predicted_next_pc = exq_rdata.predicted_next_pc;
 
 
 	//レジスタ
@@ -457,6 +467,9 @@ module core (
 			UInt64 perf_control_satp_count;
 			UInt64 perf_control_sfence_count;
 			UInt64 perf_control_other_count;
+			UInt64 perf_bpred_pred_count;
+			UInt64 perf_bpred_hit_count;
+			UInt64 perf_bpred_miss_count;
 			UInt64 perf_trap_flush_count;
 			UInt64 perf_load_count;
 			UInt64 perf_store_count;
@@ -486,6 +499,8 @@ module core (
 		memq_wdata.bits = exq_rdata.bits;
 		memq_wdata.ctrl = exq_rdata.ctrl;
 		memq_wdata.imm = exq_rdata.imm;
+		memq_wdata.predicted_taken = exq_rdata.predicted_taken;
+		memq_wdata.predicted_next_pc = exq_rdata.predicted_next_pc;
 		memq_wdata.rs1_addr = exs_rs1_addr;
 		memq_wdata.rs1_data = exs_rs1_forwarded_data;
 		memq_wdata.rs2_data = exs_rs2_forwarded_data;
@@ -612,11 +627,19 @@ module core (
 		IALIGN == 32 &&
 		ex_early_jalr_pc_next[1:0] != 2'b00;
 	assign ex_early_branch_pc_next = exs_pc + exs_imm;
+	assign ex_early_branch_actual_next_pc =
+		ex_early_branch_taken
+			? ex_early_branch_pc_next
+			: exs_pc + (exs_ctrl.is_rvc ? Addr'(2) : Addr'(4));
 	assign ex_early_branch_taken = inst_is_br(exs_ctrl) && exs_brunit_take;
 	assign ex_early_branch_misaligned =
 		IALIGN == 32 &&
 		ex_early_branch_taken &&
 		ex_early_branch_pc_next[1:0] != 2'b00;
+	assign ex_early_branch_prediction_correct =
+		inst_is_br(exs_ctrl) &&
+		exs_predicted_taken == ex_early_branch_taken &&
+		(!exs_predicted_taken || exs_predicted_next_pc == ex_early_branch_pc_next);
 	assign ex_early_jal_redirect =
 		exs_valid &&
 		exq_rready &&
@@ -636,7 +659,8 @@ module core (
 		exs_valid &&
 		exq_rready &&
 		!exq_rdata.expt.valid &&
-		ex_early_branch_taken &&
+		inst_is_br(exs_ctrl) &&
+		!ex_early_branch_prediction_correct &&
 		!ex_early_branch_misaligned &&
 		!mem_control_hazard;
 
@@ -665,7 +689,7 @@ module core (
 			   memq_rdata.jump_addr)
 			: (ex_early_jal_redirect ? ex_early_jal_pc_next :
 			   ex_early_jalr_redirect ? ex_early_jalr_pc_next :
-			   ex_early_branch_pc_next);
+			   ex_early_branch_actual_next_pc);
 
 
 	always_ff @(posedge clk or negedge rst) begin
@@ -856,6 +880,9 @@ module core (
 	logic perf_control_satp_event;
 	logic perf_control_sfence_event;
 	logic perf_control_other_event;
+	logic perf_bpred_event;
+	logic perf_bpred_hit_event;
+	logic perf_bpred_miss_event;
 	logic perf_trap_flush_event;
 	logic perf_load_event;
 	logic perf_store_event;
@@ -1014,6 +1041,17 @@ module core (
 		  perf_control_branch_event ||
 		  perf_control_satp_event ||
 		  perf_control_sfence_event);
+	assign perf_bpred_event =
+		exs_valid &&
+		exq_rready &&
+		!exq_rdata.expt.valid &&
+		inst_is_br(exs_ctrl);
+	assign perf_bpred_hit_event =
+		perf_bpred_event &&
+		ex_early_branch_prediction_correct;
+	assign perf_bpred_miss_event =
+		perf_bpred_event &&
+		!ex_early_branch_prediction_correct;
 	assign perf_trap_flush_event = perf_control_trap_event;
 	assign amo_reservation_clear_o =
 		mems_valid &&
@@ -1115,6 +1153,9 @@ module core (
 			perf_control_satp_count <= '0;
 			perf_control_sfence_count <= '0;
 			perf_control_other_count <= '0;
+			perf_bpred_pred_count <= '0;
+			perf_bpred_hit_count <= '0;
+			perf_bpred_miss_count <= '0;
 			perf_trap_flush_count <= '0;
 			perf_load_count <= '0;
 			perf_store_count <= '0;
@@ -1184,6 +1225,15 @@ module core (
 			if (perf_control_other_event) begin
 				perf_control_other_count <= perf_control_other_count + 1;
 			end
+			if (perf_bpred_event) begin
+				perf_bpred_pred_count <= perf_bpred_pred_count + 1;
+			end
+			if (perf_bpred_hit_event) begin
+				perf_bpred_hit_count <= perf_bpred_hit_count + 1;
+			end
+			if (perf_bpred_miss_event) begin
+				perf_bpred_miss_count <= perf_bpred_miss_count + 1;
+			end
 			if (perf_trap_flush_event) begin
 				perf_trap_flush_count <= perf_trap_flush_count + 1;
 			end
@@ -1232,6 +1282,11 @@ module core (
 				perf_control_satp_count,
 				perf_control_sfence_count,
 				perf_control_other_count);
+			$display("[PERF-BPRED] pred=%0d hit=%0d miss=%0d hit_rate_x1000=%0d",
+				perf_bpred_pred_count,
+				perf_bpred_hit_count,
+				perf_bpred_miss_count,
+				perf_bpred_pred_count == 0 ? UInt64'(0) : (perf_bpred_hit_count * UInt64'(1000)) / perf_bpred_pred_count);
 			$display("[PERF] cycles=%0d retired=%0d cpi_x1000=%0d ipc_x1000=%0d",
 				debug_cycle,
 				perf_retired,

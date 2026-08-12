@@ -20,6 +20,7 @@ src/aclint_memory.sv
 src/plic.sv
 src/alu.sv
 src/brunit.sv
+src/branch_predictor.sv
 src/csrunit.sv
 src/pmp_checker.sv
 src/sv39_ptw.sv

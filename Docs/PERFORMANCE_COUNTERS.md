@@ -378,12 +378,11 @@ ALU/WB forwarding後は、まず既存の `data_hazard` を比較します。
 
 ## Current 100M Detailed Measurement
 
-2026-08-11時点では、日常の性能比較は300Mよりも100M区間を基本にします。
+2026-08-12時点では、日常の性能比較は300Mよりも100M区間を基本にします。
 300Mは重く、変更の初期評価には時間がかかるためです。
 
-Phase 8.0で `[PERF-CONTROL]` を追加しました。直近ログでは出力順の都合で
-control内訳が取りこぼされたため、次回100M測定では先頭側に出る
-`[PERF-CONTROL]` 行を必ず記録します。
+Phase 8でcontrol redirectをEX段へ前倒ししました。
+Phase 9ではbranch predictionへ入り、`[PERF-BPRED]` を追加しています。
 
 実行条件:
 
@@ -395,51 +394,35 @@ make run-opensbi-input \
   SIM_EXTRA_ARGS=+PERF_SUMMARY
 ```
 
-直近100M代表値:
+Phase 8.3 JALR early redirectの100M代表値:
 
 ```text
-[PERF-MEMARB] i_grant=6041726 d_grant=5635131 d_low_grant=2326003 d_low_defer=994887
-[PERF-MEMARB-STALL] i_wait=3084465 d_high_wait=599078 d_low_wait=3214967
-[PERF-DCACHE] req=8588334 load=5385671 store=3202663 cacheable=7034513 hit=5576401 miss=1458112 uncached=1553821 bypass=1553821 hit_rate_x1000=792 flush=0
-[PERF-DCACHE] mem_req=5607399 mem_resp=2462440 write_through=2703150 lines=128 line_bytes=32
-[PERF-STOREBUF] enq=2703150 drain=2703150 full_stall=57897 depth=4 pending=0 outstanding=0
-[PERF-STOREBUF-LOAD] bypass=90020 wait=187559
-[PERF-DSTALL] load_miss=4329422 uncached=2541670 storebuf_full=57897 storebuf_dep=187559
-[PERF-DCACHE-CPUWAIT] busy=1335044 rsp_pending=0 store_full=57897 load_overlap=795 load_store_empty=186764 uncached_store_empty=20858 other=0
-[PERF-DCACHE-MEMWAIT] fill_req=132880 fill_rsp=1495686 bypass_req=36278 bypass_rsp=1337099 drain_active=5327767 drain_req_wait=2624617
-[PERF-FETCH-STALL] fifo_full=7388765 control_recovery=20427328 translation_issue=19205098 translation_req_wait=1 translation_rsp=22025 icache_req=2811002 icache_rsp=6372136 fault=0 no_request=0
-[PERF-FETCH-RECOVERY] idle=6291722 translate=5375285 access=4332322 wait_resp=4427998 fault=1
-[PERF-FETCH-ICACHE-WAIT] req_not_ready=2811002 rsp_mem=6372136 rsp_fifo=0
-[PERF-ITLB] req=19205098 bare=0 unsupported=0 lookup=19205098 hit=19203095 miss=2003 hit_fault=0 hit_rate_x1000=999
-[PERF-ITLB] ptw start=2003 done=2002 fault=1 miss_cycles=20025 mem_req=4004 mem_resp=4003
-[PERF-ITLB] leaf_l0_4k=0 leaf_l1_2m=2001 leaf_l2_1g=0 refill=2001 superpage_refill=2001 flush=2013
-[PERF-ICACHE] req=21849936 cacheable=21849936 hit=17892780 fill_hit=2447721 miss=1509435 uncached=0 hit_rate_x1000=930 flush=2013
-[PERF] cycles=100000000 retired=32665406 cpi_x1000=3061 ipc_x1000=326
-[PERF-MEMU-STALL] translation=7098777 access_ready=10092697 response=9204068 split_ready=74961 split_response=38723 discard=0 fault=0
-[PERF-MEMU-SPLIT] ready_load=22339 ready_store=52622 ready_bus_wait=30652 response_load=38723 response_bus_wait=16568
-[PERF-DTLB] req=7031449 bare=0 unsupported=0 lookup=7031449 hit=7027438 miss=4011 hit_fault=0 hit_rate_x1000=999
-[PERF-DTLB] leaf_l0_4k=998 leaf_l1_2m=3013 leaf_l2_1g=0 refill=4011 superpage_refill=3013 flush=2013
-[PERF-DTLB-FAST] bare=0 unsupported=0 hit=7027438 hit_fault=0 held=0
+[PERF-FETCH-STALL] fifo_full=7358709 control_recovery=21209244 translation_issue=19079335 translation_req_wait=1 translation_rsp=22025 icache_req=2886299 icache_rsp=6516943 fault=0 no_request=0
+[PERF-CONTROL] branch=1951066 jal=669757 jalr=411594 trap=1531 return=1577 satp=13 sfence=2000 other=0
+[PERF] cycles=100000000 retired=33557400 cpi_x1000=2979 ipc_x1000=335
+[PERF] primary commit=33557400 no_commit=66442600 mem=23745865 muldiv=3254573 data_hazard=794093 ifetch=18691860 other=19956209
+[PERF] active mem=30622198 muldiv=3342040 data_hazard=3696792 ifetch=33461572
+[PERF] events branch=4123447 branch_taken=1951066 control_flush=3037538 trap_flush=1531 load=5523649 store=3282315 ibus_req=35960255 dbus_req=8861305
 ```
 
 読み取り:
 
 ```text
-CPI ~= 3.061
-IPC ~= 0.326
-DTLB hit率は高いが、memunit translation/access/responseの固定滞在が目立つ
-control_recoveryは約20.4M cyclesで大きい
-D-cache hit率は約79.2%、I-cache hit率は約93.0%
-store buffer full stallは小さく、現時点の主因ではない
+CPI ~= 2.979
+IPC ~= 0.335
+Phase 8.1-8.3でJAL/branch/JALR redirectはEX段へ前倒し済み
+control_recoveryはまだ約21.2M cyclesで大きい
+Phase 9.1 static predictorの100M測定で、ここからの変化を見る
 ```
 
 次の優先候補:
 
 ```text
-1. DTLB hit / memunit fast path
-2. D-cache hit request/response latency reduction
-3. branch/control recovery reduction
-4. D-cache容量/way/write-back比較
+1. Phase 9.1 static branch predictorの100M測定
+2. Whisper lockstep BusyBox autotest pass確認
+3. 2-bit PHT predictor
+4. BTB / RAS
+5. D-cache容量/way/write-back比較
 ```
 
 ## Current Limitations
@@ -450,7 +433,7 @@ store buffer full stallは小さく、現時点の主因ではない
 ```text
 PTW wait cycleの詳細内訳
 MMIO device別access count
-branch mispredict
+branch predictor hit/miss
 store buffer conflict / load wait reason
 I/D RAM arbiter pressure
 ```

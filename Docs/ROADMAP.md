@@ -158,7 +158,7 @@ ITLBなし:
 I-cacheなし:
   PA -> memory
 
-branch predictorなし:
+initial branch predictor bypass:
   next PC = PC + instruction length
 ```
 
@@ -483,15 +483,22 @@ done:
   store buffer initial
   store drain priority control
   unrelated load bypass
+  ALU/WB forwarding
+  MEM-side DTLB-hit fast path
+  JAL early redirect
+  conditional branch early redirect
+  JALR early redirect
+  static branch predictor module split
 
 next:
-  MEM-side DTLB-hit / memunit fast path
-  branch predictor / branch penalty reduction
-  load-use and control recovery detail counters
+  static branch predictor 100M measurement
+  Whisper lockstep check for branch predictor path
+  2-bit branch predictor
   D-cache write-back
   RAM arbiter / I-D memory port pressure reduction
 
 later:
+  BTB / RAS
   UART FIFO / interrupt reduction
   mul/div latency
   clock frequency / critical path cleanup
@@ -568,20 +575,80 @@ load miss / uncached / store drainとの分類維持
 
 最初から完全な組み合わせfast pathへ寄せるのではなく、FPGAでのcritical pathを壊さない範囲で1cycleずつ削る方針です。
 
-### Phase 8: Branch / Control Recovery
+### Phase 8: Branch / Control Redirect
 
-`control_flush` とfetch recoveryも大きい候補です。
+`control_flush` とfetch recoveryを減らすため、正解が分かった後のredirectを早めます。
+このPhaseではpredictor stateは持たず、EX段で確定した事実だけを使います。
 
-優先候補:
+完了済み:
 
 ```text
-branch resolutionをMEM段からEX段へ前倒し
-static backward-taken predictor
-小型2-bit predictor
-BTB
+Phase 8.0:
+  control redirect内訳counter
+
+Phase 8.1:
+  JAL early redirect
+
+Phase 8.2:
+  conditional branch early redirect
+
+Phase 8.3:
+  JALR early redirect
 ```
 
-ただし、branch predictorへ進む前に、trap/interrupt/redirectとlockstep同期の観測点を維持します。
+直近100M代表値:
+
+```text
+Phase 8.3:
+  cycles=100000000
+  retired=33557400
+  cpi_x1000=2979
+  ipc_x1000=335
+  primary_ifetch=18691860
+  control_flush=3037538
+```
+
+trap/interrupt/exception/mret/sret/sfence/satp redirectは、precise boundaryを壊さないためMEM/CSR側を正として維持します。
+
+### Phase 9: Branch Prediction
+
+Phase 9は、EXで正解が分かる前にfrontend側で次PCを予測する段階です。
+
+現在の状態:
+
+```text
+Phase 9.0:
+  branch_predictor.sv を追加
+  inst_fetcher.sv からstatic predictorロジックを切り出し
+
+Phase 9.1:
+  static backward-taken / forward-not-taken predictor
+  prediction metadataをissue FIFO経由でEXへ渡す
+  EXで予測hit/missを判定
+  miss時だけ正しいPCへredirect
+  [PERF-BPRED] を追加
+```
+
+現時点ではBTBなしです。
+対象は条件分岐で、後ろ向きbranchはtaken予測、前向きbranchはnot-taken予測です。
+`update_*` 入力は `branch_predictor.sv` に用意済みですが、static predictorでは未使用です。
+
+次の確認:
+
+```text
+1. 100M +PERF_SUMMARY
+2. [PERF-BPRED] hit_rate
+3. control_flush / primary_ifetch / CPI の比較
+4. Whisper lockstep BusyBox autotest pass
+```
+
+次の候補:
+
+```text
+2-bit PHT
+BTB
+RAS
+```
 
 ### Correctness Guard: PMP After Translation
 

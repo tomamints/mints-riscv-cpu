@@ -59,12 +59,15 @@ module inst_fetcher (
         Inst  bits;
         logic is_rvc;
         ExceptionInfo expt;
+        logic predicted_taken;
+        Addr predicted_next_pc;
     } issue_fifo_type;
 
     logic           issue_fifo_flush;
     logic           issue_fifo_wvalid;
     logic           issue_fifo_wready;
     issue_fifo_type issue_fifo_wdata;
+    issue_fifo_type issue_fifo_wdata_raw;
     issue_fifo_type issue_fifo_rdata;
     logic           issue_fifo_rready;
     logic           issue_fifo_rvalid;
@@ -91,6 +94,16 @@ module inst_fetcher (
     logic       issue_is_rdata_saved;
     Addr        issue_saved_addr;
     logic [15:0] issue_saved_bits;  // rdata[63:48]
+    logic       issue_predict_redirect;
+    Addr        issue_predict_next_pc;
+    logic       fetch_redirect;
+    logic       branch_predictor_inst_valid;
+    Addr        branch_predictor_pc;
+    Inst        branch_predictor_inst;
+    logic       branch_predictor_is_rvc;
+    logic       branch_prediction_valid;
+    logic       branch_predicted_taken;
+    Addr        branch_predicted_next_pc;
 
     // instruction converter
     logic [15:0] rvcc_inst16;
@@ -138,6 +151,40 @@ module inst_fetcher (
 
     assign issue_pmp_allow = need_translate ? 1'b1 : issue_pmp_allow_raw;
 
+    branch_predictor static_branch_predictor (
+        .inst_valid(branch_predictor_inst_valid),
+        .pc(branch_predictor_pc),
+        .inst(branch_predictor_inst),
+        .is_rvc(branch_predictor_is_rvc),
+        .prediction_valid(branch_prediction_valid),
+        .predicted_taken(branch_predicted_taken),
+        .predicted_next_pc(branch_predicted_next_pc),
+        .update_valid(1'b0),
+        .update_pc('0),
+        .update_taken(1'b0),
+        .update_target('0)
+    );
+
+    assign branch_predictor_inst_valid =
+        issue_fifo_wvalid &&
+        !issue_fifo_wdata_raw.expt.valid;
+    assign branch_predictor_pc = issue_fifo_wdata_raw.addr;
+    assign branch_predictor_inst = issue_fifo_wdata_raw.bits;
+    assign branch_predictor_is_rvc = issue_fifo_wdata_raw.is_rvc;
+    assign issue_predict_redirect =
+        issue_fifo_wvalid &&
+        branch_prediction_valid &&
+        branch_predicted_taken;
+    assign issue_predict_next_pc = branch_predicted_next_pc;
+
+    always_comb begin
+        issue_fifo_wdata = issue_fifo_wdata_raw;
+        if (branch_prediction_valid) begin
+            issue_fifo_wdata.predicted_taken = branch_predicted_taken;
+            issue_fifo_wdata.predicted_next_pc = branch_predicted_next_pc;
+        end
+    end
+
     function automatic ExceptionInfo adjust_instruction_fetch_exception(
         input ExceptionInfo expt,
         input Addr issue_addr,
@@ -173,9 +220,12 @@ module inst_fetcher (
             issue_saved_addr     <= '0;
             issue_saved_bits     <= 16'h0000;
         end else begin
-            if (core_if.is_hazard) begin
+            if (fetch_redirect) begin
                 issue_pc_offset      <= core_if.next_pc[2:0];
                 issue_is_rdata_saved <= 1'b0;
+                if (issue_predict_redirect) begin
+                    issue_pc_offset <= issue_predict_next_pc[2:0];
+                end
             end else begin
                 // offset が 6 な 32ビット命令の場合、
                 // アドレスと上位16ビットを保存して FIFO を読み進める
@@ -212,19 +262,19 @@ module inst_fetcher (
 
         fetch_fifo_rready = 1'b0;
         issue_fifo_wvalid = 1'b0;
-        issue_fifo_wdata  = '0;
+        issue_fifo_wdata_raw  = '0;
 
         if (!core_if.is_hazard && fetch_fifo_rvalid) begin
             if (issue_fifo_wready) begin
                 if (fetch_fifo_rdata.expt.valid) begin
                     fetch_fifo_rready       = 1'b1;
                     issue_fifo_wvalid       = 1'b1;
-                    issue_fifo_wdata.addr   = issue_addr;
-                    issue_fifo_wdata.bits   = '0;
-                    issue_fifo_wdata.is_rvc = 1'b0;
-                    issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                    issue_fifo_wdata_raw.addr   = issue_addr;
+                    issue_fifo_wdata_raw.bits   = '0;
+                    issue_fifo_wdata_raw.is_rvc = 1'b0;
+                    issue_fifo_wdata_raw.expt   = adjust_instruction_fetch_exception(
                         fetch_fifo_rdata.expt,
-                        issue_fifo_wdata.addr,
+                        issue_fifo_wdata_raw.addr,
                         // If a 32-bit instruction crosses an 8-byte fetch block and
                         // the second block faults, the fetch fault value already
                         // names the faulting fetch portion.
@@ -234,33 +284,33 @@ module inst_fetcher (
                     // 命令は {rdata_next[15:0], rdata[63:48]} になる
                     if (issue_is_rdata_saved) begin
                         issue_fifo_wvalid       = 1'b1;
-                        issue_fifo_wdata.addr   = {issue_saved_addr[$bits(Addr)-1:3], offset};
-                        issue_fifo_wdata.bits   = {rdata[15:0], issue_saved_bits};
-                        issue_fifo_wdata.is_rvc = 1'b0;
-                        issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                        issue_fifo_wdata_raw.addr   = {issue_saved_addr[$bits(Addr)-1:3], offset};
+                        issue_fifo_wdata_raw.bits   = {rdata[15:0], issue_saved_bits};
+                        issue_fifo_wdata_raw.is_rvc = 1'b0;
+                        issue_fifo_wdata_raw.expt   = adjust_instruction_fetch_exception(
                             fetch_fifo_rdata.expt,
-                            issue_fifo_wdata.addr,
+                            issue_fifo_wdata_raw.addr,
                             1'b1);
-                        if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
-                            issue_fifo_wdata.expt.valid = 1'b1;
-                            issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
-                            issue_fifo_wdata.expt.value = issue_pmp_addr;
+                        if (!issue_fifo_wdata_raw.expt.valid && !issue_pmp_allow) begin
+                            issue_fifo_wdata_raw.expt.valid = 1'b1;
+                            issue_fifo_wdata_raw.expt.cause = INSTRUCTION_ACCESS_FAULT;
+                            issue_fifo_wdata_raw.expt.value = issue_pmp_addr;
                         end
                     end else begin
                         fetch_fifo_rready = 1'b1;
                         if (rvcc_is_rvc) begin
                             issue_fifo_wvalid       = 1'b1;
-                            issue_fifo_wdata.addr   = {raddr[$bits(Addr)-1:3], offset};
-                            issue_fifo_wdata.is_rvc = 1'b1;
-                            issue_fifo_wdata.bits   = rvcc_inst32;
-                            issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                            issue_fifo_wdata_raw.addr   = {raddr[$bits(Addr)-1:3], offset};
+                            issue_fifo_wdata_raw.is_rvc = 1'b1;
+                            issue_fifo_wdata_raw.bits   = rvcc_inst32;
+                            issue_fifo_wdata_raw.expt   = adjust_instruction_fetch_exception(
                                 fetch_fifo_rdata.expt,
-                                issue_fifo_wdata.addr,
+                                issue_fifo_wdata_raw.addr,
                                 1'b0);
-                            if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
-                                issue_fifo_wdata.expt.valid = 1'b1;
-                                issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
-                                issue_fifo_wdata.expt.value = issue_pmp_addr;
+                            if (!issue_fifo_wdata_raw.expt.valid && !issue_pmp_allow) begin
+                                issue_fifo_wdata_raw.expt.valid = 1'b1;
+                                issue_fifo_wdata_raw.expt.cause = INSTRUCTION_ACCESS_FAULT;
+                                issue_fifo_wdata_raw.expt.value = issue_pmp_addr;
                             end
                         end else begin
                             // Read next 8 bytes (Veryl でも未実装部分)
@@ -269,27 +319,27 @@ module inst_fetcher (
                 end else begin
                     fetch_fifo_rready     = (!rvcc_is_rvc && (offset == 3'd4));
                     issue_fifo_wvalid     = 1'b1;
-                    issue_fifo_wdata.addr = {raddr[$bits(Addr)-1:3], offset};
+                    issue_fifo_wdata_raw.addr = {raddr[$bits(Addr)-1:3], offset};
 
                     if (rvcc_is_rvc) begin
-                        issue_fifo_wdata.bits = rvcc_inst32;
+                        issue_fifo_wdata_raw.bits = rvcc_inst32;
                     end else begin
                         case (offset)
-                            3'd0: issue_fifo_wdata.bits = rdata[31:0];
-                            3'd2: issue_fifo_wdata.bits = rdata[47:16];
-                            3'd4: issue_fifo_wdata.bits = rdata[63:32];
-                            default: issue_fifo_wdata.bits = '0;
+                            3'd0: issue_fifo_wdata_raw.bits = rdata[31:0];
+                            3'd2: issue_fifo_wdata_raw.bits = rdata[47:16];
+                            3'd4: issue_fifo_wdata_raw.bits = rdata[63:32];
+                            default: issue_fifo_wdata_raw.bits = '0;
                         endcase
                     end
-                    issue_fifo_wdata.is_rvc = rvcc_is_rvc;
-                    issue_fifo_wdata.expt   = adjust_instruction_fetch_exception(
+                    issue_fifo_wdata_raw.is_rvc = rvcc_is_rvc;
+                    issue_fifo_wdata_raw.expt   = adjust_instruction_fetch_exception(
                         fetch_fifo_rdata.expt,
-                        issue_fifo_wdata.addr,
+                        issue_fifo_wdata_raw.addr,
                         1'b0);
-                    if (!issue_fifo_wdata.expt.valid && !issue_pmp_allow) begin
-                        issue_fifo_wdata.expt.valid = 1'b1;
-                        issue_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
-                        issue_fifo_wdata.expt.value = issue_pmp_addr;
+                    if (!issue_fifo_wdata_raw.expt.valid && !issue_pmp_allow) begin
+                        issue_fifo_wdata_raw.expt.valid = 1'b1;
+                        issue_fifo_wdata_raw.expt.cause = INSTRUCTION_ACCESS_FAULT;
+                        issue_fifo_wdata_raw.expt.value = issue_pmp_addr;
                     end
                 end
             end
@@ -306,6 +356,8 @@ module inst_fetcher (
         core_if.rdata  = issue_fifo_rdata.bits;
         core_if.is_rvc = issue_fifo_rdata.is_rvc;
         core_if.expt   = issue_fifo_rdata.expt;
+        core_if.predicted_taken = issue_fifo_rdata.predicted_taken;
+        core_if.predicted_next_pc = issue_fifo_rdata.predicted_next_pc;
     end
 
     /*--------- fetch logic ----------*/
@@ -403,17 +455,17 @@ module inst_fetcher (
 `else
     assign trace_fetch_fault_match = 1'b1;
 `endif
-    assign fetch_translation_req_valid =
-        fetch_state == FetchIdle &&
-        fetch_fifo_wready &&
-        need_translate &&
-        !core_if.is_hazard;
+	    assign fetch_translation_req_valid =
+	        fetch_state == FetchIdle &&
+	        fetch_fifo_wready &&
+	        need_translate &&
+	        !fetch_redirect;
     assign fetch_translation_rsp_ready = fetch_state == FetchTranslate;
 
     instruction_translation fetch_translation (
         .clk(clk),
         .rst(rst),
-        .flush(core_if.is_hazard),
+	        .flush(fetch_redirect),
         .tlb_flush(translation_flush),
         .req_valid(fetch_translation_req_valid),
         .req_ready(fetch_translation_req_ready),
@@ -447,7 +499,7 @@ module inst_fetcher (
     icache fetch_icache (
         .clk(clk),
         .rst(rst),
-        .cancel(core_if.is_hazard),
+	        .cancel(fetch_redirect),
         .invalidate(translation_flush),
         .req_valid(icache_req_valid),
         .req_ready(icache_req_ready),
@@ -479,25 +531,25 @@ module inst_fetcher (
         .allow(fetch_pmp_allow)
     );
 
-    assign fetch_translation_mem_ready =
-        !core_if.is_hazard &&
-        fetch_translation_mem_valid &&
-        mem_if.ready;
-    assign icache_mem_ready =
-        !core_if.is_hazard &&
-        !fetch_translation_mem_valid &&
-        icache_mem_valid &&
-        mem_if.ready;
+	    assign fetch_translation_mem_ready =
+	        !fetch_redirect &&
+	        fetch_translation_mem_valid &&
+	        mem_if.ready;
+	    assign icache_mem_ready =
+	        !fetch_redirect &&
+	        !fetch_translation_mem_valid &&
+	        icache_mem_valid &&
+	        mem_if.ready;
     assign fetch_translation_mem_rvalid =
         mem_if.rvalid &&
         fetch_mem_owner == FetchMemOwnerPtw;
     assign icache_mem_rvalid =
         mem_if.rvalid &&
         fetch_mem_owner == FetchMemOwnerIcache;
-    assign icache_req_valid =
-        !core_if.is_hazard &&
-        fetch_fifo_wready &&
-        fetch_pmp_allow &&
+	    assign icache_req_valid =
+	        !fetch_redirect &&
+	        fetch_fifo_wready &&
+	        fetch_pmp_allow &&
         (
             (fetch_state == FetchIdle && !need_translate) ||
             (fetch_state == FetchAccess)
@@ -510,8 +562,9 @@ module inst_fetcher (
     assign fetch_inst_mem_fire =
         icache_req_valid &&
         icache_req_ready;
-    assign fetch_inst_mem_rvalid =
-        icache_rsp_valid;
+	    assign fetch_inst_mem_rvalid =
+	        icache_rsp_valid;
+	    assign fetch_redirect = core_if.is_hazard || issue_predict_redirect;
 
     // core -> mem_if
     always_comb begin
@@ -521,7 +574,7 @@ module inst_fetcher (
         mem_if.wdata = '0;
         mem_if.wmask = '0;
 
-        if (!core_if.is_hazard) begin
+	        if (!fetch_redirect) begin
             if (fetch_translation_mem_valid) begin
                 mem_if.valid = 1'b1;
                 mem_if.addr = fetch_translation_mem_addr;
@@ -534,17 +587,17 @@ module inst_fetcher (
 
     // memory -> fetch_fifo
     always_comb begin
-        fetch_fifo_flush      = core_if.is_hazard;
-        fetch_fifo_wvalid     = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ||
-                                (fetch_state == FetchFault && fetch_fifo_wready) ||
-                                (fetch_state == FetchIdle && !need_translate && !core_if.is_hazard && fetch_fifo_wready && !fetch_pmp_allow);
+	        fetch_fifo_flush      = fetch_redirect;
+	        fetch_fifo_wvalid     = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ||
+	                                (fetch_state == FetchFault && fetch_fifo_wready) ||
+	                                (fetch_state == FetchIdle && !need_translate && !fetch_redirect && fetch_fifo_wready && !fetch_pmp_allow);
         fetch_fifo_wdata.addr = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ? fetch_req_vaddr : fetch_pc;
         fetch_fifo_wdata.bits = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ? icache_rsp_data : '0;
         fetch_fifo_wdata.expt = '0;
         if (fetch_state == FetchFault && fetch_fifo_wready) begin
             fetch_fifo_wdata.addr = fetch_req_vaddr;
             fetch_fifo_wdata.expt = fetch_fault_expt;
-        end else if (fetch_state == FetchIdle && !need_translate && !core_if.is_hazard && fetch_fifo_wready && !fetch_pmp_allow) begin
+	        end else if (fetch_state == FetchIdle && !need_translate && !fetch_redirect && fetch_fifo_wready && !fetch_pmp_allow) begin
             fetch_fifo_wdata.expt.valid = 1'b1;
             fetch_fifo_wdata.expt.cause = INSTRUCTION_ACCESS_FAULT;
             fetch_fifo_wdata.expt.value = fetch_pc;
@@ -579,13 +632,13 @@ module inst_fetcher (
             perf_fetch_icache_rsp_mem_wait_cycle <= '0;
             perf_fetch_icache_rsp_fifo_wait_cycle <= '0;
         end else begin
-            if (core_if.is_hazard) begin
-                fetch_recovery_active <= 1'b1;
-            end else if (core_if.rvalid && core_if.rready) begin
-                fetch_recovery_active <= 1'b0;
-            end
+	            if (fetch_redirect) begin
+	                fetch_recovery_active <= 1'b1;
+	            end else if (core_if.rvalid && core_if.rready) begin
+	                fetch_recovery_active <= 1'b0;
+	            end
 
-            if (!core_if.is_hazard) begin
+	            if (!fetch_redirect) begin
                 if (!fetch_fifo_wready) begin
                     perf_fetch_fifo_full_cycle <= perf_fetch_fifo_full_cycle + UInt64'(1);
                 end
@@ -667,8 +720,10 @@ module inst_fetcher (
                 fetch_mem_owner <= FetchMemOwnerNone;
             end
 
-            if (core_if.is_hazard) begin
-                fetch_pc         <= {core_if.next_pc[XLEN-1:3], 3'b000};
+	            if (fetch_redirect) begin
+	                fetch_pc         <= issue_predict_redirect
+	                    ? {issue_predict_next_pc[XLEN-1:3], 3'b000}
+	                    : {core_if.next_pc[XLEN-1:3], 3'b000};
                 fetch_req_vaddr  <= '0;
                 fetch_req_paddr  <= '0;
                 fetch_fault_expt <= '0;
