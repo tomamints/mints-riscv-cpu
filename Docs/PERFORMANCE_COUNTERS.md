@@ -412,17 +412,17 @@ CPI ~= 2.979
 IPC ~= 0.335
 Phase 8.1-8.3でJAL/branch/JALR redirectはEX段へ前倒し済み
 control_recoveryはまだ約21.2M cyclesで大きい
-Phase 9.1 static predictorの100M測定で、ここからの変化を見る
+Phase 9.1 static predictorでCPIは約2.879まで改善
+Phase 9.2 2-bit PHT predictorの100M測定で、ここからの変化を見る
 ```
 
 次の優先候補:
 
 ```text
-1. Phase 9.1 static branch predictorの100M測定
+1. Phase 9.2 2-bit PHT predictorの100M測定
 2. Whisper lockstep BusyBox autotest pass確認
-3. 2-bit PHT predictor
-4. BTB / RAS
-5. D-cache容量/way/write-back比較
+3. BTB / RAS
+4. D-cache容量/way/write-back比較
 ```
 
 ## Current Limitations

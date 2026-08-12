@@ -165,6 +165,16 @@ module core (
 	always_comb begin
 		i_membus.is_hazard = control_hazard;
 		i_membus.next_pc   = control_hazard_pc_next;
+		i_membus.bp_update_valid =
+			exs_valid &&
+			exq_rready &&
+			!exq_rdata.expt.valid &&
+			inst_is_br(exs_ctrl) &&
+			!ex_early_branch_misaligned &&
+			!mem_control_hazard;
+		i_membus.bp_update_pc = exs_pc;
+		i_membus.bp_update_taken = ex_early_branch_taken;
+		i_membus.bp_update_target = ex_early_branch_pc_next;
 	end
 
 ////////////////// ID Stage /////////////////////

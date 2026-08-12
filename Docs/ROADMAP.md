@@ -491,9 +491,8 @@ done:
   static branch predictor module split
 
 next:
-  static branch predictor 100M measurement
-  Whisper lockstep check for branch predictor path
-  2-bit branch predictor
+  2-bit PHT predictor 100M measurement
+  Whisper lockstep check for predictor path
   D-cache write-back
   RAM arbiter / I-D memory port pressure reduction
 
@@ -627,11 +626,17 @@ Phase 9.1:
   EXで予測hit/missを判定
   miss時だけ正しいPCへredirect
   [PERF-BPRED] を追加
+
+Phase 9.2:
+  128-entry 2-bit PHT predictor
+  未学習entryはBTFNTへfallback
+  EX段のresolved branchでPHT更新
+  1000-cycle smoke pass
 ```
 
 現時点ではBTBなしです。
-対象は条件分岐で、後ろ向きbranchはtaken予測、前向きbranchはnot-taken予測です。
-`update_*` 入力は `branch_predictor.sv` に用意済みですが、static predictorでは未使用です。
+対象は条件分岐です。
+targetはまだ命令即値から計算しており、BTBは未実装です。
 
 次の確認:
 
@@ -645,7 +650,6 @@ Phase 9.1:
 次の候補:
 
 ```text
-2-bit PHT
 BTB
 RAS
 ```

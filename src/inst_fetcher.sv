@@ -152,6 +152,8 @@ module inst_fetcher (
     assign issue_pmp_allow = need_translate ? 1'b1 : issue_pmp_allow_raw;
 
     branch_predictor static_branch_predictor (
+        .clk(clk),
+        .rst(rst),
         .inst_valid(branch_predictor_inst_valid),
         .pc(branch_predictor_pc),
         .inst(branch_predictor_inst),
@@ -159,10 +161,10 @@ module inst_fetcher (
         .prediction_valid(branch_prediction_valid),
         .predicted_taken(branch_predicted_taken),
         .predicted_next_pc(branch_predicted_next_pc),
-        .update_valid(1'b0),
-        .update_pc('0),
-        .update_taken(1'b0),
-        .update_target('0)
+        .update_valid(core_if.bp_update_valid),
+        .update_pc(core_if.bp_update_pc),
+        .update_taken(core_if.bp_update_taken),
+        .update_target(core_if.bp_update_target)
     );
 
     assign branch_predictor_inst_valid =

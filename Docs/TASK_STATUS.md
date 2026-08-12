@@ -51,7 +51,7 @@ Whisper lockstepでも同じ到達点を検出し、約61.6M命令比較後に�
 |---:|---|---|
 | 1 | Lockstep BusyBox pass維持 | `BUSYBOX-TEST-PASS` までのWhisper同期を正しさのゲートにする |
 | 2 | 性能計測基盤 | CPI、stall理由、TLB/cache/store buffer/arbiter countを測る |
-| 3 | Phase 9 branch prediction | static predictorの100M測定、Whisper lockstep確認、2-bit predictorへ進む |
+| 3 | Phase 9 branch prediction | 2-bit PHTの100M測定、Whisper lockstep確認、BTB/RASへ進むか判断 |
 | 4 | MEM/cache追加改善 | D-cache容量/way/write-back、I/D memory pressureを測定結果で判断 |
 | 5 | 通常shell化 | `setsid` / `cttyhack` / BusyBox対話shellの安定化 |
 

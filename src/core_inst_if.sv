@@ -10,6 +10,10 @@ interface core_inst_if;
     ExceptionInfo expt;
     logic predicted_taken;
     Addr predicted_next_pc;
+    logic bp_update_valid;
+    Addr bp_update_pc;
+    logic bp_update_taken;
+    Addr bp_update_target;
     logic is_hazard;
     Addr next_pc;
 
@@ -24,12 +28,16 @@ interface core_inst_if;
         input   predicted_next_pc,
         output  rready,
         output  is_hazard,
-        output  next_pc
+        output  next_pc,
+        output  bp_update_valid,
+        output  bp_update_pc,
+        output  bp_update_taken,
+        output  bp_update_target
     );
 
     modport slave(
         output   rvalid, raddr, rdata, is_rvc, expt, predicted_taken, predicted_next_pc,
-        input  rready, is_hazard, next_pc
+        input  rready, is_hazard, next_pc, bp_update_valid, bp_update_pc, bp_update_taken, bp_update_target
     );
 
 endinterface

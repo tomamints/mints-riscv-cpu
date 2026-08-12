@@ -85,12 +85,11 @@ Implemented performance structures:
 | Store buffer behavior | background drain, unrelated cache-hit load bypass |
 | Arbiter | distinguishes I-side, D-side high priority, D-side low priority drain |
 | Control redirect | JAL, conditional branch, and JALR early redirect |
-| Branch predictor | Static backward-taken / forward-not-taken module |
+| Branch predictor | 128-entry 2-bit PHT, BTFNT fallback for cold entries |
 
 Not yet implemented:
 
 ```text
-2-bit branch predictor
 BTB / RAS
 write-back D-cache
 non-blocking caches
@@ -172,9 +171,13 @@ Phase 8.3 JALR early redirect:
   [PERF-CONTROL] branch=1951066 jal=669757 jalr=411594 trap=1531 return=1577 satp=13 sfence=2000 other=0
 
 Phase 9.1 static branch predictor:
+  [PERF-BPRED] pred=4329566 hit=3093544 miss=1236022 hit_rate_x1000=714
+  [PERF] cycles=100000000 retired=34725769 cpi_x1000=2879 ipc_x1000=347
+
+Phase 9.2 2-bit PHT predictor:
   implemented and 1000-cycle smoke-tested
   100M measurement pending
-  [PERF-BPRED] is available
+  [PERF-BPRED] remains the main predictor metric
 ```
 
 Current bottleneck view:
@@ -204,7 +207,7 @@ Recommended next steps:
 ```text
 1. Keep the BusyBox lockstep PASS as the correctness gate.
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
-3. Measure Phase 9.1 static branch predictor at 100M cycles.
+3. Measure Phase 9.2 2-bit PHT predictor at 100M cycles.
 4. Run Whisper lockstep after predictor changes.
 5. Revisit D-cache structure only after stall counters show capacity/conflict pressure.
 ```
