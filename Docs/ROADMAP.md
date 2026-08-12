@@ -631,18 +631,24 @@ Phase 9.2:
   128-entry 2-bit PHT predictor
   未学習entryはBTFNTへfallback
   EX段のresolved branchでPHT更新
-  1000-cycle smoke pass
+  100M measurement pass
+  Whisper BusyBox autotest lockstep pass
+
+Phase 9.3:
+  32-entry JALR BTB
+  PHT updateとBTB updateを種別で分離
+  core redirectはpredictionより常に優先
+  build-input pass
 ```
 
-現時点ではBTBなしです。
-対象は条件分岐です。
-targetはまだ命令即値から計算しており、BTBは未実装です。
+B-type branchのtargetは命令即値から計算しています。
+BTBは最初の段階としてJALR target predictionに限定しています。
 
 次の確認:
 
 ```text
-1. 100M +PERF_SUMMARY
-2. [PERF-BPRED] hit_rate
+1. Phase 9.3 100M +PERF_SUMMARY
+2. [PERF-BTB] JALR hit_rate
 3. control_flush / primary_ifetch / CPI の比較
 4. Whisper lockstep BusyBox autotest pass
 ```
@@ -650,8 +656,8 @@ targetはまだ命令即値から計算しており、BTBは未実装です。
 次の候補:
 
 ```text
-BTB
 RAS
+larger BTB
 ```
 
 ### Correctness Guard: PMP After Translation

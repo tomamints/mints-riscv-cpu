@@ -383,6 +383,7 @@ ALU/WB forwarding後は、まず既存の `data_hazard` を比較します。
 
 Phase 8でcontrol redirectをEX段へ前倒ししました。
 Phase 9ではbranch predictionへ入り、`[PERF-BPRED]` を追加しています。
+Phase 9.3ではJALR用BTBを追加し、`[PERF-BTB]` を追加しています。
 
 実行条件:
 
@@ -413,15 +414,41 @@ IPC ~= 0.335
 Phase 8.1-8.3でJAL/branch/JALR redirectはEX段へ前倒し済み
 control_recoveryはまだ約21.2M cyclesで大きい
 Phase 9.1 static predictorでCPIは約2.879まで改善
-Phase 9.2 2-bit PHT predictorの100M測定で、ここからの変化を見る
+Phase 9.2 2-bit PHT predictorでCPIは約2.812まで改善
+Phase 9.3 JALR BTBで、残っているJALR redirectをどれだけ減らせるかを見る
+```
+
+Phase 9.1 static predictorの100M代表値:
+
+```text
+[PERF-CONTROL] branch=1236016 jal=677463 jalr=412335 trap=1539 return=1585 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=4329566 hit=3093544 miss=1236022 hit_rate_x1000=714
+[PERF] cycles=100000000 retired=34725769 cpi_x1000=2879 ipc_x1000=347
+```
+
+Phase 9.2 2-bit PHT predictorの100M代表値:
+
+```text
+[PERF-FETCH-STALL] fifo_full=7310937 control_recovery=18067125 translation_issue=19530511 translation_req_wait=1 translation_rsp=22025 icache_req=3162327 icache_rsp=6567639 fault=0 no_request=0
+[PERF-CONTROL] branch=670026 jal=683660 jalr=413289 trap=1551 return=1599 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=4473131 hit=3803100 miss=670031 hit_rate_x1000=850
+[PERF] cycles=100000000 retired=35561702 cpi_x1000=2812 ipc_x1000=355
+[PERF] primary commit=35561702 no_commit=64438298 mem=24715916 muldiv=3262066 data_hazard=803987 ifetch=15958545 other=19697784
+[PERF] events branch=4473083 branch_taken=2157035 control_flush=1772138 trap_flush=1551 load=5893304 store=3425600 ibus_req=36898779 dbus_req=9376259
+```
+
+Phase 9.3 JALR BTBで追加される行:
+
+```text
+[PERF-BTB] jalr=<resolved_jalr> hit=<btb_hit> miss=<btb_miss> hit_rate_x1000=<hit_rate> entries=32
 ```
 
 次の優先候補:
 
 ```text
-1. Phase 9.2 2-bit PHT predictorの100M測定
+1. Phase 9.3 JALR BTBの100M測定
 2. Whisper lockstep BusyBox autotest pass確認
-3. BTB / RAS
+3. RAS / larger BTB
 4. D-cache容量/way/write-back比較
 ```
 

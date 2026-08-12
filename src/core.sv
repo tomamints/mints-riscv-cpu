@@ -151,6 +151,7 @@ module core (
 	logic ex_early_jal_redirect;
 	logic ex_early_jalr_redirect;
 	logic ex_early_jalr_misaligned;
+	logic ex_early_jalr_prediction_correct;
 	logic ex_early_branch_redirect;
 	logic ex_early_branch_taken;
 	logic ex_early_branch_misaligned;
@@ -169,12 +170,16 @@ module core (
 			exs_valid &&
 			exq_rready &&
 			!exq_rdata.expt.valid &&
-			inst_is_br(exs_ctrl) &&
-			!ex_early_branch_misaligned &&
+			((inst_is_br(exs_ctrl) && !ex_early_branch_misaligned) ||
+			 ((exs_inst_bits[6:0] == OP_JALR) && !ex_early_jalr_misaligned)) &&
 			!mem_control_hazard;
+		i_membus.bp_update_is_branch = inst_is_br(exs_ctrl);
+		i_membus.bp_update_is_jalr = exs_inst_bits[6:0] == OP_JALR;
 		i_membus.bp_update_pc = exs_pc;
-		i_membus.bp_update_taken = ex_early_branch_taken;
-		i_membus.bp_update_target = ex_early_branch_pc_next;
+		i_membus.bp_update_taken = inst_is_br(exs_ctrl) ? ex_early_branch_taken : 1'b1;
+		i_membus.bp_update_target = (exs_inst_bits[6:0] == OP_JALR)
+			? ex_early_jalr_pc_next
+			: ex_early_branch_pc_next;
 	end
 
 ////////////////// ID Stage /////////////////////
@@ -480,6 +485,9 @@ module core (
 			UInt64 perf_bpred_pred_count;
 			UInt64 perf_bpred_hit_count;
 			UInt64 perf_bpred_miss_count;
+			UInt64 perf_btb_jalr_count;
+			UInt64 perf_btb_jalr_hit_count;
+			UInt64 perf_btb_jalr_miss_count;
 			UInt64 perf_trap_flush_count;
 			UInt64 perf_load_count;
 			UInt64 perf_store_count;
@@ -650,6 +658,10 @@ module core (
 		inst_is_br(exs_ctrl) &&
 		exs_predicted_taken == ex_early_branch_taken &&
 		(!exs_predicted_taken || exs_predicted_next_pc == ex_early_branch_pc_next);
+	assign ex_early_jalr_prediction_correct =
+		(exs_inst_bits[6:0] == OP_JALR) &&
+		exs_predicted_taken &&
+		exs_predicted_next_pc == ex_early_jalr_pc_next;
 	assign ex_early_jal_redirect =
 		exs_valid &&
 		exq_rready &&
@@ -663,6 +675,7 @@ module core (
 		!exq_rdata.expt.valid &&
 		exs_ctrl.is_jump &&
 		(exs_inst_bits[6:0] == OP_JALR) &&
+		!ex_early_jalr_prediction_correct &&
 		!ex_early_jalr_misaligned &&
 		!mem_control_hazard;
 	assign ex_early_branch_redirect =
@@ -893,6 +906,9 @@ module core (
 	logic perf_bpred_event;
 	logic perf_bpred_hit_event;
 	logic perf_bpred_miss_event;
+	logic perf_btb_jalr_event;
+	logic perf_btb_jalr_hit_event;
+	logic perf_btb_jalr_miss_event;
 	logic perf_trap_flush_event;
 	logic perf_load_event;
 	logic perf_store_event;
@@ -1062,6 +1078,18 @@ module core (
 	assign perf_bpred_miss_event =
 		perf_bpred_event &&
 		!ex_early_branch_prediction_correct;
+	assign perf_btb_jalr_event =
+		exs_valid &&
+		exq_rready &&
+		!exq_rdata.expt.valid &&
+		exs_inst_bits[6:0] == OP_JALR &&
+		!ex_early_jalr_misaligned;
+	assign perf_btb_jalr_hit_event =
+		perf_btb_jalr_event &&
+		ex_early_jalr_prediction_correct;
+	assign perf_btb_jalr_miss_event =
+		perf_btb_jalr_event &&
+		!ex_early_jalr_prediction_correct;
 	assign perf_trap_flush_event = perf_control_trap_event;
 	assign amo_reservation_clear_o =
 		mems_valid &&
@@ -1166,6 +1194,9 @@ module core (
 			perf_bpred_pred_count <= '0;
 			perf_bpred_hit_count <= '0;
 			perf_bpred_miss_count <= '0;
+			perf_btb_jalr_count <= '0;
+			perf_btb_jalr_hit_count <= '0;
+			perf_btb_jalr_miss_count <= '0;
 			perf_trap_flush_count <= '0;
 			perf_load_count <= '0;
 			perf_store_count <= '0;
@@ -1244,6 +1275,15 @@ module core (
 			if (perf_bpred_miss_event) begin
 				perf_bpred_miss_count <= perf_bpred_miss_count + 1;
 			end
+			if (perf_btb_jalr_event) begin
+				perf_btb_jalr_count <= perf_btb_jalr_count + 1;
+			end
+			if (perf_btb_jalr_hit_event) begin
+				perf_btb_jalr_hit_count <= perf_btb_jalr_hit_count + 1;
+			end
+			if (perf_btb_jalr_miss_event) begin
+				perf_btb_jalr_miss_count <= perf_btb_jalr_miss_count + 1;
+			end
 			if (perf_trap_flush_event) begin
 				perf_trap_flush_count <= perf_trap_flush_count + 1;
 			end
@@ -1297,6 +1337,12 @@ module core (
 				perf_bpred_hit_count,
 				perf_bpred_miss_count,
 				perf_bpred_pred_count == 0 ? UInt64'(0) : (perf_bpred_hit_count * UInt64'(1000)) / perf_bpred_pred_count);
+			$display("[PERF-BTB] jalr=%0d hit=%0d miss=%0d hit_rate_x1000=%0d entries=%0d",
+				perf_btb_jalr_count,
+				perf_btb_jalr_hit_count,
+				perf_btb_jalr_miss_count,
+				perf_btb_jalr_count == 0 ? UInt64'(0) : (perf_btb_jalr_hit_count * UInt64'(1000)) / perf_btb_jalr_count,
+				32);
 			$display("[PERF] cycles=%0d retired=%0d cpi_x1000=%0d ipc_x1000=%0d",
 				debug_cycle,
 				perf_retired,

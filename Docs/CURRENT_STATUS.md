@@ -86,11 +86,13 @@ Implemented performance structures:
 | Arbiter | distinguishes I-side, D-side high priority, D-side low priority drain |
 | Control redirect | JAL, conditional branch, and JALR early redirect |
 | Branch predictor | 128-entry 2-bit PHT, BTFNT fallback for cold entries |
+| BTB | 32-entry JALR target BTB |
 
 Not yet implemented:
 
 ```text
-BTB / RAS
+RAS
+larger BTB
 write-back D-cache
 non-blocking caches
 store-to-load forwarding with byte merge
@@ -175,9 +177,14 @@ Phase 9.1 static branch predictor:
   [PERF] cycles=100000000 retired=34725769 cpi_x1000=2879 ipc_x1000=347
 
 Phase 9.2 2-bit PHT predictor:
-  implemented and 1000-cycle smoke-tested
-  100M measurement pending
-  [PERF-BPRED] remains the main predictor metric
+  [PERF-BPRED] pred=4473131 hit=3803100 miss=670031 hit_rate_x1000=850
+  [PERF] cycles=100000000 retired=35561702 cpi_x1000=2812 ipc_x1000=355
+  Whisper BusyBox autotest pass
+
+Phase 9.3 JALR BTB:
+  implemented and build-input/lint-tested
+  100M measurement and Whisper lockstep pending
+  [PERF-BTB] is the JALR target prediction metric
 ```
 
 Current bottleneck view:

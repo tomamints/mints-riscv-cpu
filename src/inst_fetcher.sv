@@ -96,6 +96,7 @@ module inst_fetcher (
     logic [15:0] issue_saved_bits;  // rdata[63:48]
     logic       issue_predict_redirect;
     Addr        issue_predict_next_pc;
+    logic       predictor_redirect;
     logic       fetch_redirect;
     logic       branch_predictor_inst_valid;
     Addr        branch_predictor_pc;
@@ -162,6 +163,8 @@ module inst_fetcher (
         .predicted_taken(branch_predicted_taken),
         .predicted_next_pc(branch_predicted_next_pc),
         .update_valid(core_if.bp_update_valid),
+        .update_is_branch(core_if.bp_update_is_branch),
+        .update_is_jalr(core_if.bp_update_is_jalr),
         .update_pc(core_if.bp_update_pc),
         .update_taken(core_if.bp_update_taken),
         .update_target(core_if.bp_update_target)
@@ -178,6 +181,7 @@ module inst_fetcher (
         branch_prediction_valid &&
         branch_predicted_taken;
     assign issue_predict_next_pc = branch_predicted_next_pc;
+    assign predictor_redirect = issue_predict_redirect && !core_if.is_hazard;
 
     always_comb begin
         issue_fifo_wdata = issue_fifo_wdata_raw;
@@ -225,7 +229,7 @@ module inst_fetcher (
             if (fetch_redirect) begin
                 issue_pc_offset      <= core_if.next_pc[2:0];
                 issue_is_rdata_saved <= 1'b0;
-                if (issue_predict_redirect) begin
+                if (predictor_redirect) begin
                     issue_pc_offset <= issue_predict_next_pc[2:0];
                 end
             end else begin
@@ -566,7 +570,7 @@ module inst_fetcher (
         icache_req_ready;
 	    assign fetch_inst_mem_rvalid =
 	        icache_rsp_valid;
-	    assign fetch_redirect = core_if.is_hazard || issue_predict_redirect;
+	    assign fetch_redirect = core_if.is_hazard || predictor_redirect;
 
     // core -> mem_if
     always_comb begin
@@ -723,7 +727,7 @@ module inst_fetcher (
             end
 
 	            if (fetch_redirect) begin
-	                fetch_pc         <= issue_predict_redirect
+	                fetch_pc         <= predictor_redirect
 	                    ? {issue_predict_next_pc[XLEN-1:3], 3'b000}
 	                    : {core_if.next_pc[XLEN-1:3], 3'b000};
                 fetch_req_vaddr  <= '0;
