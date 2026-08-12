@@ -1,0 +1,21 @@
+MiNTs-CPU third-party notices
+
+This project uses Tenstorrent Whisper as an optional RISC-V instruction set
+simulator and architectural reference model for lockstep verification.
+
+Whisper
+  Project: https://github.com/tenstorrent/whisper
+  Local path: whisper/
+  License: Apache License, Version 2.0
+  Copyright holders: see the copyright notices in whisper/ source files.
+
+The local Whisper checkout keeps its own license and third-party notice files:
+
+  whisper/LICENSE
+  whisper/Third-Party_Notices.txt
+
+If the Whisper source tree or binaries built from Whisper are redistributed
+with this project, keep those files with the redistributed material.
+
+This notice is for third-party software attribution only. It does not define
+the license of the MiNTs-CPU RTL, documentation, or project-specific tools.

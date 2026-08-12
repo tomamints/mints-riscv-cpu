@@ -142,7 +142,11 @@ module core (
 //////////////////////// IF Stage /////////////////////
 
 	logic control_hazard;
+	logic mem_control_hazard;
+	logic mems_branch_taken;
+	logic ex_early_jal_redirect;
 	Addr control_hazard_pc_next;
+	Addr ex_early_jal_pc_next;
 
 
 	always_comb begin
@@ -438,6 +442,14 @@ module core (
 			UInt64 perf_branch_count;
 			UInt64 perf_branch_taken_count;
 			UInt64 perf_control_flush_count;
+			UInt64 perf_control_branch_count;
+			UInt64 perf_control_jal_count;
+			UInt64 perf_control_jalr_count;
+			UInt64 perf_control_trap_count;
+			UInt64 perf_control_return_count;
+			UInt64 perf_control_satp_count;
+			UInt64 perf_control_sfence_count;
+			UInt64 perf_control_other_count;
 			UInt64 perf_trap_flush_count;
 			UInt64 perf_load_count;
 			UInt64 perf_store_count;
@@ -585,8 +597,24 @@ module core (
 		(mems_inst_bits[14:12] == 3'b000) &&
 		(mems_inst_bits[31:25] == 7'b0001001);
 	assign mems_translation_hazard = mems_satp_access || mems_sfence_vma;
+	assign mems_branch_taken = inst_is_br(mems_ctrl) && memq_rdata.br_taken;
 
-	assign control_hazard = mems_valid && (csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken || mems_translation_hazard);
+	assign ex_early_jal_pc_next = exs_alu_result;
+	assign ex_early_jal_redirect =
+		exs_valid &&
+		exq_rready &&
+		!exq_rdata.expt.valid &&
+		exs_ctrl.is_jump &&
+		(exs_inst_bits[6:0] == OP_JAL) &&
+		!mem_control_hazard;
+
+	assign mem_control_hazard =
+		mems_valid &&
+		(csru_raise_trap ||
+		 (mems_ctrl.is_jump && (mems_inst_bits[6:0] != OP_JAL)) ||
+		 mems_branch_taken ||
+		 mems_translation_hazard);
+	assign control_hazard = mem_control_hazard || ex_early_jal_redirect;
 	assign translation_flush_fetch_value =
 		mems_valid &&
 		mems_is_new &&
@@ -594,9 +622,11 @@ module core (
 		!csru_raise_trap &&
 		!mems_expt.valid;
 	assign control_hazard_pc_next =
-		(csru_raise_trap) ? csru_trap_vector :
-		(mems_translation_hazard) ? mems_pc + Addr'(4) :
-		memq_rdata.jump_addr;
+		mem_control_hazard
+			? ((csru_raise_trap) ? csru_trap_vector :
+			   (mems_translation_hazard) ? mems_pc + Addr'(4) :
+			   memq_rdata.jump_addr)
+			: ex_early_jal_pc_next;
 
 
 	always_ff @(posedge clk or negedge rst) begin
@@ -779,6 +809,14 @@ module core (
 	logic perf_mem_stall;
 	logic perf_branch_event;
 	logic perf_control_flush_event;
+	logic perf_control_branch_event;
+	logic perf_control_jal_event;
+	logic perf_control_jalr_event;
+	logic perf_control_trap_event;
+	logic perf_control_return_event;
+	logic perf_control_satp_event;
+	logic perf_control_sfence_event;
+	logic perf_control_other_event;
 	logic perf_trap_flush_event;
 	logic perf_load_event;
 	logic perf_store_event;
@@ -880,10 +918,70 @@ module core (
 	assign perf_mem_stall = memu_stall;
 	assign perf_branch_event = mems_valid && mems_is_new && inst_is_br(mems_ctrl);
 	assign perf_control_flush_event =
+		(mems_valid &&
+		 mems_is_new &&
+		 (csru_raise_trap ||
+		  (mems_ctrl.is_jump && (mems_inst_bits[6:0] != OP_JAL)) ||
+		  mems_branch_taken ||
+		  mems_translation_hazard)) ||
+		ex_early_jal_redirect;
+	assign perf_control_trap_event =
+		perf_control_flush_event &&
 		mems_valid &&
 		mems_is_new &&
-		(csru_raise_trap || mems_ctrl.is_jump || memq_rdata.br_taken || mems_translation_hazard);
-	assign perf_trap_flush_event = mems_valid && mems_is_new && csru_raise_trap && !csru_trap_return;
+		csru_raise_trap &&
+		!csru_trap_return;
+	assign perf_control_return_event =
+		perf_control_flush_event &&
+		mems_valid &&
+		mems_is_new &&
+		csru_raise_trap &&
+		csru_trap_return;
+	assign perf_control_jal_event =
+		perf_control_flush_event &&
+		ex_early_jal_redirect;
+	assign perf_control_jalr_event =
+		perf_control_flush_event &&
+		mems_valid &&
+		mems_is_new &&
+		!csru_raise_trap &&
+		mems_ctrl.is_jump &&
+		(mems_inst_bits[6:0] == OP_JALR);
+	assign perf_control_branch_event =
+		perf_control_flush_event &&
+		mems_valid &&
+		mems_is_new &&
+		!csru_raise_trap &&
+		!mems_ctrl.is_jump &&
+		inst_is_br(mems_ctrl) &&
+		mems_branch_taken;
+	assign perf_control_satp_event =
+		perf_control_flush_event &&
+		mems_valid &&
+		mems_is_new &&
+		!csru_raise_trap &&
+		!mems_ctrl.is_jump &&
+		!mems_branch_taken &&
+		mems_satp_access;
+	assign perf_control_sfence_event =
+		perf_control_flush_event &&
+		mems_valid &&
+		mems_is_new &&
+		!csru_raise_trap &&
+		!mems_ctrl.is_jump &&
+		!mems_branch_taken &&
+		!mems_satp_access &&
+		mems_sfence_vma;
+	assign perf_control_other_event =
+		perf_control_flush_event &&
+		!(perf_control_trap_event ||
+		  perf_control_return_event ||
+		  perf_control_jal_event ||
+		  perf_control_jalr_event ||
+		  perf_control_branch_event ||
+		  perf_control_satp_event ||
+		  perf_control_sfence_event);
+	assign perf_trap_flush_event = perf_control_trap_event;
 	assign amo_reservation_clear_o =
 		mems_valid &&
 		csru_raise_trap;
@@ -976,6 +1074,14 @@ module core (
 			perf_branch_count <= '0;
 			perf_branch_taken_count <= '0;
 			perf_control_flush_count <= '0;
+			perf_control_branch_count <= '0;
+			perf_control_jal_count <= '0;
+			perf_control_jalr_count <= '0;
+			perf_control_trap_count <= '0;
+			perf_control_return_count <= '0;
+			perf_control_satp_count <= '0;
+			perf_control_sfence_count <= '0;
+			perf_control_other_count <= '0;
 			perf_trap_flush_count <= '0;
 			perf_load_count <= '0;
 			perf_store_count <= '0;
@@ -1021,6 +1127,30 @@ module core (
 			if (perf_control_flush_event) begin
 				perf_control_flush_count <= perf_control_flush_count + 1;
 			end
+			if (perf_control_branch_event) begin
+				perf_control_branch_count <= perf_control_branch_count + 1;
+			end
+			if (perf_control_jal_event) begin
+				perf_control_jal_count <= perf_control_jal_count + 1;
+			end
+			if (perf_control_jalr_event) begin
+				perf_control_jalr_count <= perf_control_jalr_count + 1;
+			end
+			if (perf_control_trap_event) begin
+				perf_control_trap_count <= perf_control_trap_count + 1;
+			end
+			if (perf_control_return_event) begin
+				perf_control_return_count <= perf_control_return_count + 1;
+			end
+			if (perf_control_satp_event) begin
+				perf_control_satp_count <= perf_control_satp_count + 1;
+			end
+			if (perf_control_sfence_event) begin
+				perf_control_sfence_count <= perf_control_sfence_count + 1;
+			end
+			if (perf_control_other_event) begin
+				perf_control_other_count <= perf_control_other_count + 1;
+			end
 			if (perf_trap_flush_event) begin
 				perf_trap_flush_count <= perf_trap_flush_count + 1;
 			end
@@ -1060,6 +1190,15 @@ module core (
 
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
+			$display("[PERF-CONTROL] branch=%0d jal=%0d jalr=%0d trap=%0d return=%0d satp=%0d sfence=%0d other=%0d",
+				perf_control_branch_count,
+				perf_control_jal_count,
+				perf_control_jalr_count,
+				perf_control_trap_count,
+				perf_control_return_count,
+				perf_control_satp_count,
+				perf_control_sfence_count,
+				perf_control_other_count);
 			$display("[PERF] cycles=%0d retired=%0d cpi_x1000=%0d ipc_x1000=%0d",
 				debug_cycle,
 				perf_retired,
@@ -1402,7 +1541,7 @@ module core (
             if (control_hazard) begin
                 $display("flush.if,b,1");
                 $display("flush.id,b,1");
-                $display("flush.ex,b,1");
+                $display("flush.ex,b,%b", mem_control_hazard);
             end
         end
     end
@@ -1432,7 +1571,7 @@ module core (
 	)ex_mem_fifo(
 		.clk (clk),
 		.rst (rst),
-		.flush(control_hazard),
+		.flush(mem_control_hazard),
 		.wready(memq_wready),
 		.wready_two(),         // ← 追加
 		.wvalid(memq_wvalid),

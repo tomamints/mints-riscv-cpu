@@ -46,6 +46,7 @@ make run-opensbi-input \
 [PERF] primary commit=... no_commit=... mem=... muldiv=... data_hazard=... ifetch=... other=...
 [PERF] active mem=... muldiv=... data_hazard=... ifetch=...
 [PERF] events branch=... branch_taken=... control_flush=... trap_flush=... load=... store=... ibus_req=... dbus_req=...
+[PERF-CONTROL] branch=... jal=... jalr=... trap=... return=... satp=... sfence=... other=...
 [PERF-MEMARB] i_grant=... d_grant=... d_low_grant=... d_low_defer=...
 [PERF-MEMARB-STALL] i_wait=... d_high_wait=... d_low_wait=...
 [PERF-ICACHE] req=... hit=... fill_hit=... miss=... hit_rate_x1000=...
@@ -105,6 +106,37 @@ store
 ibus_req
 dbus_req
 ```
+
+`[PERF-CONTROL]` は `control_flush` の内訳です。
+
+```text
+branch
+  taken conditional branch
+
+jal / jalr
+  unconditional jump redirect
+
+trap
+  exception / interrupt entry
+
+return
+  mret / sret redirect
+
+satp / sfence
+  translation stateを変えるredirect
+
+other
+  上記に分類されなかったcontrol redirect
+```
+
+原則として、
+
+```text
+branch + jal + jalr + trap + return + satp + sfence + other
+  == control_flush
+```
+
+になるように数えています。Phase 8では、この内訳を見てbranch/jumpだけをEX段へ前倒しするか判断します。
 
 active stallは、commitの有無に関係なく、そのstall条件が成立したcycleを数えます。primary stallはCPI分解用、active stallは各ユニットの待ち時間観測用です。
 
@@ -349,50 +381,55 @@ ALU/WB forwarding後は、まず既存の `data_hazard` を比較します。
 2026-08-11時点では、日常の性能比較は300Mよりも100M区間を基本にします。
 300Mは重く、変更の初期評価には時間がかかるためです。
 
+Phase 8.0で `[PERF-CONTROL]` を追加しました。直近ログでは出力順の都合で
+control内訳が取りこぼされたため、次回100M測定では先頭側に出る
+`[PERF-CONTROL]` 行を必ず記録します。
+
 実行条件:
 
 ```bash
 make run-opensbi-input \
   OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-irqcause-min-initramfs \
   OPENSBI_CYCLES=100000000 \
   SIM_EXTRA_ARGS=+PERF_SUMMARY
 ```
 
-代表値:
+直近100M代表値:
 
 ```text
-[PERF-MEMARB] i_grant=6507368 d_grant=5507213 d_low_grant=2222277 d_low_defer=1042927
-[PERF-MEMARB-STALL] i_wait=3025827 d_high_wait=599338 d_low_wait=3382178
-[PERF-DCACHE] req=8451768 load=5302487 store=3149281 cacheable=6866333 hit=5497249 miss=1369084 uncached=1585435 bypass=1585435 hit_rate_x1000=800 flush=0
-[PERF-DCACHE] mem_req=5488914 mem_resp=2374833 write_through=2612055 lines=128 line_bytes=32
-[PERF-STOREBUF] enq=2612055 drain=2612055 full_stall=64589 depth=4 pending=0 outstanding=0
-[PERF-STOREBUF-LOAD] bypass=94686 wait=202941
-[PERF-DSTALL] load_miss=4162609 uncached=2435563 storebuf_full=64589 storebuf_dep=202941
-[PERF-DCACHE-CPUWAIT] busy=1303176 rsp_pending=0 store_full=64589 load_overlap=1552 load_store_empty=201389 uncached_store_empty=19603 other=0
-[PERF-DCACHE-MEMWAIT] fill_req=140086 fill_rsp=1439675 bypass_req=38668 bypass_rsp=1257888 drain_active=5382442 drain_req_wait=2770387
-[PERF-FETCH-STALL] fifo_full=7535512 control_recovery=19971652 translation_issue=19039016 translation_req_wait=1 translation_rsp=22025 icache_req=2759151 icache_rsp=6680761 fault=0 no_request=0
-[PERF-ITLB] req=19039016 bare=0 unsupported=0 lookup=19039016 hit=19037013 miss=2003 hit_fault=0 hit_rate_x1000=999
-[PERF-ICACHE] req=21913496 cacheable=21913496 hit=17612351 fill_hit=2675298 miss=1625847 uncached=0 hit_rate_x1000=925 flush=2013
-[PERF] cycles=100000000 retired=33081088 cpi_x1000=3022 ipc_x1000=330
-[PERF] primary commit=33081088 no_commit=66918912 mem=22546520 muldiv=3330691 data_hazard=670682 ifetch=20409353 other=19961666
-[PERF] active mem=29075318 muldiv=3421875 data_hazard=3218029 ifetch=32374878
-[PERF] events branch=3858067 branch_taken=1881358 control_flush=2852443 trap_flush=1515 load=5271207 store=3127127 ibus_req=37985497 dbus_req=8451768
-[PERF-MEMU-STALL] translation=6965271 access_ready=9944681 response=8959729 split_ready=74939 split_response=38727 discard=0 fault=0
-[PERF-MEMU-TRANS] req_ready_wait=70901 rsp_wait=70901 ptw_req_wait=13332 ptw_rsp_wait=13974 done=6894370 fault=0
-[PERF-MEMU-ACCESS] ready_load=6515054 ready_store=3385373 ready_amo=44254 ready_split=77447 ready_bus_wait=1546347 response_load=8736752 response_amo=200750 response_split_first=22227 response_bus_wait=3653322
-[PERF-MEMU-SPLIT] ready_load=22339 ready_store=52600 ready_bus_wait=30630 response_load=38727 response_bus_wait=16572
-[PERF-DTLB] req=6894370 bare=0 unsupported=0 lookup=6894370 hit=6890315 miss=4055 hit_fault=0 hit_rate_x1000=999
+[PERF-MEMARB] i_grant=6041726 d_grant=5635131 d_low_grant=2326003 d_low_defer=994887
+[PERF-MEMARB-STALL] i_wait=3084465 d_high_wait=599078 d_low_wait=3214967
+[PERF-DCACHE] req=8588334 load=5385671 store=3202663 cacheable=7034513 hit=5576401 miss=1458112 uncached=1553821 bypass=1553821 hit_rate_x1000=792 flush=0
+[PERF-DCACHE] mem_req=5607399 mem_resp=2462440 write_through=2703150 lines=128 line_bytes=32
+[PERF-STOREBUF] enq=2703150 drain=2703150 full_stall=57897 depth=4 pending=0 outstanding=0
+[PERF-STOREBUF-LOAD] bypass=90020 wait=187559
+[PERF-DSTALL] load_miss=4329422 uncached=2541670 storebuf_full=57897 storebuf_dep=187559
+[PERF-DCACHE-CPUWAIT] busy=1335044 rsp_pending=0 store_full=57897 load_overlap=795 load_store_empty=186764 uncached_store_empty=20858 other=0
+[PERF-DCACHE-MEMWAIT] fill_req=132880 fill_rsp=1495686 bypass_req=36278 bypass_rsp=1337099 drain_active=5327767 drain_req_wait=2624617
+[PERF-FETCH-STALL] fifo_full=7388765 control_recovery=20427328 translation_issue=19205098 translation_req_wait=1 translation_rsp=22025 icache_req=2811002 icache_rsp=6372136 fault=0 no_request=0
+[PERF-FETCH-RECOVERY] idle=6291722 translate=5375285 access=4332322 wait_resp=4427998 fault=1
+[PERF-FETCH-ICACHE-WAIT] req_not_ready=2811002 rsp_mem=6372136 rsp_fifo=0
+[PERF-ITLB] req=19205098 bare=0 unsupported=0 lookup=19205098 hit=19203095 miss=2003 hit_fault=0 hit_rate_x1000=999
+[PERF-ITLB] ptw start=2003 done=2002 fault=1 miss_cycles=20025 mem_req=4004 mem_resp=4003
+[PERF-ITLB] leaf_l0_4k=0 leaf_l1_2m=2001 leaf_l2_1g=0 refill=2001 superpage_refill=2001 flush=2013
+[PERF-ICACHE] req=21849936 cacheable=21849936 hit=17892780 fill_hit=2447721 miss=1509435 uncached=0 hit_rate_x1000=930 flush=2013
+[PERF] cycles=100000000 retired=32665406 cpi_x1000=3061 ipc_x1000=326
+[PERF-MEMU-STALL] translation=7098777 access_ready=10092697 response=9204068 split_ready=74961 split_response=38723 discard=0 fault=0
+[PERF-MEMU-SPLIT] ready_load=22339 ready_store=52622 ready_bus_wait=30652 response_load=38723 response_bus_wait=16568
+[PERF-DTLB] req=7031449 bare=0 unsupported=0 lookup=7031449 hit=7027438 miss=4011 hit_fault=0 hit_rate_x1000=999
+[PERF-DTLB] leaf_l0_4k=998 leaf_l1_2m=3013 leaf_l2_1g=0 refill=4011 superpage_refill=3013 flush=2013
+[PERF-DTLB-FAST] bare=0 unsupported=0 hit=7027438 hit_fault=0 held=0
 ```
 
 読み取り:
 
 ```text
-CPI ~= 3.022
-IPC ~= 0.330
+CPI ~= 3.061
+IPC ~= 0.326
 DTLB hit率は高いが、memunit translation/access/responseの固定滞在が目立つ
-control_recoveryとI-cache response待ちも大きい
-D-cache hit率は約80.0%、I-cache hit率は約92.5%
+control_recoveryは約20.4M cyclesで大きい
+D-cache hit率は約79.2%、I-cache hit率は約93.0%
 store buffer full stallは小さく、現時点の主因ではない
 ```
 

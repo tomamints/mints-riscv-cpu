@@ -13,6 +13,7 @@ measurement phase.
 - Test status: [Docs/TEST_STATUS.md](Docs/TEST_STATUS.md)
 - Performance counters: [Docs/PERFORMANCE_COUNTERS.md](Docs/PERFORMANCE_COUNTERS.md)
 - Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
+- Third-party notices: [NOTICE](NOTICE)
 
 ## Current Snapshot
 
@@ -154,6 +155,17 @@ Core riscv-tests:
 ```bash
 make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full
 ```
+
+## Third-party Tools
+
+This project optionally uses
+[Tenstorrent Whisper](https://github.com/tenstorrent/whisper) as a RISC-V
+instruction set simulator and architectural reference model for lockstep
+verification. Whisper is licensed under the Apache License, Version 2.0.
+
+The local `whisper/` checkout keeps Whisper's own `LICENSE` and
+`Third-Party_Notices.txt`. See [NOTICE](NOTICE) for the project-level
+third-party attribution note.
 
 Useful custom tests:
 
