@@ -188,10 +188,10 @@ Phase 9.3 JALR BTB:
   Whisper BusyBox autotest pass
 
 Phase 9.4 RAS:
-  implemented and lint-tested
-  100M measurement and Whisper lockstep pending
-  [PERF-JALR] classifies call/return/other JALR
-  [PERF-RAS] is the return prediction metric
+  [PERF-JALR] call=35328 return=349378 other=32157
+  [PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8
+  [PERF] cycles=100000000 retired=36690014 cpi_x1000=2725 ipc_x1000=366
+  [PERF] primary commit=36690014 no_commit=63309986 mem=25359068 muldiv=3264316 data_hazard=804410 ifetch=14451685 other=19430507
 ```
 
 Current bottleneck view:
@@ -221,7 +221,7 @@ Recommended next steps:
 ```text
 1. Keep the BusyBox lockstep PASS as the correctness gate.
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
-3. Measure Phase 9.2 2-bit PHT predictor at 100M cycles.
-4. Run Whisper lockstep after predictor changes.
+3. Run Whisper lockstep after predictor changes.
+4. Enter Phase 10 by separating MEM/LSU fixed latency from true wait time.
 5. Revisit D-cache structure only after stall counters show capacity/conflict pressure.
 ```

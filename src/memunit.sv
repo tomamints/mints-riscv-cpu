@@ -88,6 +88,8 @@ module memunit (
 		logic data_mem_rvalid;
 		PmpAccessType translation_access_type;
 		logic translation_mem_fire;
+		logic translated_access_can_issue;
+		logic translated_data_mem_fire;
 		logic first_data_mem_fire;
 		logic split_data_mem_fire;
 		logic data_read_mem_fire;
@@ -241,9 +243,18 @@ module memunit (
 		assign translation_mem_rvalid = membus.rvalid && mem_owner == MemOwnerTranslation;
 		assign data_mem_rvalid = membus.rvalid && mem_owner == MemOwnerData;
 		assign translation_mem_fire = valid && translation_mem_valid && membus.ready;
+		assign translated_access_can_issue =
+			valid &&
+			state == TranslateWait &&
+			translation_rsp_valid &&
+			!translation_fault &&
+			!(access_misaligned(req_funct3, req_vaddr) && !is_normal_memory(translation_pa)) &&
+			data_pmp_allow;
+		assign translated_data_mem_fire = translated_access_can_issue && membus.ready;
 		assign first_data_mem_fire = valid && state == AccessWaitReady && membus.ready;
 		assign split_data_mem_fire = valid && state == SplitAccessWaitReady && membus.ready;
 		assign data_read_mem_fire =
+			(translated_data_mem_fire && (!req_wen || req_is_amo)) ||
 			(first_data_mem_fire && (!req_wen || req_is_amo)) ||
 			(split_data_mem_fire && !req_wen);
 		assign response_will_be_outstanding =
@@ -327,6 +338,17 @@ module memunit (
 			if (valid && translation_mem_valid) begin
 				membus.valid = 1'b1;
 				membus.addr = translation_mem_addr;
+			end else if (translated_access_can_issue) begin
+				membus.valid  = 1'b1;
+				membus.addr   = translation_pa;
+				membus.wen    = req_wen;
+				membus.wdata  = req_wdata;
+				membus.wmask  = req_wmask;
+				membus.is_amo = req_is_amo;
+				membus.amoop  = req_amoop;
+				membus.aq     = req_aq;
+				membus.rl     = req_rl;
+				membus.funct3 = req_funct3;
 			end else if (valid && state == AccessWaitReady) begin
 				membus.valid  = 1'b1;
 				membus.addr   = req_paddr;
@@ -608,7 +630,15 @@ module memunit (
 									state <= Fault;
 								end else begin
 									req_paddr <= translation_pa;
-									state <= AccessWaitReady;
+									if (translated_data_mem_fire) begin
+										if (req_wen && !req_is_amo) begin
+											state <= req_crosses_word ? SplitAccessWaitReady : Init;
+										end else begin
+											state <= AccessWaitValid;
+										end
+									end else begin
+										state <= AccessWaitReady;
+									end
 							end
 						end
 					end
@@ -701,6 +731,12 @@ module memunit (
 				perf_mem_response_amo_cycle,
 				perf_mem_response_split_first_cycle,
 				perf_mem_response_bus_wait_cycle);
+			$display("[PERF-MEMU-FIXED] translation_done=%0d access_accept=%0d response_done=%0d split_accept=%0d split_response_done=%0d",
+				perf_mem_translation_done_count,
+				perf_mem_access_ready_wait_cycle - perf_mem_access_ready_bus_wait_cycle,
+				perf_mem_response_wait_cycle - perf_mem_response_bus_wait_cycle,
+				perf_mem_split_ready_wait_cycle - perf_mem_split_ready_bus_wait_cycle,
+				perf_mem_split_response_wait_cycle - perf_mem_split_response_bus_wait_cycle);
 			$display("[PERF-MEMU-SPLIT] ready_load=%0d ready_store=%0d ready_bus_wait=%0d response_load=%0d response_bus_wait=%0d",
 				perf_mem_split_ready_load_cycle,
 				perf_mem_split_ready_store_cycle,

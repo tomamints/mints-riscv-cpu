@@ -54,6 +54,7 @@ make run-opensbi-input \
 [PERF-STOREBUF] enq=... drain=... full_stall=...
 [PERF-FETCH-STALL] fifo_full=... control_recovery=... translation_issue=... icache_req=... icache_rsp=...
 [PERF-MEMU-STALL] translation=... access_ready=... response=...
+[PERF-MEMU-FIXED] translation_done=... access_accept=... response_done=...
 [PERF-ITLB] req=... hit=... miss=...
 [PERF-DTLB] req=... hit=... miss=...
 ```
@@ -417,7 +418,7 @@ control_recoveryはまだ約21.2M cyclesで大きい
 Phase 9.1 static predictorでCPIは約2.879まで改善
 Phase 9.2 2-bit PHT predictorでCPIは約2.812まで改善
 Phase 9.3 JALR BTBでCPIは約2.765まで改善
-Phase 9.4 RASで、return由来のJALR redirectをどれだけ減らせるかを見る
+Phase 9.4 RASでCPIは約2.725まで改善
 ```
 
 Phase 9.1 static predictorの100M代表値:
@@ -464,13 +465,47 @@ Phase 9.4 RASで追加される行:
 [PERF-RAS] return=<resolved_return> hit=<ras_hit> miss=<ras_miss> fallback_btb=<btb_correct_without_ras> hit_rate_x1000=<hit_rate> depth=8
 ```
 
+Phase 9.4 RASの100M代表値:
+
+```text
+[PERF-FETCH-STALL] fifo_full=6887044 control_recovery=17304428 translation_issue=19794373 translation_req_wait=1 translation_rsp=22025 icache_req=2924354 icache_rsp=6440364 fault=0 no_request=0
+[PERF-CONTROL] branch=709863 jal=691910 jalr=64056 trap=1575 return=1623 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=4670833 hit=3960960 miss=709873 hit_rate_x1000=848
+[PERF-BTB] jalr=416863 hit=352805 miss=64058 hit_rate_x1000=846 entries=32
+[PERF-JALR] call=35328 return=349378 other=32157
+[PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8
+[PERF] cycles=100000000 retired=36690014 cpi_x1000=2725 ipc_x1000=366
+[PERF] primary commit=36690014 no_commit=63309986 mem=25359068 muldiv=3264316 data_hazard=804410 ifetch=14451685 other=19430507
+[PERF] events branch=4670779 branch_taken=2273603 control_flush=1471040 trap_flush=1575 load=6097470 store=3510175 ibus_req=37730515 dbus_req=9665000
+```
+
+Phase 10では、MEM/LSU側を次のように分けて見ます。
+
+```text
+[PERF-MEMU-FIXED]
+  translation_done
+    translation responseが返っており、PTWやrsp waitではないtranslation完了cycle
+
+  access_accept
+    AccessWaitReady中にmembus.readyが立っていて、実待ちではなくrequest acceptに使ったcycle
+
+  response_done
+    AccessWaitValid中にdata responseが返っていて、実待ちではなくload/AMO応答完了に使ったcycle
+
+  split_accept / split_response_done
+    misaligned split accessのsecond beatで同じ基準を見た値
+```
+
+この行は新しい独立カウンタではなく、既存のwait総数からbus waitを引いた派生値です。
+値が大きい場合、D-cache missやMMIO待ちではなく、memunit/D-cache間の固定FSMレイテンシを減らす候補になります。
+
 次の優先候補:
 
 ```text
-1. Phase 9.4 RASの100M測定
-2. Whisper lockstep BusyBox autotest pass確認
-3. speculative RAS recovery / larger BTB
-4. D-cache容量/way/write-back比較
+1. Phase 9.4 Whisper lockstep BusyBox autotest pass確認
+2. Phase 10 MEM/LSU fixed latencyの定量化
+3. D-cache容量/way/write-back比較
+4. 必要ならspeculative RAS recovery / larger BTB
 ```
 
 ## Current Limitations

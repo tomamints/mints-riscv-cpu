@@ -646,25 +646,70 @@ Phase 9.4:
   8-entry non-speculative RAS
   return prediction uses RAS > BTB priority
   [PERF-JALR] and [PERF-RAS] counters
+  100M measurement pass
 ```
 
 B-type branchのtargetは命令即値から計算しています。
 BTBは最初の段階としてJALR target predictionに限定しています。
 
-次の確認:
+Phase 9.4の100M代表値:
 
 ```text
-1. Phase 9.4 100M +PERF_SUMMARY
-2. [PERF-RAS] return hit_rate
-3. control_flush / primary_ifetch / CPI の比較
-4. Whisper lockstep BusyBox autotest pass
+[PERF-JALR] call=35328 return=349378 other=32157
+[PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8
+[PERF] cycles=100000000 retired=36690014 cpi_x1000=2725 ipc_x1000=366
+[PERF] primary commit=36690014 no_commit=63309986 mem=25359068 muldiv=3264316 data_hazard=804410 ifetch=14451685 other=19430507
 ```
 
-次の候補:
+残る確認:
 
 ```text
-speculative RAS recovery
-larger BTB
+Whisper lockstep BusyBox autotest pass
+```
+
+### Phase 10: MEM/LSU Latency Reduction
+
+Phase 10では、branch predictionで減ったcontrol stallの次に大きく残っているMEM側を扱います。
+いきなりD-cache構成を変えるのではなく、まずmemunit/D-cache間の固定レイテンシと、本当にmemory/cacheを待っている時間を分けます。
+
+現在の入口:
+
+```text
+primary mem is still the largest primary stall class
+DTLB hit rate is high
+D-cache miss and uncached access are visible
+memunit translation/access/response states still consume many cycles
+```
+
+Phase 10.0:
+
+```text
+[PERF-MEMU-FIXED] を追加
+translation_done / access_accept / response_doneを表示
+既存のwait総数からbus waitを引き、固定FSM cycleを見える化する
+```
+
+Phase 10.1以降の候補:
+
+```text
+DTLB hit fast path
+memunit AccessWaitReady固定cycle削減
+D-cache hit response latency削減
+D-cache容量/way比較
+write-through traffic削減またはwrite-back化
+```
+
+Phase 10の判断基準:
+
+```text
+fixed FSM cycleが大きい:
+  memunit fast pathを優先
+
+D-cache miss stallが大きい:
+  4KiB direct / 8KiB direct / 4KiB 2-wayを比較
+
+write-through / drain trafficが支配的:
+  write-back D-cacheまたはwrite combiningを検討
 ```
 
 ### Correctness Guard: PMP After Translation
