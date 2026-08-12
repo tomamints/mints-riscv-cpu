@@ -61,6 +61,8 @@ module inst_fetcher (
         ExceptionInfo expt;
         logic predicted_taken;
         Addr predicted_next_pc;
+        logic predicted_from_btb;
+        logic predicted_from_ras;
     } issue_fifo_type;
 
     logic           issue_fifo_flush;
@@ -105,6 +107,8 @@ module inst_fetcher (
     logic       branch_prediction_valid;
     logic       branch_predicted_taken;
     Addr        branch_predicted_next_pc;
+    logic       branch_predicted_from_btb;
+    logic       branch_predicted_from_ras;
 
     // instruction converter
     logic [15:0] rvcc_inst16;
@@ -162,12 +166,17 @@ module inst_fetcher (
         .prediction_valid(branch_prediction_valid),
         .predicted_taken(branch_predicted_taken),
         .predicted_next_pc(branch_predicted_next_pc),
+        .predicted_from_btb(branch_predicted_from_btb),
+        .predicted_from_ras(branch_predicted_from_ras),
         .update_valid(core_if.bp_update_valid),
         .update_is_branch(core_if.bp_update_is_branch),
         .update_is_jalr(core_if.bp_update_is_jalr),
+        .update_is_call(core_if.bp_update_is_call),
+        .update_is_return(core_if.bp_update_is_return),
         .update_pc(core_if.bp_update_pc),
         .update_taken(core_if.bp_update_taken),
-        .update_target(core_if.bp_update_target)
+        .update_target(core_if.bp_update_target),
+        .update_return_addr(core_if.bp_update_return_addr)
     );
 
     assign branch_predictor_inst_valid =
@@ -188,6 +197,8 @@ module inst_fetcher (
         if (branch_prediction_valid) begin
             issue_fifo_wdata.predicted_taken = branch_predicted_taken;
             issue_fifo_wdata.predicted_next_pc = branch_predicted_next_pc;
+            issue_fifo_wdata.predicted_from_btb = branch_predicted_from_btb;
+            issue_fifo_wdata.predicted_from_ras = branch_predicted_from_ras;
         end
     end
 
@@ -364,6 +375,8 @@ module inst_fetcher (
         core_if.expt   = issue_fifo_rdata.expt;
         core_if.predicted_taken = issue_fifo_rdata.predicted_taken;
         core_if.predicted_next_pc = issue_fifo_rdata.predicted_next_pc;
+        core_if.predicted_from_btb = issue_fifo_rdata.predicted_from_btb;
+        core_if.predicted_from_ras = issue_fifo_rdata.predicted_from_ras;
     end
 
     /*--------- fetch logic ----------*/

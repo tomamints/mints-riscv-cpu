@@ -78,6 +78,8 @@ module core (
 		ExceptionInfo expt;
 		logic predicted_taken;
 		Addr predicted_next_pc;
+		logic predicted_from_btb;
+		logic predicted_from_ras;
 	}exq_type;
 
 
@@ -89,6 +91,8 @@ module core (
 		ExceptionInfo expt;
 		logic predicted_taken;
 		Addr predicted_next_pc;
+		logic predicted_from_btb;
+		logic predicted_from_ras;
 		UIntX alu_result;
 		logic[4:0] rs1_addr;
 		UIntX rs1_data;
@@ -152,6 +156,9 @@ module core (
 	logic ex_early_jalr_redirect;
 	logic ex_early_jalr_misaligned;
 	logic ex_early_jalr_prediction_correct;
+	logic ex_early_is_call;
+	logic ex_early_is_return;
+	logic ex_early_is_jalr;
 	logic ex_early_branch_redirect;
 	logic ex_early_branch_taken;
 	logic ex_early_branch_misaligned;
@@ -171,15 +178,19 @@ module core (
 			exq_rready &&
 			!exq_rdata.expt.valid &&
 			((inst_is_br(exs_ctrl) && !ex_early_branch_misaligned) ||
-			 ((exs_inst_bits[6:0] == OP_JALR) && !ex_early_jalr_misaligned)) &&
+			 (ex_early_is_jalr && !ex_early_jalr_misaligned) ||
+			 (ex_early_is_call && (!ex_early_is_jalr || !ex_early_jalr_misaligned))) &&
 			!mem_control_hazard;
 		i_membus.bp_update_is_branch = inst_is_br(exs_ctrl);
-		i_membus.bp_update_is_jalr = exs_inst_bits[6:0] == OP_JALR;
+		i_membus.bp_update_is_jalr = ex_early_is_jalr;
+		i_membus.bp_update_is_call = ex_early_is_call;
+		i_membus.bp_update_is_return = ex_early_is_return;
 		i_membus.bp_update_pc = exs_pc;
 		i_membus.bp_update_taken = inst_is_br(exs_ctrl) ? ex_early_branch_taken : 1'b1;
-		i_membus.bp_update_target = (exs_inst_bits[6:0] == OP_JALR)
+		i_membus.bp_update_target = ex_early_is_jalr
 			? ex_early_jalr_pc_next
 			: ex_early_branch_pc_next;
+		i_membus.bp_update_return_addr = exs_pc + (exs_ctrl.is_rvc ? Addr'(2) : Addr'(4));
 	end
 
 ////////////////// ID Stage /////////////////////
@@ -208,6 +219,8 @@ module core (
 		exq_wdata.imm  = ids_imm;
 		exq_wdata.predicted_taken = i_membus.predicted_taken;
 		exq_wdata.predicted_next_pc = i_membus.predicted_next_pc;
+		exq_wdata.predicted_from_btb = i_membus.predicted_from_btb;
+		exq_wdata.predicted_from_ras = i_membus.predicted_from_ras;
 		// exception
 		exq_wdata.expt = i_membus.expt;
 		if (!exq_wdata.expt.valid && !ids_inst_valid) begin
@@ -238,6 +251,8 @@ module core (
 	UIntX  exs_imm       = exq_rdata.imm;
 	logic exs_predicted_taken = exq_rdata.predicted_taken;
 	Addr  exs_predicted_next_pc = exq_rdata.predicted_next_pc;
+	logic exs_predicted_from_btb = exq_rdata.predicted_from_btb;
+	logic exs_predicted_from_ras = exq_rdata.predicted_from_ras;
 
 
 	//レジスタ
@@ -246,6 +261,7 @@ module core (
 	//レジスタ番号
 	logic [4:0] exs_rs1_addr = exs_inst_bits[19:15];
 	logic [4:0] exs_rs2_addr = exs_inst_bits[24:20];
+	logic [4:0] exs_rd_addr = exs_inst_bits[11:7];
 
 	UIntX exs_rs1_data,exs_rs2_data;
 	UIntX exs_rs1_forwarded_data, exs_rs2_forwarded_data;
@@ -488,6 +504,13 @@ module core (
 			UInt64 perf_btb_jalr_count;
 			UInt64 perf_btb_jalr_hit_count;
 			UInt64 perf_btb_jalr_miss_count;
+			UInt64 perf_jalr_call_count;
+			UInt64 perf_jalr_return_count;
+			UInt64 perf_jalr_other_count;
+			UInt64 perf_ras_return_count;
+			UInt64 perf_ras_hit_count;
+			UInt64 perf_ras_miss_count;
+			UInt64 perf_ras_fallback_btb_count;
 			UInt64 perf_trap_flush_count;
 			UInt64 perf_load_count;
 			UInt64 perf_store_count;
@@ -519,6 +542,8 @@ module core (
 		memq_wdata.imm = exq_rdata.imm;
 		memq_wdata.predicted_taken = exq_rdata.predicted_taken;
 		memq_wdata.predicted_next_pc = exq_rdata.predicted_next_pc;
+		memq_wdata.predicted_from_btb = exq_rdata.predicted_from_btb;
+		memq_wdata.predicted_from_ras = exq_rdata.predicted_from_ras;
 		memq_wdata.rs1_addr = exs_rs1_addr;
 		memq_wdata.rs1_data = exs_rs1_forwarded_data;
 		memq_wdata.rs2_data = exs_rs2_forwarded_data;
@@ -644,6 +669,16 @@ module core (
 	assign ex_early_jalr_misaligned =
 		IALIGN == 32 &&
 		ex_early_jalr_pc_next[1:0] != 2'b00;
+	assign ex_early_is_jalr =
+		exs_ctrl.is_jump &&
+		exs_inst_bits[6:0] == OP_JALR;
+	assign ex_early_is_return =
+		ex_early_is_jalr &&
+		exs_rd_addr == 5'd0 &&
+		(exs_rs1_addr == 5'd1 || exs_rs1_addr == 5'd5);
+	assign ex_early_is_call =
+		exs_ctrl.is_jump &&
+		(exs_rd_addr == 5'd1 || exs_rd_addr == 5'd5);
 	assign ex_early_branch_pc_next = exs_pc + exs_imm;
 	assign ex_early_branch_actual_next_pc =
 		ex_early_branch_taken
@@ -909,6 +944,13 @@ module core (
 	logic perf_btb_jalr_event;
 	logic perf_btb_jalr_hit_event;
 	logic perf_btb_jalr_miss_event;
+	logic perf_jalr_call_event;
+	logic perf_jalr_return_event;
+	logic perf_jalr_other_event;
+	logic perf_ras_return_event;
+	logic perf_ras_hit_event;
+	logic perf_ras_miss_event;
+	logic perf_ras_fallback_btb_event;
 	logic perf_trap_flush_event;
 	logic perf_load_event;
 	logic perf_store_event;
@@ -1090,6 +1132,29 @@ module core (
 	assign perf_btb_jalr_miss_event =
 		perf_btb_jalr_event &&
 		!ex_early_jalr_prediction_correct;
+	assign perf_jalr_call_event =
+		perf_btb_jalr_event &&
+		ex_early_is_call;
+	assign perf_jalr_return_event =
+		perf_btb_jalr_event &&
+		ex_early_is_return;
+	assign perf_jalr_other_event =
+		perf_btb_jalr_event &&
+		!ex_early_is_call &&
+		!ex_early_is_return;
+	assign perf_ras_return_event = perf_jalr_return_event;
+	assign perf_ras_hit_event =
+		perf_ras_return_event &&
+		exs_predicted_from_ras &&
+		ex_early_jalr_prediction_correct;
+	assign perf_ras_miss_event =
+		perf_ras_return_event &&
+		!perf_ras_hit_event;
+	assign perf_ras_fallback_btb_event =
+		perf_ras_return_event &&
+		!exs_predicted_from_ras &&
+		exs_predicted_from_btb &&
+		ex_early_jalr_prediction_correct;
 	assign perf_trap_flush_event = perf_control_trap_event;
 	assign amo_reservation_clear_o =
 		mems_valid &&
@@ -1197,6 +1262,13 @@ module core (
 			perf_btb_jalr_count <= '0;
 			perf_btb_jalr_hit_count <= '0;
 			perf_btb_jalr_miss_count <= '0;
+			perf_jalr_call_count <= '0;
+			perf_jalr_return_count <= '0;
+			perf_jalr_other_count <= '0;
+			perf_ras_return_count <= '0;
+			perf_ras_hit_count <= '0;
+			perf_ras_miss_count <= '0;
+			perf_ras_fallback_btb_count <= '0;
 			perf_trap_flush_count <= '0;
 			perf_load_count <= '0;
 			perf_store_count <= '0;
@@ -1284,6 +1356,27 @@ module core (
 			if (perf_btb_jalr_miss_event) begin
 				perf_btb_jalr_miss_count <= perf_btb_jalr_miss_count + 1;
 			end
+			if (perf_jalr_call_event) begin
+				perf_jalr_call_count <= perf_jalr_call_count + 1;
+			end
+			if (perf_jalr_return_event) begin
+				perf_jalr_return_count <= perf_jalr_return_count + 1;
+			end
+			if (perf_jalr_other_event) begin
+				perf_jalr_other_count <= perf_jalr_other_count + 1;
+			end
+			if (perf_ras_return_event) begin
+				perf_ras_return_count <= perf_ras_return_count + 1;
+			end
+			if (perf_ras_hit_event) begin
+				perf_ras_hit_count <= perf_ras_hit_count + 1;
+			end
+			if (perf_ras_miss_event) begin
+				perf_ras_miss_count <= perf_ras_miss_count + 1;
+			end
+			if (perf_ras_fallback_btb_event) begin
+				perf_ras_fallback_btb_count <= perf_ras_fallback_btb_count + 1;
+			end
 			if (perf_trap_flush_event) begin
 				perf_trap_flush_count <= perf_trap_flush_count + 1;
 			end
@@ -1343,6 +1436,17 @@ module core (
 				perf_btb_jalr_miss_count,
 				perf_btb_jalr_count == 0 ? UInt64'(0) : (perf_btb_jalr_hit_count * UInt64'(1000)) / perf_btb_jalr_count,
 				32);
+			$display("[PERF-JALR] call=%0d return=%0d other=%0d",
+				perf_jalr_call_count,
+				perf_jalr_return_count,
+				perf_jalr_other_count);
+			$display("[PERF-RAS] return=%0d hit=%0d miss=%0d fallback_btb=%0d hit_rate_x1000=%0d depth=%0d",
+				perf_ras_return_count,
+				perf_ras_hit_count,
+				perf_ras_miss_count,
+				perf_ras_fallback_btb_count,
+				perf_ras_return_count == 0 ? UInt64'(0) : (perf_ras_hit_count * UInt64'(1000)) / perf_ras_return_count,
+				8);
 			$display("[PERF] cycles=%0d retired=%0d cpi_x1000=%0d ipc_x1000=%0d",
 				debug_cycle,
 				perf_retired,

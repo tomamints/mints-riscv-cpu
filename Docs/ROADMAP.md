@@ -638,7 +638,14 @@ Phase 9.3:
   32-entry JALR BTB
   PHT updateとBTB updateを種別で分離
   core redirectはpredictionより常に優先
-  build-input pass
+  100M measurement pass
+  Whisper BusyBox autotest lockstep pass
+
+Phase 9.4:
+  JALR call/return/other classification counter
+  8-entry non-speculative RAS
+  return prediction uses RAS > BTB priority
+  [PERF-JALR] and [PERF-RAS] counters
 ```
 
 B-type branchのtargetは命令即値から計算しています。
@@ -647,8 +654,8 @@ BTBは最初の段階としてJALR target predictionに限定しています。
 次の確認:
 
 ```text
-1. Phase 9.3 100M +PERF_SUMMARY
-2. [PERF-BTB] JALR hit_rate
+1. Phase 9.4 100M +PERF_SUMMARY
+2. [PERF-RAS] return hit_rate
 3. control_flush / primary_ifetch / CPI の比較
 4. Whisper lockstep BusyBox autotest pass
 ```
@@ -656,7 +663,7 @@ BTBは最初の段階としてJALR target predictionに限定しています。
 次の候補:
 
 ```text
-RAS
+speculative RAS recovery
 larger BTB
 ```
 

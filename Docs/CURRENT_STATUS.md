@@ -87,11 +87,12 @@ Implemented performance structures:
 | Control redirect | JAL, conditional branch, and JALR early redirect |
 | Branch predictor | 128-entry 2-bit PHT, BTFNT fallback for cold entries |
 | BTB | 32-entry JALR target BTB |
+| RAS | 8-entry non-speculative return address stack |
 
 Not yet implemented:
 
 ```text
-RAS
+speculative RAS recovery
 larger BTB
 write-back D-cache
 non-blocking caches
@@ -182,9 +183,15 @@ Phase 9.2 2-bit PHT predictor:
   Whisper BusyBox autotest pass
 
 Phase 9.3 JALR BTB:
-  implemented and build-input/lint-tested
+  [PERF-BTB] jalr=416164 hit=168874 miss=247290 hit_rate_x1000=405 entries=32
+  [PERF] cycles=100000000 retired=36163117 cpi_x1000=2765 ipc_x1000=361
+  Whisper BusyBox autotest pass
+
+Phase 9.4 RAS:
+  implemented and lint-tested
   100M measurement and Whisper lockstep pending
-  [PERF-BTB] is the JALR target prediction metric
+  [PERF-JALR] classifies call/return/other JALR
+  [PERF-RAS] is the return prediction metric
 ```
 
 Current bottleneck view:

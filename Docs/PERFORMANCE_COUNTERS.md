@@ -384,6 +384,7 @@ ALU/WB forwarding後は、まず既存の `data_hazard` を比較します。
 Phase 8でcontrol redirectをEX段へ前倒ししました。
 Phase 9ではbranch predictionへ入り、`[PERF-BPRED]` を追加しています。
 Phase 9.3ではJALR用BTBを追加し、`[PERF-BTB]` を追加しています。
+Phase 9.4ではreturn用RASを追加し、`[PERF-JALR]` と `[PERF-RAS]` を追加しています。
 
 実行条件:
 
@@ -415,7 +416,8 @@ Phase 8.1-8.3でJAL/branch/JALR redirectはEX段へ前倒し済み
 control_recoveryはまだ約21.2M cyclesで大きい
 Phase 9.1 static predictorでCPIは約2.879まで改善
 Phase 9.2 2-bit PHT predictorでCPIは約2.812まで改善
-Phase 9.3 JALR BTBで、残っているJALR redirectをどれだけ減らせるかを見る
+Phase 9.3 JALR BTBでCPIは約2.765まで改善
+Phase 9.4 RASで、return由来のJALR redirectをどれだけ減らせるかを見る
 ```
 
 Phase 9.1 static predictorの100M代表値:
@@ -443,12 +445,31 @@ Phase 9.3 JALR BTBで追加される行:
 [PERF-BTB] jalr=<resolved_jalr> hit=<btb_hit> miss=<btb_miss> hit_rate_x1000=<hit_rate> entries=32
 ```
 
+Phase 9.3 JALR BTBの100M代表値:
+
+```text
+[PERF-FETCH-STALL] fifo_full=6897245 control_recovery=18065095 translation_issue=19683309 translation_req_wait=1 translation_rsp=22025 icache_req=3108269 icache_rsp=6523760 fault=0 no_request=0
+[PERF-CONTROL] branch=691084 jal=687433 jalr=245294 trap=1571 return=1619 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=4582433 hit=3891348 miss=691085 hit_rate_x1000=849
+[PERF-BTB] jalr=416164 hit=168874 miss=247290 hit_rate_x1000=405 entries=32
+[PERF] cycles=100000000 retired=36163117 cpi_x1000=2765 ipc_x1000=361
+[PERF] primary commit=36163117 no_commit=63836883 mem=25062608 muldiv=3266929 data_hazard=809858 ifetch=15175087 other=19522401
+[PERF] events branch=4582395 branch_taken=2223578 control_flush=1629014 trap_flush=1571 load=6005189 store=3464265 ibus_req=37334673 dbus_req=9526809
+```
+
+Phase 9.4 RASで追加される行:
+
+```text
+[PERF-JALR] call=<jalr_call> return=<jalr_return> other=<jalr_other>
+[PERF-RAS] return=<resolved_return> hit=<ras_hit> miss=<ras_miss> fallback_btb=<btb_correct_without_ras> hit_rate_x1000=<hit_rate> depth=8
+```
+
 次の優先候補:
 
 ```text
-1. Phase 9.3 JALR BTBの100M測定
+1. Phase 9.4 RASの100M測定
 2. Whisper lockstep BusyBox autotest pass確認
-3. RAS / larger BTB
+3. speculative RAS recovery / larger BTB
 4. D-cache容量/way/write-back比較
 ```
 
