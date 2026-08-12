@@ -145,8 +145,12 @@ module core (
 	logic mem_control_hazard;
 	logic mems_branch_taken;
 	logic ex_early_jal_redirect;
+	logic ex_early_branch_redirect;
+	logic ex_early_branch_taken;
+	logic ex_early_branch_misaligned;
 	Addr control_hazard_pc_next;
 	Addr ex_early_jal_pc_next;
+	Addr ex_early_branch_pc_next;
 
 
 	always_comb begin
@@ -600,6 +604,12 @@ module core (
 	assign mems_branch_taken = inst_is_br(mems_ctrl) && memq_rdata.br_taken;
 
 	assign ex_early_jal_pc_next = exs_alu_result;
+	assign ex_early_branch_pc_next = exs_pc + exs_imm;
+	assign ex_early_branch_taken = inst_is_br(exs_ctrl) && exs_brunit_take;
+	assign ex_early_branch_misaligned =
+		IALIGN == 32 &&
+		ex_early_branch_taken &&
+		ex_early_branch_pc_next[1:0] != 2'b00;
 	assign ex_early_jal_redirect =
 		exs_valid &&
 		exq_rready &&
@@ -607,14 +617,23 @@ module core (
 		exs_ctrl.is_jump &&
 		(exs_inst_bits[6:0] == OP_JAL) &&
 		!mem_control_hazard;
+	assign ex_early_branch_redirect =
+		exs_valid &&
+		exq_rready &&
+		!exq_rdata.expt.valid &&
+		ex_early_branch_taken &&
+		!ex_early_branch_misaligned &&
+		!mem_control_hazard;
 
 	assign mem_control_hazard =
 		mems_valid &&
 		(csru_raise_trap ||
 		 (mems_ctrl.is_jump && (mems_inst_bits[6:0] != OP_JAL)) ||
-		 mems_branch_taken ||
 		 mems_translation_hazard);
-	assign control_hazard = mem_control_hazard || ex_early_jal_redirect;
+	assign control_hazard =
+		mem_control_hazard ||
+		ex_early_jal_redirect ||
+		ex_early_branch_redirect;
 	assign translation_flush_fetch_value =
 		mems_valid &&
 		mems_is_new &&
@@ -626,7 +645,7 @@ module core (
 			? ((csru_raise_trap) ? csru_trap_vector :
 			   (mems_translation_hazard) ? mems_pc + Addr'(4) :
 			   memq_rdata.jump_addr)
-			: ex_early_jal_pc_next;
+			: (ex_early_jal_redirect ? ex_early_jal_pc_next : ex_early_branch_pc_next);
 
 
 	always_ff @(posedge clk or negedge rst) begin
@@ -922,9 +941,9 @@ module core (
 		 mems_is_new &&
 		 (csru_raise_trap ||
 		  (mems_ctrl.is_jump && (mems_inst_bits[6:0] != OP_JAL)) ||
-		  mems_branch_taken ||
 		  mems_translation_hazard)) ||
-		ex_early_jal_redirect;
+		ex_early_jal_redirect ||
+		ex_early_branch_redirect;
 	assign perf_control_trap_event =
 		perf_control_flush_event &&
 		mems_valid &&
@@ -949,12 +968,7 @@ module core (
 		(mems_inst_bits[6:0] == OP_JALR);
 	assign perf_control_branch_event =
 		perf_control_flush_event &&
-		mems_valid &&
-		mems_is_new &&
-		!csru_raise_trap &&
-		!mems_ctrl.is_jump &&
-		inst_is_br(mems_ctrl) &&
-		mems_branch_taken;
+		ex_early_branch_redirect;
 	assign perf_control_satp_event =
 		perf_control_flush_event &&
 		mems_valid &&
