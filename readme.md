@@ -33,6 +33,8 @@ optimization.
 
 ## Current Snapshot
 
+![Linux BusyBox interactive snapshot](Docs/images/linux_busybox_snapshot.png)
+
 The current validated target is:
 
 ```text
@@ -52,6 +54,10 @@ The Whisper lockstep harness has also reached the BusyBox autotest pass point:
 ```
 
 That is the current strongest end-to-end correctness checkpoint.
+
+## Architecture
+
+![MiNTs-CPU architecture diagram](Docs/images/mints_cpu_architecture.png)
 
 ## CPU / SoC Features
 
