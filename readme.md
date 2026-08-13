@@ -35,7 +35,7 @@ optimization.
 
 ![Linux BusyBox interactive snapshot](Docs/images/linux_busybox_snapshot.png)
 
-[Linux / BusyBox demo video](Docs/images/linux_busybox_demo.mp4)
+![Linux BusyBox demo](Docs/images/linux_busybox_demo.gif)
 
 The current validated target is:
 
