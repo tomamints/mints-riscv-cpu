@@ -220,6 +220,10 @@ Phase 10.4 D-cache capacity A/B:
   [PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369
   [PERF-DSTALL] load_miss=2937174
   [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+  Stable Phase 10 configuration selected:
+    DCACHE_LINE_COUNT=512
+    DCACHE_STORE_BUFFER_DEPTH=8
+    DCACHE_WRITE_BACK=0
 
 Phase 10.5 experimental write-back D-cache:
   DCACHE_WRITE_BACK Make variable added
@@ -229,6 +233,15 @@ Phase 10.5 experimental write-back D-cache:
     store miss -> no-write-allocate write-through
     dirty victim load miss -> writeback before refill
     dirty hit AMO -> writeback + invalidate before AMO bypass
+  100M result after clean-flush skip/profiling:
+    [PERF-DCACHE] mem_req=4126135 write_through=1395018 lines=512
+    [PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515
+    [PERF-DCACHE-WB-FLUSH] clean=1007 dirty=1002 scan=513024 dirty_lines=3555 words=14220 req_wait=35727
+    [PERF] cycles=100000000 retired=39508553 cpi_x1000=2531 ipc_x1000=395
+  Conclusion:
+    write-back reduces write traffic and arbiter pressure
+    but does not beat the selected write-through stable configuration yet
+    keep it as a research/experimental branch target
 ```
 
 Current bottleneck view:
@@ -258,12 +271,9 @@ Recommended next steps:
 ```text
 1. Keep the BusyBox lockstep PASS as the correctness gate.
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
-3. Run Whisper lockstep after frontend or LSU fast-path changes.
-4. Run a 100M Phase 10.3 summary and record store/write-through pressure.
-5. Run the same 100M summary with `DCACHE_STORE_BUFFER_DEPTH=8`.
-6. If depth 8 only removes full_stall, treat write-through bandwidth as the main issue.
-7. Use `[PERF-STOREBUF-COMBINE]` to decide whether tail write combining is worthwhile.
-8. Compare Phase 10.5 with `DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=1`.
-9. Check `[PERF-DCACHE-WB]`, write_through reduction, store buffer drain pressure, and CPI.
-10. Run Whisper lockstep after write-back smoke/perf passes.
+3. Treat Phase 10 stable configuration as complete:
+   `DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=0`.
+4. Keep write-back D-cache as an experimental path, not the stable baseline.
+5. For the next mainline phase, measure the stable baseline first, then choose the next bottleneck.
+6. Run Whisper lockstep after any frontend, LSU, cache, or privilege/MMU change.
 ```

@@ -804,6 +804,11 @@ D-cache容量A/B:
   [PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369
   [PERF-DSTALL] load_miss=2937174
   [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+
+Stable Phase 10 selection:
+  DCACHE_LINE_COUNT=512
+  DCACHE_STORE_BUFFER_DEPTH=8
+  DCACHE_WRITE_BACK=0
 ```
 
 Phase 10.5: experimental write-back D-cache
@@ -847,8 +852,17 @@ translation flush:
   現在のflushは保守的な全line writeback/invalidate
   将来DMA coherenceや明示的D-cache invalidateを入れるなら用途別に拡張する
 
-store buffer / write-through traffic再調整
-write-through traffic削減またはwrite-back化
+100M代表値:
+  [PERF-DCACHE] mem_req=4126135 write_through=1395018 lines=512
+  [PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515
+  [PERF-DCACHE-WB-FLUSH] clean=1007 dirty=1002 scan=513024 dirty_lines=3555 words=14220 req_wait=35727
+  [PERF] cycles=100000000 retired=39508553 cpi_x1000=2531 ipc_x1000=395
+
+Conclusion:
+  write-back store-hit absorption reduces write traffic substantially
+  however normal dirty eviction cost keeps CPI roughly tied with, and slightly behind,
+  the selected write-through stable configuration
+  keep write-back as experimental/research work
 ```
 
 Phase 10の判断基準:
@@ -861,7 +875,10 @@ D-cache miss stallが大きい:
   4KiB direct / 8KiB direct / 4KiB 2-wayを比較
 
 write-through / drain trafficが支配的:
-  write-back D-cacheまたはwrite combiningを検討
+  write combining or write-back can be revisited
+
+Phase 10 stable complete:
+  use 512-line D-cache, 8-entry store buffer, write-through mode
 ```
 
 ### Correctness Guard: PMP After Translation
