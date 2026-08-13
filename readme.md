@@ -33,8 +33,6 @@ optimization.
 
 ## Current Snapshot
 
-![Linux BusyBox interactive snapshot](Docs/images/linux_busybox_snapshot.png)
-
 ![Linux BusyBox demo](Docs/images/linux_busybox_demo.gif)
 
 The current validated target is:
