@@ -2,12 +2,13 @@
 
 Last updated: 2026-08-13
 
-**MiNTs-CPU** is a small RV64 SystemVerilog CPU/SoC that now boots OpenSBI,
-Linux 6.12, and a BusyBox initramfs in Verilator.
+**MiNTs-CPU** is a SystemVerilog RV64IMAC in-order RISC-V CPU/SoC capable of
+booting OpenSBI, Linux 6.12, and a BusyBox initramfs in Verilator.
 
 The project started from the `cpu.kanataso.net` teaching CPU material, but the
-current tree has moved into a Linux-capable SoC bring-up and performance
-measurement phase.
+current tree has moved well beyond bring-up: it now uses Tenstorrent Whisper
+lockstep validation and performance counters to guide microarchitectural
+optimization.
 
 - Reference: https://cpu.kanataso.net/
 - Current status: [Docs/CURRENT_STATUS.md](Docs/CURRENT_STATUS.md)
@@ -16,6 +17,19 @@ measurement phase.
 - Performance counters: [Docs/PERFORMANCE_COUNTERS.md](Docs/PERFORMANCE_COUNTERS.md)
 - Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
 - Third-party notices: [NOTICE](NOTICE)
+
+## Highlights
+
+- RV64IMAC in-order core with M/S/U privilege support
+- Sv39 MMU with shared PTW, ITLB, and DTLB
+- PMP checks on fetch, data, and PTW physical accesses
+- ACLINT MSWI/MTIMER, PLIC-compatible interrupt controller, and NS16550A UART
+- 4KiB I-cache, stable 16KiB D-cache, and 8-entry store buffer
+- Forwarding, early JAL/branch/JALR redirect, 2-bit PHT, JALR BTB, and RAS
+- OpenSBI -> Linux 6.12 -> BusyBox userspace boot path
+- Whisper lockstep verification through BusyBox autotest
+- Performance tuning from a 300M-cycle CPI 6.918 baseline to a stable
+  100M-cycle CPI 2.529 checkpoint
 
 ## Current Snapshot
 
@@ -153,6 +167,9 @@ Representative 100M-cycle result:
 ```text
 [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
 ```
+
+This number is a simulation checkpoint for comparing microarchitectural
+changes, not a silicon or FPGA frequency result.
 
 Whisper lockstep BusyBox autotest:
 
