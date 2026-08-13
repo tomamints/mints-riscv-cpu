@@ -35,6 +35,8 @@ optimization.
 
 ![Linux BusyBox interactive snapshot](Docs/images/linux_busybox_snapshot.png)
 
+[Linux / BusyBox demo video](Docs/images/linux_busybox_demo.mov)
+
 The current validated target is:
 
 ```text
