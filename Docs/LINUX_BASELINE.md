@@ -1,5 +1,7 @@
 # Linux Cmdloop Baseline
 
+Last updated: 2026-08-13
+
 この文書は、MiNTs-CPU の Linux bring-up を次の性能改善へ進める前に固定するための baseline 手順です。
 
 目的は、traceや一時的な診断コードに依存せず、同じRTL、DTB、OpenSBI、Linux Imageで、毎回同じ操作が通ることを確認することです。

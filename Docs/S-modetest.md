@@ -1,5 +1,7 @@
 # Supervisor-mode Bring-up and Verification Checklist
 
+Last updated: 2026-08-13
+
 S-modeのテスト項目を先にリスト化し、1項目ずつPASSを確認するためのチェックリストです。
 
 ただし最初からLinuxを起動して確認するのではなく、

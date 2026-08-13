@@ -1,5 +1,7 @@
 # MiNTs-CPU
 
+Last updated: 2026-08-13
+
 **MiNTs-CPU** is a small RV64 SystemVerilog CPU/SoC that now boots OpenSBI,
 Linux 6.12, and a BusyBox initramfs in Verilator.
 
@@ -49,8 +51,9 @@ Current claimed scope:
 | Protection | 8-entry PMP, fetch/data/PTW physical checks |
 | Interrupts | ACLINT MSWI/MTIMER, PLIC external interrupts |
 | UART | Minimal NS16550A-compatible UART at `0x10000000` |
-| Caches | 4KiB I-cache, 4KiB D-cache, 32B lines |
-| Store path | write-through D-cache, 4-entry store buffer |
+| Caches | 4KiB I-cache, stable 16KiB D-cache, 32B lines |
+| Store path | write-through D-cache, 8-entry store buffer |
+| Branch prediction | 2-bit PHT, JALR BTB, non-speculative RAS |
 | Verification | riscv-tests, custom C tests, Linux boot, Whisper lockstep |
 
 Not claimed:
@@ -59,7 +62,7 @@ Not claimed:
 F/D floating point
 Zb* bitmanip
 SMP/cache coherence
-write-back D-cache
+write-back D-cache as stable baseline
 full RVA23 compliance
 FPGA timing closure
 ```
@@ -74,7 +77,7 @@ src/
   sv39_ptw.sv             Sv39 page table walker
   tlb.sv                  small associative TLB
   icache.sv               4KiB instruction cache
-  dcache.sv               4KiB data cache and store buffer
+  dcache.sv               configurable data cache and store buffer
   csrunit.sv              privileged CSRs and trap handling
   pmp_checker.sv          PMP checker
   uart_ns16550.sv         minimal 16550-compatible UART
@@ -105,13 +108,19 @@ make build
 Interactive-input simulator:
 
 ```bash
-make build-input
+make build-input \
+  DCACHE_LINE_COUNT=512 \
+  DCACHE_STORE_BUFFER_DEPTH=8 \
+  DCACHE_WRITE_BACK=0
 ```
 
 Run the current Linux BusyBox autotest image:
 
 ```bash
 make run-opensbi-input \
+  DCACHE_LINE_COUNT=512 \
+  DCACHE_STORE_BUFFER_DEPTH=8 \
+  DCACHE_WRITE_BACK=0 \
   OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
   LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs \
   OPENSBI_CYCLES=0
@@ -121,10 +130,28 @@ Performance summary for a bounded run:
 
 ```bash
 make run-opensbi-input \
+  DCACHE_LINE_COUNT=512 \
+  DCACHE_STORE_BUFFER_DEPTH=8 \
+  DCACHE_WRITE_BACK=0 \
   OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-notrace-initramfs \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-irqcause-min-initramfs \
   OPENSBI_CYCLES=100000000 \
-  SIM_EXTRA_ARGS=+PERF_SUMMARY
+  SIM_EXTRA_ARGS=+PERF_SUMMARY \
+  2>&1 | tee /tmp/perf-100m.log
+```
+
+The current stable performance baseline uses:
+
+```text
+DCACHE_LINE_COUNT=512
+DCACHE_STORE_BUFFER_DEPTH=8
+DCACHE_WRITE_BACK=0
+```
+
+Representative 100M-cycle result:
+
+```text
+[PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
 ```
 
 Whisper lockstep BusyBox autotest:
@@ -139,8 +166,14 @@ docker run --rm \
   riscv-lockstep-verilator:5.046 \
   bash -lc '
     rm -rf obj_dir_lockstep &&
-    make build-lockstep &&
+    make build-lockstep \
+      DCACHE_LINE_COUNT=512 \
+      DCACHE_STORE_BUFFER_DEPTH=8 \
+      DCACHE_WRITE_BACK=0 &&
     make run-opensbi-lockstep \
+      DCACHE_LINE_COUNT=512 \
+      DCACHE_STORE_BUFFER_DEPTH=8 \
+      DCACHE_WRITE_BACK=0 \
       OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
       OPENSBI_ELF=build/external/opensbi/build/platform/generic/firmware/fw_jump.elf \
       LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs \

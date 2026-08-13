@@ -1,5 +1,7 @@
 # DMA ドキュメント
 
+Last updated: 2026-08-13
+
 ## 目的
 
 本 DMA は、RISC-V コアがメモリコピーに費やす命令実行を削減するための独自 MMIO peripheral です。

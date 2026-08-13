@@ -1,5 +1,7 @@
 # Linux Setup
 
+Last updated: 2026-08-13
+
 This document describes the current Linux/OpenSBI/BusyBox setup for
 **MiNTs-CPU**.
 

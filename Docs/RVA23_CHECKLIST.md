@@ -1,5 +1,7 @@
 # RVA23 Direction Checklist
 
+Last updated: 2026-08-13
+
 この文書は、Linux起動ロードマップとは別に、将来的にRVA23方向へ寄せるための確認項目を整理するものです。
 
 `Docs/ROADMAP.md` は「Linuxを起動するための実装順」、この文書は「RVA23適合へ近づけるための棚卸し」として分けて扱います。

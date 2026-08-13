@@ -1,5 +1,7 @@
 # Linux TTY/UART Bring-up Notes
 
+Last updated: 2026-08-13
+
 Date: 2026-08-01
 
 ## Current Status

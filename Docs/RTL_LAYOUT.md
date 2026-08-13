@@ -1,5 +1,7 @@
 # RTL Layout Plan
 
+Last updated: 2026-08-13
+
 この文書は、MiNTs-CPU のRTLを今後TLB、cache、branch predictor、性能カウンタへ拡張するための配置方針です。
 
 ## Policy

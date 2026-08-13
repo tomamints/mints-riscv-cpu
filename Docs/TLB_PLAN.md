@@ -1,5 +1,7 @@
 # Address Translation Development Plan
 
+Last updated: 2026-08-13
+
 MiNTs-CPU の性能改善は、まず ITLB から進める。
 
 ## Current State

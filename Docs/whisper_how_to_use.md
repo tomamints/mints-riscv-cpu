@@ -1,5 +1,7 @@
 # WhisperでRV64 bare-metal ELFを実行する手順
 
+Last updated: 2026-08-13
+
 現在のMiNTs-CPU lockstep実行手順は
 `tools/whisper_lockstep/README.md` と `Docs/LINUX_SETUP.md` を優先してください。
 この文書はWhisper単体導入や過去の試行ログを含む補助メモです。

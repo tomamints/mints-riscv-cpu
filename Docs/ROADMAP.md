@@ -1,5 +1,7 @@
 # Roadmap
 
+Last updated: 2026-08-13
+
 この文書は、現在の **MiNTs-CPU** を、Linuxが動くSoCプロトタイプから、測定可能で改善しやすいCPUへ育てるための作業順序を整理したものです。
 
 ## Current Position

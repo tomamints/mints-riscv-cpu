@@ -1,6 +1,6 @@
 # MiNTs-CPU Whisper Lockstep 導入・再現マニュアル
 
-最終更新: 2026-08-11
+Last updated: 2026-08-13
 
 この文書は、自作 SystemVerilog RISC-V CPU（MiNTs-CPU）を Tenstorrent Whisper と instruction-by-instruction lockstep させ、OpenSBI → Linux → BusyBox autotest まで検証した流れを、後から再現できるようにまとめたものです。
 

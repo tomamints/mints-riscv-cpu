@@ -1,5 +1,7 @@
 # Test Status
 
+Last updated: 2026-08-13
+
 この文書は `core/test/share` にある riscv-tests 由来の test binary を、現在の simulator で実行した結果です。
 
 実行日: 2026-08-11

@@ -1,5 +1,7 @@
 # Linux Bring-up Milestones
 
+Last updated: 2026-08-13
+
 この文書は、自作 **MiNTs-CPU** 上で「Linuxが動いた」と判断する基準と、その後の確認項目を整理するためのものです。
 
 ## Goal Definition

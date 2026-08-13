@@ -1,5 +1,7 @@
 # OpenSBI Bring-up Notes
 
+Last updated: 2026-08-13
+
 この文書は、OpenSBI v1.3.1 `FW_JUMP` のUART banner表示、OpenSBIからS-mode payloadへ到達するために行った変更、Linux Image投入の現在地を残すためのメモです。
 
 現在確認できている到達点:

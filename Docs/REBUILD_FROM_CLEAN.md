@@ -1,5 +1,7 @@
 # Rebuild from Clean
 
+Last updated: 2026-08-13
+
 MiNTs-CPUで `build/` を削除したあとに、OpenSBI、RISC-V musl toolchain、BusyBox、Linux Imageを再生成する手順です。
 
 ## 注意

@@ -1,5 +1,7 @@
 # Performance Counters
 
+Last updated: 2026-08-13
+
 MiNTs-CPU の性能改善は、まずCPIと大まかなstall内訳を見るところから始めます。
 
 現時点の実装は、RTL内部カウンタをVerilator終了時に表示する構成です。LinuxやCSR ABIにはまだ公開しません。

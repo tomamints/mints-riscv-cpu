@@ -1,8 +1,9 @@
 # Current Status
 
+Last updated: 2026-08-13
+
 This document is the current high-level status of **MiNTs-CPU**.
 
-Last updated: 2026-08-12
 
 ## One-Line Status
 
@@ -167,81 +168,54 @@ Historical 300M-cycle Linux measurements:
 
 Recent 100M-cycle checkpoints:
 
+| Phase | Main change | Retired | CPI | IPC | Correctness |
+|---|---|---:|---:|---:|---|
+| 8.3 | JALR early redirect | 33,557,400 | 2.979 | 0.335 | Linux run |
+| 9.1 | Static branch predictor | 34,725,769 | 2.879 | 0.347 | Linux run |
+| 9.2 | 2-bit PHT predictor | 35,561,702 | 2.812 | 0.355 | Whisper pass |
+| 9.3 | JALR BTB | 36,163,117 | 2.765 | 0.361 | Whisper pass |
+| 9.4 | RAS | 36,690,014 | 2.725 | 0.366 | Linux run |
+| 10.1 | MEM translation->access fast path | 38,038,242 | 2.628 | 0.380 | Linux run |
+| 10.2 | D-cache hit-load fast sideband | 38,719,295 | 2.582 | 0.387 | Whisper pass |
+| 10.4 | 512-line D-cache + 8-entry store buffer | 39,534,138 | 2.529 | 0.395 | Stable |
+| 10.5 | Experimental write-back D-cache | 39,508,553 | 2.531 | 0.395 | Experimental |
+
+Recent improvement summary:
+
+| Range | Main effect |
+|---|---|
+| Phase 8.3 -> 9.4 | Control speculation reduced frontend/control waste: early redirect, PHT, BTB, and RAS moved CPI from 2.979 to 2.725. |
+| Phase 9.4 -> 10.2 | MEM/LSU fixed latency was reduced: translation-to-access bypass and D-cache hit-load sideband moved CPI from 2.725 to 2.582. |
+| Phase 10.2 -> 10.4 | D-cache capacity and store buffer depth improved load-miss behavior, reaching the current stable CPI 2.529 point. |
+| Phase 10.5 | Write-back reduced write traffic and arbiter pressure, but did not beat the selected write-through stable point. |
+
+Key evidence by phase:
+
+| Phase | Evidence |
+|---|---|
+| 9.1 | `[PERF-BPRED] pred=4329566 hit=3093544 miss=1236022 hit_rate_x1000=714` |
+| 9.2 | `[PERF-BPRED] pred=4473131 hit=3803100 miss=670031 hit_rate_x1000=850` |
+| 9.3 | `[PERF-BTB] jalr=416164 hit=168874 miss=247290 hit_rate_x1000=405 entries=32` |
+| 9.4 | `[PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8` |
+| 10.1 | `[PERF-MEMU-FIXED] translation_done=8454789 access_accept=2258666 response_done=6421060` |
+| 10.2 | `[PERF-DCACHE-FAST] hit_load=4986113`, `response_done=1567104` |
+| 10.4 | `[PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369`, `[PERF-DSTALL] load_miss=2937174` |
+| 10.5 | `[PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515` |
+
+Current stable Phase 10 configuration:
+
 ```text
-Phase 8.3 JALR early redirect:
-  [PERF] cycles=100000000 retired=33557400 cpi_x1000=2979 ipc_x1000=335
-  [PERF] primary commit=33557400 no_commit=66442600 mem=23745865 muldiv=3254573 data_hazard=794093 ifetch=18691860 other=19956209
-  [PERF-CONTROL] branch=1951066 jal=669757 jalr=411594 trap=1531 return=1577 satp=13 sfence=2000 other=0
+DCACHE_LINE_COUNT=512
+DCACHE_STORE_BUFFER_DEPTH=8
+DCACHE_WRITE_BACK=0
+```
 
-Phase 9.1 static branch predictor:
-  [PERF-BPRED] pred=4329566 hit=3093544 miss=1236022 hit_rate_x1000=714
-  [PERF] cycles=100000000 retired=34725769 cpi_x1000=2879 ipc_x1000=347
+Experimental write-back conclusion:
 
-Phase 9.2 2-bit PHT predictor:
-  [PERF-BPRED] pred=4473131 hit=3803100 miss=670031 hit_rate_x1000=850
-  [PERF] cycles=100000000 retired=35561702 cpi_x1000=2812 ipc_x1000=355
-  Whisper BusyBox autotest pass
-
-Phase 9.3 JALR BTB:
-  [PERF-BTB] jalr=416164 hit=168874 miss=247290 hit_rate_x1000=405 entries=32
-  [PERF] cycles=100000000 retired=36163117 cpi_x1000=2765 ipc_x1000=361
-  Whisper BusyBox autotest pass
-
-Phase 9.4 RAS:
-  [PERF-JALR] call=35328 return=349378 other=32157
-  [PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8
-  [PERF] cycles=100000000 retired=36690014 cpi_x1000=2725 ipc_x1000=366
-  [PERF] primary commit=36690014 no_commit=63309986 mem=25359068 muldiv=3264316 data_hazard=804410 ifetch=14451685 other=19430507
-
-Phase 10.1 MEM translation->access fast path:
-  [PERF] cycles=100000000 retired=38038242 cpi_x1000=2628 ipc_x1000=380
-  [PERF] primary commit=38038242 no_commit=61961758 mem=19229826 muldiv=3294097 data_hazard=751781 ifetch=16592212 other=22093842
-  [PERF-MEMU-FIXED] translation_done=8454789 access_accept=2258666 response_done=6421060 split_accept=50351 split_response_done=25176
-
-Phase 10.2 passive D-cache hit-load sideband:
-  [PERF-DCACHE-FAST] hit_load=4986113
-  [PERF-MEMU-FAST] hit_load=4986113
-  [PERF-MEMU-FIXED] translation_done=8643157 access_accept=2264778 response_done=1567104 split_accept=50351 split_response_done=25176
-  [PERF] cycles=100000000 retired=38719295 cpi_x1000=2582 ipc_x1000=387
-  Whisper BusyBox autotest pass
-
-Phase 10.3 store/write-through traffic instrumentation:
-  [PERF-DCACHE-MIX] load_hit=... load_miss=... store_hit=... store_miss=...
-  [PERF-STOREBUF-OCC] empty=... one=... two=... almost_full=... full=...
-  [PERF-STOREBUF-DRAIN] urgent_active=... urgent_wait=... low_active=... low_wait=...
-  [PERF-STOREBUF-COMBINE] candidate=... tail_word=... tail_disjoint=... any_word=... any_line=...
-  Short +PERF_SUMMARY smoke passed
-  DCACHE_STORE_BUFFER_DEPTH Make variable added for 4 vs 8 A/B testing
-  DCACHE_LINE_COUNT Make variable added for 128 vs 256 A/B testing
-
-Phase 10.4 D-cache capacity A/B:
-  DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8
-  [PERF-DCACHE] hit_rate_x1000=816 lines=512
-  [PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369
-  [PERF-DSTALL] load_miss=2937174
-  [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
-  Stable Phase 10 configuration selected:
-    DCACHE_LINE_COUNT=512
-    DCACHE_STORE_BUFFER_DEPTH=8
-    DCACHE_WRITE_BACK=0
-
-Phase 10.5 experimental write-back D-cache:
-  DCACHE_WRITE_BACK Make variable added
-  Default remains write-through
-  Initial write-back scope:
-    store hit -> dirty cache line, no store buffer enqueue
-    store miss -> no-write-allocate write-through
-    dirty victim load miss -> writeback before refill
-    dirty hit AMO -> writeback + invalidate before AMO bypass
-  100M result after clean-flush skip/profiling:
-    [PERF-DCACHE] mem_req=4126135 write_through=1395018 lines=512
-    [PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515
-    [PERF-DCACHE-WB-FLUSH] clean=1007 dirty=1002 scan=513024 dirty_lines=3555 words=14220 req_wait=35727
-    [PERF] cycles=100000000 retired=39508553 cpi_x1000=2531 ipc_x1000=395
-  Conclusion:
-    write-back reduces write traffic and arbiter pressure
-    but does not beat the selected write-through stable configuration yet
-    keep it as a research/experimental branch target
+```text
+write-back reduces write traffic and arbiter pressure,
+but does not beat the selected write-through stable configuration yet.
+Keep it as a research/experimental branch target.
 ```
 
 Current bottleneck view:
