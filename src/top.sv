@@ -1,11 +1,26 @@
 import eei::*;
 import util::*;
 
+`ifndef SVCPU_DCACHE_STORE_BUFFER_DEPTH
+`define SVCPU_DCACHE_STORE_BUFFER_DEPTH 4
+`endif
+
+`ifndef SVCPU_DCACHE_LINE_COUNT
+`define SVCPU_DCACHE_LINE_COUNT 128
+`endif
+
+`ifndef SVCPU_DCACHE_WRITE_BACK
+`define SVCPU_DCACHE_WRITE_BACK 0
+`endif
+
 module core_top #(
     parameter bit    RAM_FILEPATH_IS_ENV = 1,
     parameter string RAM_FILEPATH        = "RAM_FILE_PATH",
     parameter bit    ROM_FILEPATH_IS_ENV = 1,
-    parameter string ROM_FILEPATH        = "ROM_FILE_PATH"
+    parameter string ROM_FILEPATH        = "ROM_FILE_PATH",
+    parameter int unsigned DCACHE_LINE_COUNT = `SVCPU_DCACHE_LINE_COUNT,
+    parameter int unsigned DCACHE_STORE_BUFFER_DEPTH = `SVCPU_DCACHE_STORE_BUFFER_DEPTH,
+    parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK
 ) (
 `ifdef TEST_MODE
     output logic test_success,
@@ -128,6 +143,7 @@ module core_top #(
     UIntX pmpaddr7_fetch_value;
     UIntX satp_fetch_value;
     logic translation_flush_fetch_value;
+    logic dcache_flush_busy;
     logic sstatus_sum_fetch_value;
     logic sstatus_mxr_fetch_value;
     logic uart_irq;
@@ -346,10 +362,15 @@ module core_top #(
         .uart_membus (uart_membus)
     );
 
-    dcache dcache0 (
+    dcache #(
+        .LINE_COUNT(DCACHE_LINE_COUNT),
+        .STORE_BUFFER_DEPTH(DCACHE_STORE_BUFFER_DEPTH),
+        .WRITE_BACK(DCACHE_WRITE_BACK)
+    ) dcache0 (
         .clk        (clk),
         .rst        (rst),
-        .invalidate (1'b0),
+        .invalidate (translation_flush_fetch_value),
+        .flush_busy (dcache_flush_busy),
         .mem_low_priority(dcache_mem_low_priority),
         .cpu        (d_membus_core),
         .mem        (dcache_membus_core)
@@ -477,6 +498,7 @@ module core_top #(
         .translation_flush_fetch_value(translation_flush_fetch_value),
         .sstatus_sum_fetch_value(sstatus_sum_fetch_value),
         .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
+        .dcache_flush_busy(dcache_flush_busy),
         .external_meip(plic_meip),
         .external_seip(plic_seip),
         .aclint   (aclint_core_bus)

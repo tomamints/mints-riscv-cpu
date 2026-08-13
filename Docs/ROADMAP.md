@@ -681,7 +681,7 @@ D-cache miss and uncached access are visible
 memunit translation/access/response states still consume many cycles
 ```
 
-Phase 10.0:
+Phase 10.0: MEM fixed-latency instrumentation
 
 ```text
 [PERF-MEMU-FIXED] を追加
@@ -689,13 +689,165 @@ translation_done / access_accept / response_doneを表示
 既存のwait総数からbus waitを引き、固定FSM cycleを見える化する
 ```
 
-Phase 10.1以降の候補:
+Phase 10.1: translation -> access fast path
 
 ```text
-DTLB hit fast path
-memunit AccessWaitReady固定cycle削減
-D-cache hit response latency削減
-D-cache容量/way比較
+DTLB/data translation responseが成功し、PMP/alignmentもOKなら、
+次cycleのAccessWaitReadyを待たずに同cycleでD-cache requestを発行する。
+
+100M代表値:
+  CPI 2.725 -> 2.628
+  access_accept 9.61M -> 2.26M
+  primary mem 25.36M -> 19.23M
+```
+
+Phase 10.2: passive D-cache hit-load sideband
+
+```text
+通常のD-cache rvalidを組み合わせ化せず、
+memunit -> D-cache のpassive fast-load sidebandを追加する。
+
+fast条件:
+  normal load
+  not AMO
+  not split
+  translation/PMP/alignment OK
+  D-cache Idle
+  cacheable RAM
+  tag hit
+  store buffer overlapなし
+
+fast hit時は通常D-cache requestを出さず、そのcycleでloadを完了する。
+miss/unsafe時は従来のregistered response pathへ落ちる。
+
+短い起動確認:
+  [PERF-DCACHE-FAST] hit_load == [PERF-MEMU-FAST] hit_load
+
+100M代表値:
+  [PERF-DCACHE-FAST] hit_load=4986113
+  [PERF-MEMU-FAST] hit_load=4986113
+  [PERF-MEMU-FIXED] response_done 6421060 -> 1567104
+  [PERF] cycles=100000000 retired=38719295 cpi_x1000=2582 ipc_x1000=387
+
+残る確認:
+  Whisper lockstep BusyBox autotest pass済み
+```
+
+Phase 10.3: store/write-through traffic instrumentation
+
+```text
+Phase 10.2でload hit fast pathを短縮した結果、
+store buffer fullやwrite-through drain pressureが次に見え始める。
+
+まず最適化ではなく、次を分けて測る:
+
+[PERF-DCACHE-MIX]
+  load_hit / load_miss
+  store_hit / store_miss
+
+[PERF-STOREBUF-OCC]
+  empty / one / two / almost_full / full
+
+[PERF-STOREBUF-DRAIN]
+  urgent_active / urgent_wait
+  low_active / low_wait
+
+[PERF-STOREBUF-COMBINE]
+  candidate
+  tail_word / tail_disjoint
+  any_word / any_line
+
+短い+PERF_SUMMARY smoke済み。
+次は100M代表値で、store/write-throughがcritical path化しているか判断する。
+
+A/B diagnostic:
+  DCACHE_STORE_BUFFER_DEPTH=4  baseline
+  DCACHE_STORE_BUFFER_DEPTH=8  burst吸収の効果を見る
+
+目的:
+  depth 8でfull_stallだけ消えるか
+  CPIやurgent_wait/low_waitも減るか
+  容量不足か、write-through bandwidth問題かを分ける
+
+Phase 10.3b:
+  write combining機会の観測
+  tail_wordが大きければ、FIFO順序を保ちやすいtail mergeを検討
+  any_word/any_lineだけ大きければ、より大きなwrite combining/write-back候補
+```
+
+Phase 10.4: D-cache capacity A/B
+
+```text
+D-cache容量A/B:
+  DCACHE_LINE_COUNT=128 baseline
+  DCACHE_LINE_COUNT=256 capacity test
+  DCACHE_LINE_COUNT=512 diminishing-return check
+
+見る値:
+  load_miss / store_miss
+  D-cache hit_rate
+  primary mem
+  CPI
+
+容量でmissが減る:
+  D-cache size / associativity方向
+
+容量でmissが減らない:
+  write-through traffic / write combining / write-back方向
+```
+
+100M代表値:
+
+```text
+512 lines + store buffer depth 8:
+  [PERF-DCACHE] hit_rate_x1000=816 lines=512
+  [PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369
+  [PERF-DSTALL] load_miss=2937174
+  [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+```
+
+Phase 10.5: experimental write-back D-cache
+
+```text
+目的:
+  store hitのwrite-through trafficを減らし、store buffer/drain圧力を下げる。
+
+初期スコープ:
+  cacheable store hit:
+    D-cache line更新 + dirty bit set
+    store buffer enqueueなし
+    RAM write-throughなし
+
+  cacheable store miss:
+    no-write-allocateを維持
+    従来通りstore buffer経由でwrite-through
+
+  dirty victim load miss:
+    line refill前にdirty victimを4 word writeback
+
+  dirty hit AMO:
+    dirty line writeback + invalidate後に従来AMO bypass
+
+Make切替:
+  DCACHE_WRITE_BACK=0  default write-through
+  DCACHE_WRITE_BACK=1  experimental write-back
+
+見る値:
+  [PERF-DCACHE-WB] store_hit / evict / words / req_wait
+  [PERF-DCACHE] write_through / mem_req
+  [PERF-STOREBUF] enq / drain / full_stall
+  [PERF] primary mem / CPI
+
+translation flush:
+  satp更新 / SFENCE.VMA時はD-cacheへflushを要求する
+  D-cacheはstore bufferをdrainし、dirty lineをwritebackしてからflush完了
+  coreはflush_busy中、MEM段のtranslation hazard instructionをretire/redirectさせない
+
+注意:
+  現在のflushは保守的な全line writeback/invalidate
+  将来DMA coherenceや明示的D-cache invalidateを入れるなら用途別に拡張する
+
+store buffer / write-through traffic再調整
 write-through traffic削減またはwrite-back化
 ```
 

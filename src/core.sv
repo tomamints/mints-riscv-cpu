@@ -64,6 +64,7 @@ module core (
 	output logic translation_flush_fetch_value,
 	output logic sstatus_sum_fetch_value,
 	output logic sstatus_mxr_fetch_value,
+	input  logic dcache_flush_busy,
 	input  logic external_meip,
 	input  logic external_seip,
 	aclint_if.slave aclint
@@ -654,6 +655,7 @@ module core (
 	logic mems_satp_access;
 	logic mems_sfence_vma;
 	logic mems_translation_hazard;
+	logic mems_translation_flush_wait;
 	assign mems_satp_access =
 		mems_ctrl.is_csr &&
 		(mems_inst_bits[31:20] == SATP);
@@ -662,6 +664,10 @@ module core (
 		(mems_inst_bits[14:12] == 3'b000) &&
 		(mems_inst_bits[31:25] == 7'b0001001);
 	assign mems_translation_hazard = mems_satp_access || mems_sfence_vma;
+	assign mems_translation_flush_wait =
+		mems_valid &&
+		mems_translation_hazard &&
+		dcache_flush_busy;
 	assign mems_branch_taken = inst_is_br(mems_ctrl) && memq_rdata.br_taken;
 
 	assign ex_early_jal_pc_next = exs_alu_result;
@@ -728,7 +734,7 @@ module core (
 		 (mems_ctrl.is_jump &&
 		  (mems_inst_bits[6:0] != OP_JAL) &&
 		  (mems_inst_bits[6:0] != OP_JALR)) ||
-		 mems_translation_hazard);
+		 (mems_translation_hazard && !dcache_flush_busy));
 	assign control_hazard =
 		mem_control_hazard ||
 		ex_early_jal_redirect ||
@@ -738,6 +744,7 @@ module core (
 		mems_valid &&
 		mems_is_new &&
 		mems_translation_hazard &&
+		!dcache_flush_busy &&
 		!csru_raise_trap &&
 		!mems_expt.valid;
 	assign control_hazard_pc_next =
@@ -844,8 +851,8 @@ module core (
 
 	always_comb begin
 		//MEM -> WB
-		memq_rready = wbq_wready && !memu_stall;
-		wbq_wvalid = memq_rvalid && !memu_stall;
+		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait;
+		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait;
 		wbq_wdata.addr = memq_rdata.addr;
 		wbq_wdata.bits = memq_rdata.bits;
 		wbq_wdata.ctrl = memq_rdata.ctrl;

@@ -51,10 +51,20 @@ make run-opensbi-input \
 [PERF-MEMARB-STALL] i_wait=... d_high_wait=... d_low_wait=...
 [PERF-ICACHE] req=... hit=... fill_hit=... miss=... hit_rate_x1000=...
 [PERF-DCACHE] req=... hit=... miss=... hit_rate_x1000=...
+[PERF-DCACHE-WB] enabled=... store_hit=... evict=... words=... req_wait=...
+[PERF-DCACHE-WB-FLUSH] clean=... dirty=... scan=... dirty_lines=... words=... req_wait=...
+[PERF-DCACHE-MIX] load_hit=... load_miss=... store_hit=... store_miss=...
+[PERF-DCACHE-RSP] hit_load=... fill_critical=... bypass_load=... bypass_amo=...
+[PERF-DCACHE-FAST] hit_load=...
 [PERF-STOREBUF] enq=... drain=... full_stall=...
+[PERF-STOREBUF-OCC] empty=... one=... two=... almost_full=... full=...
+[PERF-STOREBUF-DRAIN] urgent_active=... urgent_wait=... low_active=... low_wait=...
+[PERF-STOREBUF-COMBINE] candidate=... tail_word=... tail_disjoint=... any_word=... any_line=...
 [PERF-FETCH-STALL] fifo_full=... control_recovery=... translation_issue=... icache_req=... icache_rsp=...
 [PERF-MEMU-STALL] translation=... access_ready=... response=...
 [PERF-MEMU-FIXED] translation_done=... access_accept=... response_done=...
+[PERF-MEMU-RSPDONE] load=... amo=... split_first=... split_second=...
+[PERF-MEMU-FAST] hit_load=...
 [PERF-ITLB] req=... hit=... miss=...
 [PERF-DTLB] req=... hit=... miss=...
 ```
@@ -498,6 +508,273 @@ Phase 10では、MEM/LSU側を次のように分けて見ます。
 
 この行は新しい独立カウンタではなく、既存のwait総数からbus waitを引いた派生値です。
 値が大きい場合、D-cache missやMMIO待ちではなく、memunit/D-cache間の固定FSMレイテンシを減らす候補になります。
+
+`[PERF-DCACHE-RSP]` は、D-cacheがCPU側へload/AMO応答を返した理由を分けます。
+
+```text
+hit_load
+  cacheable load hitで、D-cache data arrayから応答した回数
+
+fill_critical
+  cache miss refill中にcritical wordが返り、CPUへearly responseした回数
+
+bypass_load
+  uncached/MMIO loadなど、cacheを通さずmemory応答をCPUへ返した回数
+
+bypass_amo
+  AMO/LR/SCなど、bypass経路のread-modify-write応答をCPUへ返した回数
+```
+
+`response_done` が大きく、かつ `hit_load` が大きい場合は、D-cache hit load responseの固定1cycleを詰める候補になります。
+
+`[PERF-MEMU-RSPDONE]` は、memunitが `AccessWaitValid` / `SplitAccessWaitValid` でD-cache/data応答を実際に受け取った完了cycleを種類別に数えます。
+
+```text
+load
+  non-split loadでdata_mem_rvalidを見たcycle
+
+amo
+  AMO/LR/SC応答でdata_mem_rvalidを見たcycle
+
+split_first
+  misaligned split accessのfirst beat responseを見て、second beatへ進めるcycle
+
+split_second
+  misaligned split accessのsecond beat responseを見て、全体を完了するcycle
+```
+
+この行は、`response_done` が「rvalid後に残る余分な後処理cycle」なのか、「rvalid到着そのものの完了cycle」なのかを確認するためのものです。現在のnon-split loadでは、`AccessWaitValid` のstall条件が `!data_mem_rvalid` なので、`load` に数えられるcycleではCPU側のmemunit stallは解除されます。したがって `load` が `response_done` の大部分を占める場合、memunit内のpost-rvalid bubbleを消す余地は小さく、次に狙うならD-cache側の登録応答を保ったままではなく、passiveなhit/data sidebandなど別interfaceでhit loadを早く返す必要があります。
+
+Phase 10.2では、D-cache hit load用に通常`valid/ready/rvalid`とは別のpassive sidebandを追加します。
+
+```text
+[PERF-DCACHE-FAST]
+  hit_load
+    D-cacheがsidebandで安全に返せたcacheable normal load hit数
+
+[PERF-MEMU-FAST]
+  hit_load
+    memunitがsideband結果を使って通常request/registered rvalidを待たずに完了したload数
+```
+
+このfast pathは、通常のD-cache responseを組み合わせ化するものではありません。memunitが物理アドレス、funct3、load条件をsidebandへ出し、D-cacheが次を満たす場合だけ `fast_load_valid/data` を返します。
+
+```text
+D-cache Idle
+既存response pendingなし
+RAM/cacheable address
+tag hit
+store buffer overlapなし
+invalidate中ではない
+```
+
+fast hit時はmemunitが通常D-cache requestを発行せず、そのcycleでloadを完了します。missまたはunsafeなら従来のD-cache requestへ落ちるため、既存のmiss/refill、uncached/MMIO、AMO、split accessの動作は維持されます。
+
+Phase 10.3では、fast load後に見え始めたstore/write-through圧力を分けます。
+
+```text
+[PERF-DCACHE-MIX]
+  load_hit / load_miss
+    cacheable loadのhit/miss数。fast hit loadもload_hitに含める
+
+  store_hit / store_miss
+    cacheable storeのhit/miss数。どちらもwrite-through storeとしてstore bufferへenqueueされる
+
+[PERF-STOREBUF-OCC]
+  empty / one / two / almost_full / full
+    store buffer occupancyごとのcycle数
+
+[PERF-STOREBUF-DRAIN]
+  urgent_active / urgent_wait
+    full近傍、load/AMO/MMIO待ちなどでurgent扱いされたstore drainのactive/wait cycle
+
+  low_active / low_wait
+    background扱いのstore drain active/wait cycle
+
+[PERF-STOREBUF-COMBINE]
+  candidate
+    store bufferへenqueueされたcacheable store数。write combining対象の母数
+
+  tail_word
+    直前にenqueueされたtail entryと同じ8-byte wordへのstore数。
+    FIFO順序を大きく崩さずにmergeしやすい候補
+
+  tail_disjoint
+    tail_wordのうち、byte maskが重ならないstore数。
+    部分store同士を単純OR maskでまとめやすい候補
+
+  any_word
+    store buffer内のどこかに同じ8-byte wordのpending storeがあった数。
+    tail_wordより広い上限見積もりで、実装には順序制御が必要
+
+  any_line
+    store buffer内のどこかに同じcache lineのpending storeがあった数。
+    line-level combiningやwrite-back化の参考値
+```
+
+読み方:
+
+```text
+store_missが大きい:
+  write-through以前にstore locality/cache容量の問題がある
+
+store_hitが大きく、drain_activeも大きい:
+  storeはcache hitしているがwrite-through trafficがmemory bandwidthを消費している
+
+full occupancy / urgent_wait / store_fullが大きい:
+  store buffer depth、drain priority、write combiningの候補
+
+low_waitだけ大きい:
+  background drainが遅れているだけで、CPU critical stallとは限らない
+
+tail_wordが大きい:
+  小さいwrite combiningでwrite-through trafficを減らせる可能性が高い
+
+any_wordは大きいがtail_wordが小さい:
+  merge機会はあるが、FIFO順序やstore orderingを崩さず扱う設計が必要
+
+any_lineが大きい:
+  word combiningより、line単位のwrite combining/write-backの方が効く可能性がある
+```
+
+store buffer depthのA/B実験は、同じRTLからMake変数で切り替えます。
+
+```bash
+make build-input DCACHE_STORE_BUFFER_DEPTH=8
+
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-irqcause-min-initramfs \
+  OPENSBI_CYCLES=100000000 \
+  SIM_EXTRA_ARGS=+PERF_SUMMARY \
+  2>&1 | tee /tmp/perf-100m-storebuf8.log
+```
+
+比較する主な値:
+
+```text
+CPI
+[PERF-STOREBUF] full_stall / depth
+[PERF-STOREBUF-OCC] full / almost_full
+[PERF-STOREBUF-DRAIN] urgent_wait / low_wait
+[PERF-STOREBUF-COMBINE] tail_word / any_word / any_line
+[PERF] primary mem / ifetch / other
+```
+
+`full_stall` が消えてもCPIやdrain waitがほぼ変わらない場合、主因はbuffer容量ではなくwrite-through downstream bandwidthです。
+
+D-cache容量のA/B実験も、同じMake変数で切り替えます。まず256 linesを見て、改善が残る場合は512 linesも測ります。
+
+```bash
+make build-input DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8
+
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-irqcause-min-initramfs \
+  OPENSBI_CYCLES=100000000 \
+  SIM_EXTRA_ARGS=+PERF_SUMMARY \
+  2>&1 | tee /tmp/perf-100m-dcache512-sb8.log
+```
+
+比較する主な値:
+
+```text
+[PERF-DCACHE] hit_rate_x1000 / mem_req / write_through
+[PERF-DCACHE-MIX] load_miss / store_miss
+[PERF-DSTALL] load_miss
+[PERF] cycles / primary mem
+```
+
+`load_miss` と `store_miss` が大きく減れば容量不足が効いています。missが減らずwrite_through/drain waitが残る場合は、容量よりwrite-through traffic側を優先します。
+
+Phase 10.5では、実験的なD-cache write-back modeをMake変数で切り替えます。
+
+```bash
+make build-input DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=1
+
+make run-opensbi-input \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-cmdloop-ttyS0-irqcause-min-initramfs \
+  OPENSBI_CYCLES=100000000 \
+  SIM_EXTRA_ARGS=+PERF_SUMMARY \
+  2>&1 | tee /tmp/perf-100m-dcache512-sb8-wb.log
+```
+
+初期版は保守的な構成です。
+
+```text
+cacheable store hit:
+  D-cacheを更新しdirty bitを立てる
+  store bufferへenqueueしない
+  RAMへwrite-throughしない
+
+cacheable store miss:
+  no-write-allocateのままstore buffer経由でwrite-through
+
+dirty victimを伴うload miss:
+  victim lineを4 word writebackしてからrefill
+
+dirty hit lineへのAMO:
+  victim lineを書き戻してinvalidateしてから従来のAMO bypassへ進む
+```
+
+`[PERF-DCACHE-WB]` はwrite-back modeの動作量を示します。
+
+```text
+enabled
+  1ならwrite-back実験モード有効、0なら従来write-through
+
+store_hit
+  write-throughを省略し、dirty cache lineへ吸収したstore hit数
+
+evict
+  dirty line writebackを開始した回数
+
+words
+  dirty line writebackで発行した64-bit write数
+
+req_wait
+  dirty writeback requestがmemory ready待ちしたcycle数
+```
+
+`[PERF-DCACHE-WB-FLUSH]` は、translation flushに伴うwrite-back flushの内訳です。
+
+```text
+clean
+  flush要求時にdirty lineもstore buffer pendingもなく、scanせず即完了できた回数
+
+dirty
+  dirty lineまたはstore buffer pendingがあり、D-cache flush処理へ入った回数
+
+scan
+  FlushScan状態でlineを調べたcycle数
+
+dirty_lines
+  flush処理由来でwritebackしたdirty line数
+
+words
+  flush処理由来でwritebackした64-bit word数
+
+req_wait
+  flush処理由来のdirty writeback requestがmemory ready待ちしたcycle数
+```
+
+`clean` が多い場合は `dirty_any` fast skip が効きます。`dirty` と `dirty_lines` が多い場合は、`SFENCE.VMA/satp` とD-cache full flushの分離、またはPTWをD-cache coherentにする設計が本命になります。
+
+比較する主な値:
+
+```text
+[PERF-DCACHE] write_through / mem_req / mem_resp
+[PERF-DCACHE-WB] store_hit / evict / words / req_wait
+[PERF-STOREBUF] enq / drain / full_stall
+[PERF-STOREBUF-DRAIN] urgent_wait / low_wait
+[PERF-DSTALL] load_miss / uncached / storebuf_full
+[PERF] cycles / primary mem / ifetch / other
+```
+
+write-back modeはまだ実験用です。`satp`更新や`SFENCE.VMA`によるtranslation flush時は、D-cacheがstore bufferをdrainし、dirty lineをwritebackしてからpipeline redirectを完了します。これにより、PTWがRAM上の古いPTEを読む問題を避けます。
+
+ただし、このflushは保守的な全line writeback/invalidateです。将来、明示的なD-cache invalidate命令やDMA coherenceを扱う場合は、今回のflush機構をその用途にも接続するか、より細かいwriteback/invalidate制御へ拡張する必要があります。
 
 次の優先候補:
 

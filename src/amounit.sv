@@ -245,6 +245,8 @@ always_comb begin
     slave.ready  = 1'b0;
     slave.rvalid = 1'b0;
     slave.rdata  = '0;
+    slave.fast_load_valid = 1'b0;
+    slave.fast_load_data = '0;
 
     unique case (state)
 

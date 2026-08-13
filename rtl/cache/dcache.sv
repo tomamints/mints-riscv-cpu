@@ -2,11 +2,13 @@ import eei::*;
 
 module dcache #(
 	parameter int unsigned LINE_COUNT = 128,
-	parameter int unsigned STORE_BUFFER_DEPTH = 4
+	parameter int unsigned STORE_BUFFER_DEPTH = 4,
+	parameter bit WRITE_BACK = 1'b0
 ) (
 	input logic clk,
 	input logic rst,
 	input logic invalidate,
+	output logic flush_busy,
 	output logic mem_low_priority,
 	core_data_if.slave cpu,
 	core_data_if.master mem
@@ -30,12 +32,15 @@ module dcache #(
 		LoadFillWait,
 		BypassReq,
 		BypassWait,
+		WritebackReq,
+		FlushScan,
 		Response
 	} State;
 
 	State state;
 
 	logic [LINE_COUNT-1:0] valid;
+	logic [LINE_COUNT-1:0] dirty;
 	logic [TAG_WIDTH-1:0] tags [LINE_COUNT];
 	UInt64 data [LINE_COUNT][WORDS_PER_LINE];
 
@@ -59,6 +64,13 @@ module dcache #(
 	UInt64 fill_data [WORDS_PER_LINE];
 	logic rsp_valid_q;
 	UInt64 rsp_data_q;
+	Addr writeback_line_addr;
+	logic [INDEX_WIDTH-1:0] writeback_index;
+	logic [WORD_OFFSET_WIDTH-1:0] writeback_word;
+	logic writeback_resume_bypass;
+	logic writeback_resume_flush;
+	logic flush_active;
+	logic [INDEX_WIDTH-1:0] flush_index;
 
 	Addr store_buffer_addr [STORE_BUFFER_DEPTH];
 	UInt64 store_buffer_wdata [STORE_BUFFER_DEPTH];
@@ -72,11 +84,17 @@ module dcache #(
 	logic store_buffer_full;
 	logic store_buffer_full_after_issue;
 	logic store_buffer_empty;
+	logic [STORE_BUFFER_INDEX_WIDTH-1:0] store_buffer_tail_prev;
 	logic cacheable_store_can_enqueue_without_drain;
 	logic cacheable_load_can_bypass_store_buffer;
 	logic cpu_store_buffer_overlap;
 	logic [(MEMBUS_DATA_WIDTH/8)-1:0] cpu_load_mask;
+	logic store_buffer_tail_same_word;
+	logic store_buffer_tail_mask_disjoint;
+	logic store_buffer_any_same_word;
+	logic store_buffer_any_same_line;
 	logic store_buffer_drain_urgent;
+	logic cacheable_store_can_accept_without_drain;
 	logic fill_allocate;
 
 	logic [INDEX_WIDTH-1:0] cpu_index;
@@ -86,6 +104,15 @@ module dcache #(
 	logic cpu_ram_access;
 	logic cpu_cacheable;
 	logic cache_hit;
+	logic dirty_victim_hit;
+	Addr cpu_victim_line_addr;
+	logic [INDEX_WIDTH-1:0] fast_load_index;
+	logic [TAG_WIDTH-1:0] fast_load_tag;
+	logic [WORD_OFFSET_WIDTH-1:0] fast_load_word_offset;
+	logic fast_load_cacheable;
+	logic [(MEMBUS_DATA_WIDTH/8)-1:0] fast_load_mask;
+	logic fast_load_store_buffer_overlap;
+	logic fast_load_hit;
 
 	UInt64 perf_req_count;
 	UInt64 perf_load_req_count;
@@ -93,6 +120,10 @@ module dcache #(
 	UInt64 perf_cacheable_req_count;
 	UInt64 perf_hit_count;
 	UInt64 perf_miss_count;
+	UInt64 perf_load_hit_count;
+	UInt64 perf_load_miss_count;
+	UInt64 perf_store_hit_count;
+	UInt64 perf_store_miss_count;
 	UInt64 perf_uncached_count;
 	UInt64 perf_bypass_count;
 	UInt64 perf_write_through_count;
@@ -119,6 +150,44 @@ module dcache #(
 	UInt64 perf_bypass_rsp_wait_cycle;
 	UInt64 perf_store_drain_req_wait_cycle;
 	UInt64 perf_store_drain_active_cycle;
+	UInt64 perf_store_drain_urgent_active_cycle;
+	UInt64 perf_store_drain_urgent_wait_cycle;
+	UInt64 perf_store_drain_low_active_cycle;
+	UInt64 perf_store_drain_low_wait_cycle;
+	UInt64 perf_store_buffer_occ_empty_cycle;
+	UInt64 perf_store_buffer_occ_one_cycle;
+	UInt64 perf_store_buffer_occ_two_cycle;
+	UInt64 perf_store_buffer_occ_almost_full_cycle;
+	UInt64 perf_store_buffer_occ_full_cycle;
+	UInt64 perf_store_combine_candidate_count;
+	UInt64 perf_store_combine_tail_word_count;
+	UInt64 perf_store_combine_tail_disjoint_count;
+	UInt64 perf_store_combine_any_word_count;
+	UInt64 perf_store_combine_any_line_count;
+	UInt64 perf_response_cache_hit_load_count;
+	UInt64 perf_response_fill_critical_count;
+	UInt64 perf_response_bypass_load_count;
+	UInt64 perf_response_bypass_amo_count;
+	UInt64 perf_fast_load_hit_count;
+	UInt64 perf_write_back_store_hit_count;
+	UInt64 perf_write_back_evict_count;
+	UInt64 perf_write_back_word_count;
+	UInt64 perf_write_back_req_wait_cycle;
+	UInt64 perf_wb_flush_clean_count;
+	UInt64 perf_wb_flush_dirty_count;
+	UInt64 perf_wb_flush_scan_cycle;
+	UInt64 perf_wb_flush_dirty_line_count;
+	UInt64 perf_wb_flush_word_count;
+	UInt64 perf_wb_flush_req_wait_cycle;
+
+	function automatic logic dirty_any();
+		dirty_any = 1'b0;
+		for (int unsigned i = 0; i < LINE_COUNT; i++) begin
+			if (valid[i] && dirty[i]) begin
+				dirty_any = 1'b1;
+			end
+		end
+	endfunction
 
 	function automatic logic is_ram(input Addr paddr);
 		return paddr >= MMAP_RAM_BEGIN && paddr < MMAP_RAM_END;
@@ -174,6 +243,33 @@ module dcache #(
 		end
 	endfunction
 
+	function automatic logic store_buffer_has_same_word(input Addr addr);
+		logic [STORE_BUFFER_INDEX_WIDTH-1:0] idx;
+
+		store_buffer_has_same_word = 1'b0;
+		for (int unsigned i = 0; i < STORE_BUFFER_DEPTH; i++) begin
+			idx = store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(i);
+			if (i < store_buffer_count &&
+				store_buffer_addr[idx][XLEN-1:3] == addr[XLEN-1:3]) begin
+				store_buffer_has_same_word = 1'b1;
+			end
+		end
+	endfunction
+
+	function automatic logic store_buffer_has_same_line(input Addr addr);
+		logic [STORE_BUFFER_INDEX_WIDTH-1:0] idx;
+
+		store_buffer_has_same_line = 1'b0;
+		for (int unsigned i = 0; i < STORE_BUFFER_DEPTH; i++) begin
+			idx = store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(i);
+			if (i < store_buffer_count &&
+				store_buffer_addr[idx][XLEN-1:LINE_OFFSET_WIDTH] ==
+					addr[XLEN-1:LINE_OFFSET_WIDTH]) begin
+				store_buffer_has_same_line = 1'b1;
+			end
+		end
+	endfunction
+
 	assign cpu_line_addr = {cpu.addr[XLEN-1:LINE_OFFSET_WIDTH], {LINE_OFFSET_WIDTH{1'b0}}};
 	assign cpu_index = cpu.addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
 	assign cpu_tag = cpu.addr[XLEN-1 -: TAG_WIDTH];
@@ -181,11 +277,47 @@ module dcache #(
 	assign cpu_ram_access = is_ram(cpu.addr);
 	assign cpu_cacheable = cpu_ram_access && !cpu.is_amo;
 	assign cache_hit = cpu_cacheable && valid[cpu_index] && tags[cpu_index] == cpu_tag;
+	assign dirty_victim_hit = WRITE_BACK && valid[cpu_index] && dirty[cpu_index];
+	assign cpu_victim_line_addr = Addr'({tags[cpu_index], cpu_index, {LINE_OFFSET_WIDTH{1'b0}}});
+	assign store_buffer_tail_prev = store_buffer_tail - STORE_BUFFER_INDEX_WIDTH'(1);
+	assign fast_load_index = cpu.fast_load_addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
+	assign fast_load_tag = cpu.fast_load_addr[XLEN-1 -: TAG_WIDTH];
+	assign fast_load_word_offset = cpu.fast_load_addr[3 +: WORD_OFFSET_WIDTH];
+	assign fast_load_cacheable = is_ram(cpu.fast_load_addr);
+	assign fast_load_mask = access_byte_mask(cpu.fast_load_funct3, cpu.fast_load_addr[2:0]);
+	assign fast_load_store_buffer_overlap = store_buffer_overlaps(cpu.fast_load_addr, fast_load_mask);
+	assign fast_load_hit =
+		cpu.fast_load_req &&
+		state == Idle &&
+		!flush_active &&
+		!invalidate &&
+		!rsp_valid_q &&
+		fast_load_cacheable &&
+		valid[fast_load_index] &&
+		tags[fast_load_index] == fast_load_tag &&
+		!fast_load_store_buffer_overlap;
 	assign store_buffer_full = store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH);
 	assign cpu_load_mask = access_byte_mask(cpu.funct3, cpu.addr[2:0]);
 	assign cpu_store_buffer_overlap = store_buffer_overlaps(cpu.addr, cpu_load_mask);
+	assign store_buffer_tail_same_word =
+		store_buffer_count != '0 &&
+		store_buffer_addr[store_buffer_tail_prev][XLEN-1:3] == cpu.addr[XLEN-1:3];
+	assign store_buffer_tail_mask_disjoint =
+		store_buffer_tail_same_word &&
+		(store_buffer_wmask[store_buffer_tail_prev] & cpu.wmask) == '0;
+	assign store_buffer_any_same_word = store_buffer_has_same_word(cpu.addr);
+	assign store_buffer_any_same_line = store_buffer_has_same_line(cpu.addr);
+	assign cacheable_store_can_accept_without_drain =
+		cpu.valid &&
+		cpu_cacheable &&
+		cpu.wen &&
+		((WRITE_BACK && cache_hit) || !store_buffer_full);
 	assign cacheable_store_can_enqueue_without_drain =
-		cpu.valid && cpu_cacheable && cpu.wen && !store_buffer_full;
+		cpu.valid &&
+		cpu_cacheable &&
+		cpu.wen &&
+		!(WRITE_BACK && cache_hit) &&
+		!store_buffer_full;
 	assign cacheable_load_can_bypass_store_buffer =
 		cpu.valid &&
 		cpu_cacheable &&
@@ -195,8 +327,9 @@ module dcache #(
 	assign store_buffer_issue_valid =
 		state == Idle &&
 		store_buffer_count != '0 &&
-		!cacheable_store_can_enqueue_without_drain &&
-		!cacheable_load_can_bypass_store_buffer;
+		(flush_active ||
+		 (!cacheable_store_can_accept_without_drain &&
+		  !cacheable_load_can_bypass_store_buffer));
 	assign store_buffer_issue_fire = store_buffer_issue_valid && mem.ready;
 	assign store_buffer_full_after_issue =
 		store_buffer_full &&
@@ -208,13 +341,17 @@ module dcache #(
 
 	assign cpu.ready =
 		state == Idle &&
+		!flush_active &&
 		!rsp_valid_q &&
-		((cpu_cacheable && cpu.wen) ? !store_buffer_full_after_issue :
+		((cpu_cacheable && cpu.wen) ? ((WRITE_BACK && cache_hit) || !store_buffer_full_after_issue) :
 			(cacheable_load_can_bypass_store_buffer || store_buffer_empty));
+	assign flush_busy = WRITE_BACK && flush_active;
 
 	always_comb begin
 		cpu.rvalid = rsp_valid_q;
 		cpu.rdata = rsp_data_q;
+		cpu.fast_load_valid = fast_load_hit;
+		cpu.fast_load_data = data[fast_load_index][fast_load_word_offset];
 
 		mem.valid = 1'b0;
 		mem.addr = '0;
@@ -226,6 +363,9 @@ module dcache #(
 		mem.rl = 1'b0;
 		mem.amoop = AMOOp'(0);
 		mem.funct3 = 3'b011;
+		mem.fast_load_req = 1'b0;
+		mem.fast_load_addr = '0;
+		mem.fast_load_funct3 = 3'b011;
 		mem_low_priority = 1'b0;
 
 		unique case (state)
@@ -277,6 +417,18 @@ module dcache #(
 			BypassWait: begin
 			end
 
+			WritebackReq: begin
+				mem.valid = 1'b1;
+				mem.addr = writeback_line_addr + (Addr'(writeback_word) << 3);
+				mem.wen = 1'b1;
+				mem.wdata = data[writeback_index][writeback_word];
+				mem.wmask = '1;
+				mem.funct3 = 3'b011;
+			end
+
+			FlushScan: begin
+			end
+
 			LoadFillWait: begin
 			end
 
@@ -318,6 +470,13 @@ module dcache #(
 			fill_word_valid <= '0;
 			rsp_valid_q <= 1'b0;
 			rsp_data_q <= '0;
+			writeback_line_addr <= '0;
+			writeback_index <= '0;
+			writeback_word <= '0;
+			writeback_resume_bypass <= 1'b0;
+			writeback_resume_flush <= 1'b0;
+			flush_active <= 1'b0;
+			flush_index <= '0;
 			store_buffer_head <= '0;
 			store_buffer_tail <= '0;
 			store_buffer_count <= '0;
@@ -328,6 +487,10 @@ module dcache #(
 			perf_cacheable_req_count <= '0;
 			perf_hit_count <= '0;
 			perf_miss_count <= '0;
+			perf_load_hit_count <= '0;
+			perf_load_miss_count <= '0;
+			perf_store_hit_count <= '0;
+			perf_store_miss_count <= '0;
 			perf_uncached_count <= '0;
 			perf_bypass_count <= '0;
 			perf_write_through_count <= '0;
@@ -354,14 +517,56 @@ module dcache #(
 			perf_bypass_rsp_wait_cycle <= '0;
 			perf_store_drain_req_wait_cycle <= '0;
 			perf_store_drain_active_cycle <= '0;
+			perf_store_drain_urgent_active_cycle <= '0;
+			perf_store_drain_urgent_wait_cycle <= '0;
+			perf_store_drain_low_active_cycle <= '0;
+			perf_store_drain_low_wait_cycle <= '0;
+			perf_store_buffer_occ_empty_cycle <= '0;
+			perf_store_buffer_occ_one_cycle <= '0;
+			perf_store_buffer_occ_two_cycle <= '0;
+			perf_store_buffer_occ_almost_full_cycle <= '0;
+			perf_store_buffer_occ_full_cycle <= '0;
+			perf_store_combine_candidate_count <= '0;
+			perf_store_combine_tail_word_count <= '0;
+			perf_store_combine_tail_disjoint_count <= '0;
+			perf_store_combine_any_word_count <= '0;
+			perf_store_combine_any_line_count <= '0;
+			perf_response_cache_hit_load_count <= '0;
+			perf_response_fill_critical_count <= '0;
+			perf_response_bypass_load_count <= '0;
+			perf_response_bypass_amo_count <= '0;
+			perf_fast_load_hit_count <= '0;
+			perf_write_back_store_hit_count <= '0;
+			perf_write_back_evict_count <= '0;
+			perf_write_back_word_count <= '0;
+			perf_write_back_req_wait_cycle <= '0;
+			perf_wb_flush_clean_count <= '0;
+			perf_wb_flush_dirty_count <= '0;
+			perf_wb_flush_scan_cycle <= '0;
+			perf_wb_flush_dirty_line_count <= '0;
+			perf_wb_flush_word_count <= '0;
+			perf_wb_flush_req_wait_cycle <= '0;
 			for (int unsigned i = 0; i < LINE_COUNT; i++) begin
 				valid[i] <= 1'b0;
+				dirty[i] <= 1'b0;
 			end
 		end else begin
 			logic [STORE_BUFFER_COUNT_WIDTH-1:0] store_buffer_count_next;
 
 			store_buffer_count_next = store_buffer_count;
 			rsp_valid_q <= 1'b0;
+
+			if (store_buffer_count == '0) begin
+				perf_store_buffer_occ_empty_cycle <= perf_store_buffer_occ_empty_cycle + UInt64'(1);
+			end else if (store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH)) begin
+				perf_store_buffer_occ_full_cycle <= perf_store_buffer_occ_full_cycle + UInt64'(1);
+			end else if (store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(1)) begin
+				perf_store_buffer_occ_one_cycle <= perf_store_buffer_occ_one_cycle + UInt64'(1);
+			end else if (store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(2)) begin
+				perf_store_buffer_occ_two_cycle <= perf_store_buffer_occ_two_cycle + UInt64'(1);
+			end else begin
+				perf_store_buffer_occ_almost_full_cycle <= perf_store_buffer_occ_almost_full_cycle + UInt64'(1);
+			end
 
 			if (state == LoadFillReq || state == LoadFillWait) begin
 				perf_load_miss_stall_cycle <= perf_load_miss_stall_cycle + UInt64'(1);
@@ -381,10 +586,29 @@ module dcache #(
 			if (state == BypassWait && !mem.rvalid) begin
 				perf_bypass_rsp_wait_cycle <= perf_bypass_rsp_wait_cycle + UInt64'(1);
 			end
+			if (state == WritebackReq && !mem.ready) begin
+				perf_write_back_req_wait_cycle <= perf_write_back_req_wait_cycle + UInt64'(1);
+				if (writeback_resume_flush) begin
+					perf_wb_flush_req_wait_cycle <= perf_wb_flush_req_wait_cycle + UInt64'(1);
+				end
+			end
+			if (state == FlushScan) begin
+				perf_wb_flush_scan_cycle <= perf_wb_flush_scan_cycle + UInt64'(1);
+			end
 			if (store_buffer_issue_valid) begin
 				perf_store_drain_active_cycle <= perf_store_drain_active_cycle + UInt64'(1);
+				if (store_buffer_drain_urgent) begin
+					perf_store_drain_urgent_active_cycle <= perf_store_drain_urgent_active_cycle + UInt64'(1);
+				end else begin
+					perf_store_drain_low_active_cycle <= perf_store_drain_low_active_cycle + UInt64'(1);
+				end
 				if (!mem.ready) begin
 					perf_store_drain_req_wait_cycle <= perf_store_drain_req_wait_cycle + UInt64'(1);
+					if (store_buffer_drain_urgent) begin
+						perf_store_drain_urgent_wait_cycle <= perf_store_drain_urgent_wait_cycle + UInt64'(1);
+					end else begin
+						perf_store_drain_low_wait_cycle <= perf_store_drain_low_wait_cycle + UInt64'(1);
+					end
 				end
 			end
 			if (cpu.valid && !cpu.ready) begin
@@ -422,19 +646,50 @@ module dcache #(
 					perf_store_buffer_load_wait_count <= perf_store_buffer_load_wait_count + UInt64'(1);
 				end
 			end
+			if (cpu.fast_load_req && cpu.fast_load_valid) begin
+				perf_req_count <= perf_req_count + UInt64'(1);
+				perf_load_req_count <= perf_load_req_count + UInt64'(1);
+				perf_cacheable_req_count <= perf_cacheable_req_count + UInt64'(1);
+				perf_hit_count <= perf_hit_count + UInt64'(1);
+				perf_load_hit_count <= perf_load_hit_count + UInt64'(1);
+				perf_response_cache_hit_load_count <=
+					perf_response_cache_hit_load_count + UInt64'(1);
+				perf_fast_load_hit_count <= perf_fast_load_hit_count + UInt64'(1);
+			end
 
-			if (invalidate) begin
-				for (int unsigned i = 0; i < LINE_COUNT; i++) begin
-					valid[i] <= 1'b0;
-				end
+			if (invalidate && !flush_active) begin
 				fill_word_valid <= '0;
 				fill_allocate <= 1'b0;
 				perf_flush_count <= perf_flush_count + UInt64'(1);
+				if (WRITE_BACK) begin
+					if (dirty_any() || store_buffer_count_next != '0) begin
+						flush_active <= 1'b1;
+						flush_index <= '0;
+						writeback_resume_bypass <= 1'b0;
+						writeback_resume_flush <= 1'b0;
+						perf_wb_flush_dirty_count <= perf_wb_flush_dirty_count + UInt64'(1);
+						if (state != WritebackReq && state != BypassReq && state != BypassWait) begin
+							state <= Idle;
+						end
+					end else begin
+						perf_wb_flush_clean_count <= perf_wb_flush_clean_count + UInt64'(1);
+					end
+				end else begin
+					for (int unsigned i = 0; i < LINE_COUNT; i++) begin
+						valid[i] <= 1'b0;
+						dirty[i] <= 1'b0;
+					end
+				end
 			end
 
+			if (!invalidate) begin
 			unique case (state)
 				Idle: begin
-					if (cpu.valid && cpu.ready) begin
+					if (flush_active) begin
+						if (store_buffer_count_next == '0) begin
+							state <= FlushScan;
+						end
+					end else if (cpu.valid && cpu.ready) begin
 						perf_req_count <= perf_req_count + UInt64'(1);
 						if (cpu.wen) begin
 							perf_store_req_count <= perf_store_req_count + UInt64'(1);
@@ -452,8 +707,13 @@ module dcache #(
 						saved_amoop <= cpu.amoop;
 						saved_funct3 <= cpu.funct3;
 
-						if (cpu.is_amo && cpu_ram_access && valid[cpu_index] && tags[cpu_index] == cpu_tag) begin
+						if (cpu.is_amo &&
+							cpu_ram_access &&
+							valid[cpu_index] &&
+							tags[cpu_index] == cpu_tag &&
+							!(WRITE_BACK && dirty[cpu_index])) begin
 							valid[cpu_index] <= 1'b0;
+							dirty[cpu_index] <= 1'b0;
 						end
 
 						if (cpu_cacheable) begin
@@ -462,13 +722,30 @@ module dcache #(
 							perf_uncached_count <= perf_uncached_count + UInt64'(1);
 						end
 
-						if (cpu_cacheable && !cpu.wen && cache_hit) begin
+						if (WRITE_BACK &&
+							cpu.is_amo &&
+							cpu_ram_access &&
+							valid[cpu_index] &&
+							tags[cpu_index] == cpu_tag &&
+							dirty[cpu_index]) begin
+							perf_bypass_count <= perf_bypass_count + UInt64'(1);
+							writeback_line_addr <= cpu_victim_line_addr;
+							writeback_index <= cpu_index;
+							writeback_word <= '0;
+							writeback_resume_bypass <= 1'b1;
+							perf_write_back_evict_count <= perf_write_back_evict_count + UInt64'(1);
+							state <= WritebackReq;
+						end else if (cpu_cacheable && !cpu.wen && cache_hit) begin
 							rsp_data_q <= data[cpu_index][cpu_word_offset];
 							rsp_valid_q <= 1'b1;
 							perf_hit_count <= perf_hit_count + UInt64'(1);
+							perf_load_hit_count <= perf_load_hit_count + UInt64'(1);
+							perf_response_cache_hit_load_count <=
+								perf_response_cache_hit_load_count + UInt64'(1);
 							state <= Response;
 						end else if (cpu_cacheable && !cpu.wen) begin
 							perf_miss_count <= perf_miss_count + UInt64'(1);
+							perf_load_miss_count <= perf_load_miss_count + UInt64'(1);
 							fill_line_addr <= cpu_line_addr;
 							fill_index <= cpu_index;
 							fill_tag <= cpu_tag;
@@ -477,25 +754,63 @@ module dcache #(
 							fill_count <= '0;
 							fill_word_valid <= '0;
 							fill_allocate <= 1'b1;
-							state <= LoadFillReq;
+							if (dirty_victim_hit) begin
+								writeback_line_addr <= cpu_victim_line_addr;
+								writeback_index <= cpu_index;
+								writeback_word <= '0;
+								writeback_resume_bypass <= 1'b0;
+								perf_write_back_evict_count <= perf_write_back_evict_count + UInt64'(1);
+								state <= WritebackReq;
+							end else begin
+								state <= LoadFillReq;
+							end
 						end else if (cpu_cacheable && cpu.wen) begin
+							perf_store_combine_candidate_count <=
+								perf_store_combine_candidate_count + UInt64'(1);
+							if (store_buffer_tail_same_word) begin
+								perf_store_combine_tail_word_count <=
+									perf_store_combine_tail_word_count + UInt64'(1);
+								if (store_buffer_tail_mask_disjoint) begin
+									perf_store_combine_tail_disjoint_count <=
+										perf_store_combine_tail_disjoint_count + UInt64'(1);
+								end
+							end
+							if (store_buffer_any_same_word) begin
+								perf_store_combine_any_word_count <=
+									perf_store_combine_any_word_count + UInt64'(1);
+							end
+							if (store_buffer_any_same_line) begin
+								perf_store_combine_any_line_count <=
+									perf_store_combine_any_line_count + UInt64'(1);
+							end
 							if (cache_hit) begin
 								perf_hit_count <= perf_hit_count + UInt64'(1);
+								perf_store_hit_count <= perf_store_hit_count + UInt64'(1);
 								data[cpu_index][cpu_word_offset] <= merge_word(
 									data[cpu_index][cpu_word_offset],
 									cpu.wdata,
 									cpu.wmask);
+								if (WRITE_BACK) begin
+									dirty[cpu_index] <= 1'b1;
+									perf_write_back_store_hit_count <=
+										perf_write_back_store_hit_count + UInt64'(1);
+								end
 							end else begin
 								perf_miss_count <= perf_miss_count + UInt64'(1);
+								perf_store_miss_count <= perf_store_miss_count + UInt64'(1);
 							end
-							perf_write_through_count <= perf_write_through_count + UInt64'(1);
-							store_buffer_addr[store_buffer_tail] <= cpu.addr;
-							store_buffer_wdata[store_buffer_tail] <= cpu.wdata;
-							store_buffer_wmask[store_buffer_tail] <= cpu.wmask;
-							store_buffer_funct3[store_buffer_tail] <= cpu.funct3;
-							store_buffer_tail <= store_buffer_tail + STORE_BUFFER_INDEX_WIDTH'(1);
-							store_buffer_count_next = store_buffer_count_next + STORE_BUFFER_COUNT_WIDTH'(1);
-							perf_store_buffer_enq_count <= perf_store_buffer_enq_count + UInt64'(1);
+							if (!(WRITE_BACK && cache_hit)) begin
+								perf_write_through_count <= perf_write_through_count + UInt64'(1);
+								store_buffer_addr[store_buffer_tail] <= cpu.addr;
+								store_buffer_wdata[store_buffer_tail] <= cpu.wdata;
+								store_buffer_wmask[store_buffer_tail] <= cpu.wmask;
+								store_buffer_funct3[store_buffer_tail] <= cpu.funct3;
+								store_buffer_tail <= store_buffer_tail + STORE_BUFFER_INDEX_WIDTH'(1);
+								store_buffer_count_next =
+									store_buffer_count_next + STORE_BUFFER_COUNT_WIDTH'(1);
+								perf_store_buffer_enq_count <=
+									perf_store_buffer_enq_count + UInt64'(1);
+							end
 							state <= Idle;
 						end else begin
 							perf_bypass_count <= perf_bypass_count + UInt64'(1);
@@ -524,11 +839,14 @@ module dcache #(
 						if (fill_next_word == fill_response_word) begin
 							rsp_data_q <= mem.rdata;
 							rsp_valid_q <= 1'b1;
+							perf_response_fill_critical_count <=
+								perf_response_fill_critical_count + UInt64'(1);
 						end
 
 						if (fill_count == FILL_COUNT_WIDTH'(WORDS_PER_LINE - 1)) begin
 							if (fill_allocate) begin
 								valid[fill_index] <= 1'b1;
+								dirty[fill_index] <= 1'b0;
 								tags[fill_index] <= fill_tag;
 								for (int unsigned i = 0; i < WORDS_PER_LINE; i++) begin
 									data[fill_index][i] <= (WORD_OFFSET_WIDTH'(i) == fill_next_word) ? mem.rdata : fill_data[i];
@@ -541,6 +859,75 @@ module dcache #(
 							fill_count <= fill_count + FILL_COUNT_WIDTH'(1);
 							state <= LoadFillReq;
 						end
+					end
+				end
+
+				WritebackReq: begin
+					if (mem.ready) begin
+							perf_mem_req_count <= perf_mem_req_count + UInt64'(1);
+							perf_write_back_word_count <= perf_write_back_word_count + UInt64'(1);
+							if (writeback_resume_flush) begin
+								perf_wb_flush_word_count <= perf_wb_flush_word_count + UInt64'(1);
+							end
+							if (writeback_word == WORD_OFFSET_WIDTH'(WORDS_PER_LINE - 1)) begin
+							dirty[writeback_index] <= 1'b0;
+							if (writeback_resume_flush) begin
+								valid[writeback_index] <= 1'b0;
+								writeback_resume_flush <= 1'b0;
+								if (writeback_index == INDEX_WIDTH'(LINE_COUNT - 1)) begin
+									flush_active <= 1'b0;
+									state <= Idle;
+								end else begin
+									flush_index <= writeback_index + INDEX_WIDTH'(1);
+									state <= FlushScan;
+								end
+							end else if (writeback_resume_bypass) begin
+								valid[writeback_index] <= 1'b0;
+								writeback_resume_bypass <= 1'b0;
+								state <= BypassReq;
+							end else begin
+								state <= LoadFillReq;
+							end
+						end else begin
+							writeback_word <= writeback_word + WORD_OFFSET_WIDTH'(1);
+						end
+					end
+				end
+
+				FlushScan: begin
+					if (!flush_active) begin
+						state <= Idle;
+					end else if (flush_index == INDEX_WIDTH'(LINE_COUNT - 1)) begin
+						if (valid[flush_index] && dirty[flush_index]) begin
+							writeback_line_addr <=
+								Addr'({tags[flush_index], flush_index, {LINE_OFFSET_WIDTH{1'b0}}});
+							writeback_index <= flush_index;
+							writeback_word <= '0;
+							writeback_resume_bypass <= 1'b0;
+							writeback_resume_flush <= 1'b1;
+							perf_write_back_evict_count <= perf_write_back_evict_count + UInt64'(1);
+							perf_wb_flush_dirty_line_count <= perf_wb_flush_dirty_line_count + UInt64'(1);
+							state <= WritebackReq;
+						end else begin
+							valid[flush_index] <= 1'b0;
+							dirty[flush_index] <= 1'b0;
+							flush_active <= 1'b0;
+							state <= Idle;
+						end
+					end else if (valid[flush_index] && dirty[flush_index]) begin
+						writeback_line_addr <=
+							Addr'({tags[flush_index], flush_index, {LINE_OFFSET_WIDTH{1'b0}}});
+						writeback_index <= flush_index;
+						writeback_word <= '0;
+						writeback_resume_bypass <= 1'b0;
+						writeback_resume_flush <= 1'b1;
+						perf_write_back_evict_count <= perf_write_back_evict_count + UInt64'(1);
+						perf_wb_flush_dirty_line_count <= perf_wb_flush_dirty_line_count + UInt64'(1);
+						state <= WritebackReq;
+					end else begin
+						valid[flush_index] <= 1'b0;
+						dirty[flush_index] <= 1'b0;
+						flush_index <= flush_index + INDEX_WIDTH'(1);
 					end
 				end
 
@@ -557,6 +944,13 @@ module dcache #(
 						if (!saved_wen || saved_is_amo) begin
 							rsp_data_q <= mem.rdata;
 							rsp_valid_q <= 1'b1;
+							if (saved_is_amo) begin
+								perf_response_bypass_amo_count <=
+									perf_response_bypass_amo_count + UInt64'(1);
+							end else begin
+								perf_response_bypass_load_count <=
+									perf_response_bypass_load_count + UInt64'(1);
+							end
 							state <= Response;
 						end else begin
 							state <= Idle;
@@ -570,6 +964,7 @@ module dcache #(
 
 				default: state <= Idle;
 			endcase
+			end
 
 			store_buffer_count <= store_buffer_count_next;
 		end
@@ -594,6 +989,24 @@ module dcache #(
 				perf_write_through_count,
 				LINE_COUNT,
 				LINE_BYTES);
+			$display("[PERF-DCACHE-WB] enabled=%0d store_hit=%0d evict=%0d words=%0d req_wait=%0d",
+				WRITE_BACK,
+				perf_write_back_store_hit_count,
+				perf_write_back_evict_count,
+				perf_write_back_word_count,
+				perf_write_back_req_wait_cycle);
+			$display("[PERF-DCACHE-WB-FLUSH] clean=%0d dirty=%0d scan=%0d dirty_lines=%0d words=%0d req_wait=%0d",
+				perf_wb_flush_clean_count,
+				perf_wb_flush_dirty_count,
+				perf_wb_flush_scan_cycle,
+				perf_wb_flush_dirty_line_count,
+				perf_wb_flush_word_count,
+				perf_wb_flush_req_wait_cycle);
+			$display("[PERF-DCACHE-MIX] load_hit=%0d load_miss=%0d store_hit=%0d store_miss=%0d",
+				perf_load_hit_count,
+				perf_load_miss_count,
+				perf_store_hit_count,
+				perf_store_miss_count);
 			$display("[PERF-STOREBUF] enq=%0d drain=%0d full_stall=%0d depth=%0d pending=%0d outstanding=%0d",
 				perf_store_buffer_enq_count,
 				perf_store_buffer_drain_count,
@@ -601,6 +1014,23 @@ module dcache #(
 				STORE_BUFFER_DEPTH,
 				store_buffer_count,
 				1'b0);
+			$display("[PERF-STOREBUF-OCC] empty=%0d one=%0d two=%0d almost_full=%0d full=%0d",
+				perf_store_buffer_occ_empty_cycle,
+				perf_store_buffer_occ_one_cycle,
+				perf_store_buffer_occ_two_cycle,
+				perf_store_buffer_occ_almost_full_cycle,
+				perf_store_buffer_occ_full_cycle);
+			$display("[PERF-STOREBUF-DRAIN] urgent_active=%0d urgent_wait=%0d low_active=%0d low_wait=%0d",
+				perf_store_drain_urgent_active_cycle,
+				perf_store_drain_urgent_wait_cycle,
+				perf_store_drain_low_active_cycle,
+				perf_store_drain_low_wait_cycle);
+			$display("[PERF-STOREBUF-COMBINE] candidate=%0d tail_word=%0d tail_disjoint=%0d any_word=%0d any_line=%0d",
+				perf_store_combine_candidate_count,
+				perf_store_combine_tail_word_count,
+				perf_store_combine_tail_disjoint_count,
+				perf_store_combine_any_word_count,
+				perf_store_combine_any_line_count);
 			$display("[PERF-STOREBUF-LOAD] bypass=%0d wait=%0d",
 				perf_store_buffer_load_bypass_count,
 				perf_store_buffer_load_wait_count);
@@ -624,6 +1054,13 @@ module dcache #(
 				perf_bypass_rsp_wait_cycle,
 				perf_store_drain_active_cycle,
 				perf_store_drain_req_wait_cycle);
+			$display("[PERF-DCACHE-RSP] hit_load=%0d fill_critical=%0d bypass_load=%0d bypass_amo=%0d",
+				perf_response_cache_hit_load_count,
+				perf_response_fill_critical_count,
+				perf_response_bypass_load_count,
+				perf_response_bypass_amo_count);
+			$display("[PERF-DCACHE-FAST] hit_load=%0d",
+				perf_fast_load_hit_count);
 		end
 	end
 

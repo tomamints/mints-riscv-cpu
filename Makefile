@@ -14,6 +14,10 @@ RISCV_GCC ?= $(RISCV_PREFIX)gcc
 RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy
 RISCV_CFLAGS ?= -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany -nostdlib -nostartfiles
 DTC ?= dtc
+DCACHE_LINE_COUNT ?= 128
+DCACHE_STORE_BUFFER_DEPTH ?= 4
+DCACHE_WRITE_BACK ?= 0
+VERILATOR_DEFINES = -DSVCPU_DCACHE_LINE_COUNT=$(DCACHE_LINE_COUNT) -DSVCPU_DCACHE_STORE_BUFFER_DEPTH=$(DCACHE_STORE_BUFFER_DEPTH) -DSVCPU_DCACHE_WRITE_BACK=$(DCACHE_WRITE_BACK)
 
 # Restrict environments may lack a working xargs, provide our shim.
 export PATH := $(abspath tools):$(PATH)
@@ -437,25 +441,25 @@ clean:
 	rm -rf $(LOCKSTEP_OBJ_DIR)
 	rm -rf build
 sim:
-	verilator --cc $(VERILATOR_FLAGS) -f $(FILELIST) --exe $(TB_PROGRAM) --top-module $(TOP_MODULE) --Mdir $(OBJ_DIR)
+	verilator --cc $(VERILATOR_FLAGS) $(VERILATOR_DEFINES) -f $(FILELIST) --exe $(TB_PROGRAM) --top-module $(TOP_MODULE) --Mdir $(OBJ_DIR)
 	make -C $(OBJ_DIR) -f V$(TOP_MODULE).mk
 	mv $(OBJ_DIR)/V$(TOP_MODULE) $(OBJ_DIR)/$(SIM_NAME)
 
 build:
-	$(VERILATOR) --cc -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(OBJ_DIR)
+	$(VERILATOR) --cc $(VERILATOR_DEFINES) -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(OBJ_DIR)
 	make -C $(OBJ_DIR) -f V$(TOP).mk
 	mv $(OBJ_DIR)/V$(TOP) $(OBJ_DIR)/$(SIM_NAME)
 	@echo "✅ Build complete. Run simulation with: make run"
 	@echo "🧹 Cleaned build files."
 
 build-input:
-	$(VERILATOR) --cc -DENABLE_DEBUG_INPUT -CFLAGS -DENABLE_DEBUG_INPUT -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(INPUT_OBJ_DIR)
+	$(VERILATOR) --cc $(VERILATOR_DEFINES) -DENABLE_DEBUG_INPUT -CFLAGS -DENABLE_DEBUG_INPUT -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(INPUT_OBJ_DIR)
 	make -C $(INPUT_OBJ_DIR) -f V$(TOP).mk
 	mv $(INPUT_OBJ_DIR)/V$(TOP) $(INPUT_OBJ_DIR)/$(SIM_NAME)
 	@echo "✅ Debug-input build complete. Run with: make test-input"
 
 build-trace:
-	$(VERILATOR) --trace --cc -CFLAGS -DTRACE -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(TRACE_OBJ_DIR)
+	$(VERILATOR) --trace --cc $(VERILATOR_DEFINES) -CFLAGS -DTRACE -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(TRACE_OBJ_DIR)
 	make -C $(TRACE_OBJ_DIR) -f V$(TOP).mk
 	mv $(TRACE_OBJ_DIR)/V$(TOP) $(TRACE_OBJ_DIR)/$(SIM_NAME)
 	@echo "✅ Trace build complete. Run with: make trace-output or make trace-dma"
@@ -464,6 +468,7 @@ build-trace:
 build-lockstep:
 	test -f "$(WHISPER_LIB)" || (echo "Missing Whisper library: $(WHISPER_LIB)"; exit 1)
 	$(VERILATOR) --cc \
+		$(VERILATOR_DEFINES) \
 		-DSVCPU_WHISPER_LOCKSTEP \
 		-CFLAGS "-DSVCPU_WHISPER_LOCKSTEP -std=c++20 $(LOCKSTEP_CPPFLAGS)" \
 		-LDFLAGS "$(LOCKSTEP_LDFLAGS)" \

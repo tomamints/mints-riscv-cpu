@@ -192,6 +192,43 @@ Phase 9.4 RAS:
   [PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8
   [PERF] cycles=100000000 retired=36690014 cpi_x1000=2725 ipc_x1000=366
   [PERF] primary commit=36690014 no_commit=63309986 mem=25359068 muldiv=3264316 data_hazard=804410 ifetch=14451685 other=19430507
+
+Phase 10.1 MEM translation->access fast path:
+  [PERF] cycles=100000000 retired=38038242 cpi_x1000=2628 ipc_x1000=380
+  [PERF] primary commit=38038242 no_commit=61961758 mem=19229826 muldiv=3294097 data_hazard=751781 ifetch=16592212 other=22093842
+  [PERF-MEMU-FIXED] translation_done=8454789 access_accept=2258666 response_done=6421060 split_accept=50351 split_response_done=25176
+
+Phase 10.2 passive D-cache hit-load sideband:
+  [PERF-DCACHE-FAST] hit_load=4986113
+  [PERF-MEMU-FAST] hit_load=4986113
+  [PERF-MEMU-FIXED] translation_done=8643157 access_accept=2264778 response_done=1567104 split_accept=50351 split_response_done=25176
+  [PERF] cycles=100000000 retired=38719295 cpi_x1000=2582 ipc_x1000=387
+  Whisper BusyBox autotest pass
+
+Phase 10.3 store/write-through traffic instrumentation:
+  [PERF-DCACHE-MIX] load_hit=... load_miss=... store_hit=... store_miss=...
+  [PERF-STOREBUF-OCC] empty=... one=... two=... almost_full=... full=...
+  [PERF-STOREBUF-DRAIN] urgent_active=... urgent_wait=... low_active=... low_wait=...
+  [PERF-STOREBUF-COMBINE] candidate=... tail_word=... tail_disjoint=... any_word=... any_line=...
+  Short +PERF_SUMMARY smoke passed
+  DCACHE_STORE_BUFFER_DEPTH Make variable added for 4 vs 8 A/B testing
+  DCACHE_LINE_COUNT Make variable added for 128 vs 256 A/B testing
+
+Phase 10.4 D-cache capacity A/B:
+  DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8
+  [PERF-DCACHE] hit_rate_x1000=816 lines=512
+  [PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369
+  [PERF-DSTALL] load_miss=2937174
+  [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+
+Phase 10.5 experimental write-back D-cache:
+  DCACHE_WRITE_BACK Make variable added
+  Default remains write-through
+  Initial write-back scope:
+    store hit -> dirty cache line, no store buffer enqueue
+    store miss -> no-write-allocate write-through
+    dirty victim load miss -> writeback before refill
+    dirty hit AMO -> writeback + invalidate before AMO bypass
 ```
 
 Current bottleneck view:
@@ -221,7 +258,12 @@ Recommended next steps:
 ```text
 1. Keep the BusyBox lockstep PASS as the correctness gate.
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
-3. Run Whisper lockstep after predictor changes.
-4. Enter Phase 10 by separating MEM/LSU fixed latency from true wait time.
-5. Revisit D-cache structure only after stall counters show capacity/conflict pressure.
+3. Run Whisper lockstep after frontend or LSU fast-path changes.
+4. Run a 100M Phase 10.3 summary and record store/write-through pressure.
+5. Run the same 100M summary with `DCACHE_STORE_BUFFER_DEPTH=8`.
+6. If depth 8 only removes full_stall, treat write-through bandwidth as the main issue.
+7. Use `[PERF-STOREBUF-COMBINE]` to decide whether tail write combining is worthwhile.
+8. Compare Phase 10.5 with `DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=1`.
+9. Check `[PERF-DCACHE-WB]`, write_through reduction, store buffer drain pressure, and CPI.
+10. Run Whisper lockstep after write-back smoke/perf passes.
 ```

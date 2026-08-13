@@ -13,6 +13,11 @@ interface core_data_if;
     logic [(MEMBUS_DATA_WIDTH/8)-1:0] wmask;
     logic                       rvalid;
     logic [MEMBUS_DATA_WIDTH-1:0]     rdata;
+    logic                       fast_load_req;
+    logic [XLEN-1:0]            fast_load_addr;
+    logic [2:0]                 fast_load_funct3;
+    logic                       fast_load_valid;
+    logic [MEMBUS_DATA_WIDTH-1:0]     fast_load_data;
 
     logic                       is_amo;
     logic                       aq;
@@ -39,6 +44,11 @@ interface core_data_if;
         output wmask,
         input  rvalid,
         input  rdata,
+        output fast_load_req,
+        output fast_load_addr,
+        output fast_load_funct3,
+        input  fast_load_valid,
+        input  fast_load_data,
         output is_amo,
         output aq,
         output rl,
@@ -69,6 +79,11 @@ interface core_data_if;
         input  wmask,
         output rvalid,
         output rdata,
+        input  fast_load_req,
+        input  fast_load_addr,
+        input  fast_load_funct3,
+        output fast_load_valid,
+        output fast_load_data,
         input  is_amo,
         input  aq,
         input  rl,
@@ -93,6 +108,11 @@ interface core_data_if;
         input wmask,
         input rvalid,
         input rdata,
+        input fast_load_req,
+        input fast_load_addr,
+        input fast_load_funct3,
+        input fast_load_valid,
+        input fast_load_data,
         input is_amo,
         input aq,
         input rl,
