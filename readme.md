@@ -1,6 +1,6 @@
 # MiNTs-CPU
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
 
 **MiNTs-CPU** is a SystemVerilog RV64IMAC in-order RISC-V CPU/SoC capable of
 booting OpenSBI, Linux 6.12, and a BusyBox initramfs in Verilator.
@@ -13,9 +13,11 @@ optimization.
 - Reference: https://cpu.kanataso.net/
 - Current status: [Docs/CURRENT_STATUS.md](Docs/CURRENT_STATUS.md)
 - Linux setup: [Docs/LINUX_SETUP.md](Docs/LINUX_SETUP.md)
+- Linux baseline: [Docs/LINUX_BASELINE.md](Docs/LINUX_BASELINE.md)
 - Test status: [Docs/TEST_STATUS.md](Docs/TEST_STATUS.md)
 - Performance counters: [Docs/PERFORMANCE_COUNTERS.md](Docs/PERFORMANCE_COUNTERS.md)
 - Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
+- RTL layout: [Docs/RTL_LAYOUT.md](Docs/RTL_LAYOUT.md)
 - Third-party notices: [NOTICE](NOTICE)
 
 ## Highlights
@@ -113,8 +115,15 @@ tools/
   build-*.sh              OpenSBI/Linux/BusyBox helper scripts
   whisper_lockstep/       Whisper reference integration
 
+tb/
+  tb_verilator.cpp        Verilator harness
+  unit/                   unit-level testbenches
+
+third_party/patches/
+  *.patch                 small reproducibility patches for external tools
+
 Docs/
-  *.md                    current status, setup, roadmap, bring-up notes
+  *.md                    public project documentation
 ```
 
 ## Build And Run
@@ -222,6 +231,16 @@ verification. Whisper is licensed under the Apache License, Version 2.0.
 The local `whisper/` checkout keeps Whisper's own `LICENSE` and
 `Third-Party_Notices.txt`. See [NOTICE](NOTICE) for the project-level
 third-party attribution note.
+
+The `whisper/` checkout itself is intentionally not tracked in this
+repository. For lockstep reproduction, apply the MiNTs-CPU compatibility patch
+after cloning Whisper:
+
+```bash
+git clone https://github.com/tenstorrent/whisper.git whisper
+git -C whisper checkout cc36ae56b31897d20ba115ba7c086ae35664d8b4
+git -C whisper apply ../third_party/patches/whisper-mints-lockstep.patch
+```
 
 Useful custom tests:
 

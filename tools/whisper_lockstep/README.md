@@ -1,5 +1,7 @@
 # Whisper Lockstep
 
+Last updated: 2026-08-14
+
 This directory contains the Whisper reference wrapper used by the Verilator
 lockstep build.
 

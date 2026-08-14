@@ -4,7 +4,7 @@
 
 PROJECT     = core
 TOP_MODULE  = core_top
-TB_PROGRAM  = src/tb_verilator.cpp
+TB_PROGRAM  = tb/tb_verilator.cpp
 
 # ツール
 VERILATOR = verilator
@@ -58,7 +58,7 @@ OPENSBI_ELF ?= build/external/opensbi/build/platform/generic/firmware/fw_jump.el
 TOP       = core_top
 
 # テストベンチ (C++)
-TB        = $(SRC_DIR)/tb_verilator.cpp
+TB        = tb/tb_verilator.cpp
 
 # ソースリスト
 FILELIST  = core.f

@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
 
 This document is the current high-level status of **MiNTs-CPU**.
 

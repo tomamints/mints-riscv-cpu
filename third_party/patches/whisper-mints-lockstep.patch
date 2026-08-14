@@ -1,0 +1,46 @@
+diff --git a/Hart.cpp b/Hart.cpp
+index 54847d87..38a5e7f0 100644
+--- a/Hart.cpp
++++ b/Hart.cpp
+@@ -285,8 +285,7 @@ Hart<URV>::tieCsrs()
+     }
+   else
+     {
+-      virtMem_.setSupportedModes({VirtMem::Mode::Bare, VirtMem::Mode::Sv39,
+-	  VirtMem::Mode::Sv48, VirtMem::Mode::Sv57 });
++      virtMem_.setSupportedModes({VirtMem::Mode::Bare, VirtMem::Mode::Sv39 });
+ 
+       csRegs_.findCsr(CsrNumber::MINSTRET)->tie(&retiredInsts_);
+       csRegs_.findCsr(CsrNumber::MCYCLE)->tie(&cycleCount_);
+@@ -1905,6 +1904,15 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
+   };
+ 
+   bool translate = isRvs() and pm != PM::Machine;
++
++  // LOCKSTEP: Match the RTL memunit policy.
++  // Misaligned translated accesses are supported only when they stay within
++  // one 4-KiB page. A cross-page misaligned load traps instead of translating
++  // and accessing the second page.
++  if (misal and translate and
++      virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2))
++    return ExceptionCause::LOAD_ADDR_MISAL;
++
+   if (translate)
+     {
+       if (auto cause = virtMem_.translateForLoad(va1, pm, virt, gaddr1, addr1);
+@@ -12673,6 +12681,15 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
+   };
+ 
+   bool translate = isRvs() and pm != PM::Machine;
++
++  // LOCKSTEP: Match the RTL memunit policy.
++  // Misaligned translated accesses are supported only when they stay within
++  // one 4-KiB page. A cross-page misaligned store traps instead of translating
++  // and accessing the second page.
++  if (misal and translate and
++      virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2))
++    return ExceptionCause::STORE_ADDR_MISAL;
++
+   if (translate)
+     {
+       if (auto cause = virtMem_.translateForStore(va1, pm, virt, gaddr1, addr1);
