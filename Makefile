@@ -9,7 +9,7 @@ TB_PROGRAM  = src/tb_verilator.cpp
 # ツール
 VERILATOR = verilator
 PYTHON ?= python3
-RISCV_PREFIX ?= /Users/shiraitouma/riscv/bin/riscv64-unknown-elf-
+RISCV_PREFIX ?= riscv64-unknown-elf-
 RISCV_GCC ?= $(RISCV_PREFIX)gcc
 RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy
 RISCV_CFLAGS ?= -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany -nostdlib -nostartfiles

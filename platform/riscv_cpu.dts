@@ -3,7 +3,7 @@
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
-	compatible = "mints,cpu", "shiraitouma,risc-v-cpu";
+	compatible = "mints,cpu", "mints,risc-v-cpu";
 	model = "MiNTs-CPU";
 
 	chosen {

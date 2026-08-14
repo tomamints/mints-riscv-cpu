@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-: "${RISCV_PREFIX:=/Users/shiraitouma/riscv/bin/riscv64-unknown-elf-}"
+: "${RISCV_PREFIX:=riscv64-unknown-elf-}"
 : "${LINUX_SRC:=$repo_root/build/linux-src}"
 : "${OUT_DIR:=$repo_root/build/linux-user-init}"
 : "${INIT_SRC:=$repo_root/platform/linux_user_init.S}"

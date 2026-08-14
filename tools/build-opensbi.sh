@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 : "${OPENSBI_SRC:=$repo_root/build/external/opensbi}"
-: "${CROSS_COMPILE:=/Users/shiraitouma/riscv/bin/riscv64-unknown-elf-}"
+: "${CROSS_COMPILE:=riscv64-unknown-elf-}"
 
 wrapper_dir="$repo_root/build/toolchain-wrapper"
 mkdir -p "$wrapper_dir"
