@@ -1,6 +1,6 @@
 # Roadmap
 
-Last updated: 2026-08-14
+Last updated: 2026-08-18
 
 This roadmap describes the public development direction of MiNTs-CPU.
 
@@ -55,26 +55,33 @@ Representative stable checkpoint:
 - document stable commands and known-good configurations
 - keep third-party Whisper changes as a small patch
 
-### 2. Memory System
+### 2. Benchmarking and Reference Comparisons
+
+- add controlled microbenchmarks before making cross-core claims
+- use CPI-stack style summaries instead of a single CPI number
+- keep external core comparisons tied to reproducible workloads and settings
+- separate simulation CPI from FPGA frequency and implementation cost
+
+### 3. Memory System
 
 - continue write-through stable baseline maintenance
 - profile write-back mode separately
 - investigate PTW/D-cache coherence before making write-back stable
 - consider store-buffer combining or larger/better store drain policy
 
-### 3. Verification
+### 4. Verification
 
 - keep Whisper lockstep as the main correctness gate
 - add smaller deterministic regression tests for cache and LSU corner cases
 - preserve BusyBox autotest as the end-to-end Linux gate
 
-### 4. Benchmarks
+### 5. Benchmarks
 
 - add CoreMark or Embench once correctness remains stable
 - keep boot-window performance counters for microarchitectural A/B tests
 - separate simulation CPI from FPGA frequency results
 
-### 5. FPGA Bring-up
+### 6. FPGA Bring-up
 
 - synthesize the current stable configuration
 - check timing for DTLB/D-cache/branch-predictor paths

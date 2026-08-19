@@ -5,6 +5,7 @@ result/
 .log
 results/
 results-*/
+local/
 build/
 *.hex
 *.elf
@@ -25,6 +26,7 @@ fwuart-16550/
 !core/test/
 core/test/*
 !core/test/muldiv_string_size.c
+!core/test/mints_counter.c
 !core/test/plic_seip.c
 !core/test/plic_uart_irq.c
 !core/test/uart_input.c

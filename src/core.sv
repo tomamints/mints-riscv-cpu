@@ -1498,7 +1498,8 @@ module core (
 	always_ff @(posedge clk) begin
 		if ($test$plusargs("TRACE_RETIRE") && architectural_retire) begin
 			$display(
-				"[RETIRE] order=%0d pc=%016h inst=%08h priv=%0d rd_we=%0b rd=%0d rd_data=%016h mem_valid=%0b mem_write=%0b mem_addr=%016h mem_mask=%02h mem_data=%016h",
+				"[RETIRE] cycle=%0d order=%0d pc=%016h inst=%08h priv=%0d rd_we=%0b rd=%0d rd_data=%016h mem_valid=%0b mem_write=%0b mem_addr=%016h mem_mask=%02h mem_data=%016h",
+				debug_cycle,
 				retire_order + 64'd1,
 				wbs_pc,
 				wbs_inst_bits,

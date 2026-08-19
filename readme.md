@@ -1,6 +1,6 @@
 # MiNTs-CPU
 
-Last updated: 2026-08-14
+Last updated: 2026-08-18
 
 **MiNTs-CPU** is a SystemVerilog RV64IMAC in-order RISC-V CPU/SoC capable of
 booting OpenSBI, Linux 6.12, and a BusyBox initramfs in Verilator.

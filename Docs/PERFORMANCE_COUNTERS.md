@@ -1,6 +1,6 @@
 # Performance Counters
 
-Last updated: 2026-08-14
+Last updated: 2026-08-18
 
 MiNTs-CPU exposes simulation-only performance counters through the
 `+PERF_SUMMARY` Verilator plusarg. They are intended for comparing RTL changes
@@ -82,3 +82,24 @@ DCACHE_WRITE_BACK=0
 - Whisper lockstep runtime is not a CPU performance metric.
 - Performance numbers are Verilator simulation checkpoints, not FPGA or silicon
   frequency results.
+
+## CPI Stack Direction
+
+The current counter groups are intended to support CPI-stack summaries across
+workloads:
+
+```text
+ideal scalar in-order CPI
++ branch/control
++ I-cache/fetch
++ D-cache/load
++ store path
++ TLB/PTW
++ memory arbitration
++ uncached/MMIO
++ other
+= total measured CPI
+```
+
+This format keeps optimization decisions tied to measured stall sources rather
+than raw event counts.
