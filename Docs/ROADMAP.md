@@ -28,7 +28,7 @@ DCACHE_WRITE_BACK=0
 Representative stable checkpoint:
 
 ```text
-100M cycles, CPI ~= 2.483, IPC ~= 0.402
+100M cycles, CPI ~= 2.393, IPC ~= 0.417
 ```
 
 ## Completed Milestones

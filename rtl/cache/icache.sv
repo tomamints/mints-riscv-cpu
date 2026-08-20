@@ -120,6 +120,7 @@ module icache #(
 		!invalidate &&
 		(
 			(state == Idle) ||
+			(state == Response && rsp_ready) ||
 			(
 				(state == FillReq || state == FillWait) &&
 				fill_hit &&
@@ -336,7 +337,38 @@ module icache #(
 					end
 
 					Response: begin
-						if (!rsp_valid || rsp_ready) begin
+						if (req_valid && req_ready) begin
+							perf_req_count <= perf_req_count + UInt64'(1);
+							if (req_cacheable) begin
+								perf_cacheable_req_count <= perf_cacheable_req_count + UInt64'(1);
+							end
+
+							if (cache_hit) begin
+								rsp_data <= data[req_index][req_word_offset];
+								rsp_valid <= 1'b1;
+								perf_hit_count <= perf_hit_count + UInt64'(1);
+								state <= Response;
+							end else begin
+								fill_line_addr <= req_cacheable ? req_line_addr : req_beat_addr;
+								fill_active <= 1'b1;
+								fill_cacheable <= req_cacheable;
+								fill_uncached <= !req_cacheable;
+								fill_allocate <= req_cacheable;
+								fill_cpu_waiting <= 1'b1;
+								fill_index <= req_index;
+								fill_tag <= req_tag;
+								fill_next_word <= req_cacheable ? req_word_offset : '0;
+								fill_response_word <= req_word_offset;
+								fill_count <= '0;
+								fill_word_valid <= '0;
+								if (req_cacheable) begin
+									perf_miss_count <= perf_miss_count + UInt64'(1);
+								end else begin
+									perf_uncached_count <= perf_uncached_count + UInt64'(1);
+								end
+								state <= FillReq;
+							end
+						end else if (!rsp_valid || rsp_ready) begin
 							state <= Idle;
 						end
 					end

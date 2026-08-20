@@ -33,7 +33,7 @@ optimization.
 - OpenSBI -> Linux 6.12 -> BusyBox userspace boot path
 - Whisper lockstep verification through BusyBox autotest
 - Performance tuning from a 300M-cycle CPI 6.918 baseline to a stable
-  100M-cycle CPI 2.483 checkpoint
+  100M-cycle CPI 2.393 checkpoint
 
 ## Current Snapshot
 
@@ -182,7 +182,7 @@ DCACHE_WRITE_BACK=0
 Representative 100M-cycle result:
 
 ```text
-[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
+[PERF] cycles=100000000 retired=41780831 cpi_x1000=2393 ipc_x1000=417
 ```
 
 This number is a simulation checkpoint for comparing microarchitectural

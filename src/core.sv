@@ -1579,6 +1579,25 @@ module core (
 				d_membus.ready,
 				d_membus.rvalid);
 		end
+		if (
+			$test$plusargs("TRACE_BRANCH_FRONTEND") &&
+			exs_valid &&
+			exq_rready &&
+			!exq_rdata.expt.valid &&
+			inst_is_br(exs_ctrl)
+		) begin
+			$display("[BR-EX] cycle=%0d pc=%016h inst=%08h taken=%0b target=%016h actual_next=%016h pred_taken=%0b pred_next=%016h correct=%0b redirect=%0b",
+				debug_cycle,
+				exs_pc,
+				exs_inst_bits,
+				ex_early_branch_taken,
+				ex_early_branch_pc_next,
+				ex_early_branch_actual_next_pc,
+				exs_predicted_taken,
+				exs_predicted_next_pc,
+				ex_early_branch_prediction_correct,
+				ex_early_branch_redirect);
+		end
 		if ($test$plusargs("TRACE_STRSIZE_LOOP") &&
 			wbs_valid &&
 			(wbs_pc >= Addr'(64'hffff_ffff_803d_e024)) &&

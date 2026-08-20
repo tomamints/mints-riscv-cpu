@@ -52,7 +52,7 @@ grep -aE '^\[PERF\] cycles|^\[PERF\] primary|^\[PERF\] active|^\[PERF\] events|^
 Stable 100M-cycle result:
 
 ```text
-[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
+[PERF] cycles=100000000 retired=41780831 cpi_x1000=2393 ipc_x1000=417
 ```
 
 Stable configuration:
@@ -72,16 +72,17 @@ DCACHE_WRITE_BACK=0
 | MEM translation-to-access fast path | reduced fixed LSU request latency |
 | D-cache hit-load fast sideband | reduced response fixed latency |
 | 512-line D-cache + 8-entry store buffer | improved load miss behavior |
-| Fetch-side conditional branch BTB | reduced taken-branch frontend overhead |
+| Fetch-side branch BTB + fetch fall-through | reduced taken-branch and fetch-block handoff overhead |
 | Write-back experiment | reduced traffic, but did not beat stable write-through CPI |
 
 Current frontend evidence:
 
 ```text
-[PERF-FETCH-STALL] fifo_full=6535508 control_recovery=14538081 translation_issue=19996415 translation_req_wait=1 translation_rsp=22025 icache_req=2550762 icache_rsp=5698111 fault=0 no_request=0
-[PERF-CONTROL] branch=828342 jal=715714 jalr=67181 trap=1599 return=1669 satp=13 sfence=2000 other=0
-[PERF-BPRED] pred=5292133 hit=4463782 miss=828351 hit_rate_x1000=843
-[PERF-BTB] jalr=420410 hit=353227 miss=67183 hit_rate_x1000=840 entries=32
+[PERF-FETCH-STALL] fifo_full=7320628 control_recovery=14156540 translation_issue=19680007 translation_req_wait=0 translation_rsp=22023 icache_req=2586028 icache_rsp=5765099 fault=0 no_request=0
+[PERF-CONTROL] branch=1246862 jal=726042 jalr=127390 trap=1611 return=1679 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=5561110 hit=4314232 miss=1246878 hit_rate_x1000=775
+[PERF-BTB] jalr=421644 hit=294253 miss=127391 hit_rate_x1000=697 entries=32
+[PERF-RAS] return=352959 hit=275654 miss=77305 fallback_btb=131 hit_rate_x1000=780 depth=8
 ```
 
 ## Interpretation Notes

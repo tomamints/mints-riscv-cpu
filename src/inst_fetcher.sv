@@ -39,6 +39,14 @@ module inst_fetcher (
     fetch_fifo_type fetch_fifo_rdata;
     logic           fetch_fifo_rready;
     logic           fetch_fifo_rvalid;
+    logic           fetch_fifo_storage_wvalid;
+    logic           fetch_fifo_storage_wready;
+    logic           fetch_fifo_storage_wready_two;
+    fetch_fifo_type fetch_fifo_storage_rdata;
+    logic           fetch_fifo_storage_rready;
+    logic           fetch_fifo_storage_rvalid;
+    logic           fetch_fifo_bypass_valid;
+    logic           fetch_fifo_bypass_fire;
 
     fifo #(
         .DATA_TYPE (fetch_fifo_type),
@@ -47,14 +55,34 @@ module inst_fetcher (
         .clk         (clk),
         .rst         (rst),
         .flush       (fetch_fifo_flush),
-        .wready      (),                // unused (Veryl: _)
-        .wready_two  (fetch_fifo_wready),
-        .wvalid      (fetch_fifo_wvalid),
+        .wready      (fetch_fifo_storage_wready),
+        .wready_two  (fetch_fifo_storage_wready_two),
+        .wvalid      (fetch_fifo_storage_wvalid),
         .wdata       (fetch_fifo_wdata),
-        .rready      (fetch_fifo_rready),
-        .rvalid      (fetch_fifo_rvalid),
-        .rdata       (fetch_fifo_rdata)
+        .rready      (fetch_fifo_storage_rready),
+        .rvalid      (fetch_fifo_storage_rvalid),
+        .rdata       (fetch_fifo_storage_rdata)
     );
+
+    assign fetch_fifo_bypass_valid =
+        !fetch_fifo_storage_rvalid &&
+        fetch_fifo_wvalid &&
+        (fetch_state == FetchWaitResp) &&
+        fetch_inst_mem_rvalid;
+    assign fetch_fifo_bypass_fire = fetch_fifo_bypass_valid && fetch_fifo_rready;
+    assign fetch_fifo_storage_wvalid =
+        fetch_fifo_wvalid &&
+        !(fetch_fifo_bypass_fire && fetch_fifo_rready);
+    assign fetch_fifo_storage_rready =
+        fetch_fifo_storage_rvalid &&
+        fetch_fifo_rready;
+    assign fetch_fifo_rvalid =
+        fetch_fifo_storage_rvalid ||
+        fetch_fifo_bypass_valid;
+    assign fetch_fifo_rdata =
+        fetch_fifo_storage_rvalid
+            ? fetch_fifo_storage_rdata
+            : fetch_fifo_wdata;
 
     // ---------------- issue FIFO ----------------
     typedef struct packed {
@@ -73,24 +101,29 @@ module inst_fetcher (
     logic           issue_fifo_wready;
     issue_fifo_type issue_fifo_wdata;
     issue_fifo_type issue_fifo_wdata_raw;
-    issue_fifo_type issue_fifo_rdata;
-    logic           issue_fifo_rready;
-    logic           issue_fifo_rvalid;
+    logic           issue_fifo_storage_wvalid;
+    logic           issue_fifo_storage_wready;
+    issue_fifo_type issue_fifo_storage_rdata;
+    logic           issue_fifo_storage_rready;
+    logic           issue_fifo_storage_rvalid;
+    logic           issue_fifo_bypass_fire;
+    issue_fifo_type issue_fifo_core_data;
+    logic           issue_fifo_core_valid;
 
     fifo #(
         .DATA_TYPE (issue_fifo_type),
-        .WIDTH     (3)
+        .WIDTH     (2)
     ) issue_fifo (
         .clk    (clk),
         .rst    (rst),
         .flush  (issue_fifo_flush),
-        .wready (issue_fifo_wready),
+        .wready (issue_fifo_storage_wready),
         .wready_two (),
-        .wvalid (issue_fifo_wvalid),
+        .wvalid (issue_fifo_storage_wvalid),
         .wdata  (issue_fifo_wdata),
-        .rready (issue_fifo_rready),
-        .rvalid (issue_fifo_rvalid),
-        .rdata  (issue_fifo_rdata)
+        .rready (issue_fifo_storage_rready),
+        .rvalid (issue_fifo_storage_rvalid),
+        .rdata  (issue_fifo_storage_rdata)
     );
 
     /*--------- issue logic ----------*/
@@ -117,12 +150,16 @@ module inst_fetcher (
     Addr        fetch_predicted_next_pc;
     logic [2:0] fetch_lookup_start_offset;
     logic       issue_fetch_prediction_applied;
+    logic       issue_fetch_storage_prediction_applied;
     Addr        issue_fetch_predicted_next_pc;
 
     // instruction converter
     logic [15:0] rvcc_inst16;
     logic        rvcc_is_rvc;
     Inst         rvcc_inst32;
+    logic [15:0] storage_rvcc_inst16;
+    logic        storage_rvcc_is_rvc;
+    Inst         storage_rvcc_inst32;
 
     // inst16 の選択（Veryl の inline case 相当）
     always_comb begin
@@ -139,6 +176,22 @@ module inst_fetcher (
         .inst16 (rvcc_inst16),
         .is_rvc (rvcc_is_rvc),
         .inst32 (rvcc_inst32)
+    );
+
+    always_comb begin
+        unique case (issue_pc_offset)
+            3'd0: storage_rvcc_inst16 = fetch_fifo_storage_rdata.bits[15:0];
+            3'd2: storage_rvcc_inst16 = fetch_fifo_storage_rdata.bits[31:16];
+            3'd4: storage_rvcc_inst16 = fetch_fifo_storage_rdata.bits[47:32];
+            3'd6: storage_rvcc_inst16 = fetch_fifo_storage_rdata.bits[63:48];
+            default: storage_rvcc_inst16 = 16'h0000;
+        endcase
+    end
+
+    rvc_converter storage_rvcc (
+        .inst16 (storage_rvcc_inst16),
+        .is_rvc (storage_rvcc_is_rvc),
+        .inst32 (storage_rvcc_inst32)
     );
 
     Addr  issue_pmp_addr;
@@ -196,16 +249,26 @@ module inst_fetcher (
     );
 
     assign branch_predictor_inst_valid =
-        issue_fifo_wvalid &&
-        !issue_fifo_wdata_raw.expt.valid;
-    assign branch_predictor_pc = issue_fifo_wdata_raw.addr;
-    assign branch_predictor_inst = issue_fifo_wdata_raw.bits;
-    assign branch_predictor_is_rvc = issue_fifo_wdata_raw.is_rvc;
+        fetch_fifo_storage_rvalid &&
+        issue_fifo_wready &&
+        !core_if.is_hazard &&
+        !issue_is_rdata_saved &&
+        !fetch_fifo_storage_rdata.expt.valid;
+    assign branch_predictor_pc =
+        {fetch_fifo_storage_rdata.addr[$bits(Addr)-1:3], issue_pc_offset};
+    assign branch_predictor_inst =
+        storage_rvcc_is_rvc
+            ? storage_rvcc_inst32
+            : ((issue_pc_offset == 3'd0) ? fetch_fifo_storage_rdata.bits[31:0] :
+               (issue_pc_offset == 3'd2) ? fetch_fifo_storage_rdata.bits[47:16] :
+               (issue_pc_offset == 3'd4) ? fetch_fifo_storage_rdata.bits[63:32] :
+                                           Inst'(32'h00000013));
+    assign branch_predictor_is_rvc = storage_rvcc_is_rvc;
     assign issue_predict_redirect =
-        issue_fifo_wvalid &&
+        branch_predictor_inst_valid &&
         branch_prediction_valid &&
         branch_predicted_taken &&
-        !issue_fetch_prediction_applied;
+        !issue_fetch_storage_prediction_applied;
     assign issue_predict_next_pc = branch_predicted_next_pc;
     assign predictor_redirect = issue_predict_redirect && !core_if.is_hazard;
     assign issue_fetch_prediction_applied =
@@ -214,6 +277,11 @@ module inst_fetcher (
         fetch_fifo_rdata.predicted_branch_valid &&
         !issue_fifo_wdata_raw.expt.valid &&
         issue_fifo_wdata_raw.addr == fetch_fifo_rdata.predicted_branch_pc;
+    assign issue_fetch_storage_prediction_applied =
+        fetch_fifo_storage_rvalid &&
+        fetch_fifo_storage_rdata.predicted_branch_valid &&
+        ({fetch_fifo_storage_rdata.addr[$bits(Addr)-1:3], issue_pc_offset} ==
+            fetch_fifo_storage_rdata.predicted_branch_pc);
     assign issue_fetch_predicted_next_pc = fetch_fifo_rdata.predicted_next_pc;
 
     always_comb begin
@@ -402,17 +470,33 @@ module inst_fetcher (
     // issue_fifo <-> core
     always_comb begin
         issue_fifo_flush  = core_if.is_hazard;
-        issue_fifo_rready = core_if.rready;
+        issue_fifo_wready =
+            issue_fifo_storage_wready ||
+            (!issue_fifo_flush && !issue_fifo_storage_rvalid && core_if.rready);
+        issue_fifo_bypass_fire =
+            issue_fifo_wvalid &&
+            !issue_fifo_flush &&
+            !issue_fifo_storage_rvalid &&
+            core_if.rready;
+        issue_fifo_storage_wvalid =
+            issue_fifo_wvalid &&
+            !issue_fifo_bypass_fire;
+        issue_fifo_storage_rready = core_if.rready;
+        issue_fifo_core_valid = issue_fifo_storage_rvalid || issue_fifo_bypass_fire;
+        issue_fifo_core_data =
+            issue_fifo_storage_rvalid
+                ? issue_fifo_storage_rdata
+                : issue_fifo_wdata;
 
-        core_if.rvalid = issue_fifo_rvalid;
-        core_if.raddr  = issue_fifo_rdata.addr;
-        core_if.rdata  = issue_fifo_rdata.bits;
-        core_if.is_rvc = issue_fifo_rdata.is_rvc;
-        core_if.expt   = issue_fifo_rdata.expt;
-        core_if.predicted_taken = issue_fifo_rdata.predicted_taken;
-        core_if.predicted_next_pc = issue_fifo_rdata.predicted_next_pc;
-        core_if.predicted_from_btb = issue_fifo_rdata.predicted_from_btb;
-        core_if.predicted_from_ras = issue_fifo_rdata.predicted_from_ras;
+        core_if.rvalid = issue_fifo_core_valid;
+        core_if.raddr  = issue_fifo_core_data.addr;
+        core_if.rdata  = issue_fifo_core_data.bits;
+        core_if.is_rvc = issue_fifo_core_data.is_rvc;
+        core_if.expt   = issue_fifo_core_data.expt;
+        core_if.predicted_taken = issue_fifo_core_data.predicted_taken;
+        core_if.predicted_next_pc = issue_fifo_core_data.predicted_next_pc;
+        core_if.predicted_from_btb = issue_fifo_core_data.predicted_from_btb;
+        core_if.predicted_from_ras = issue_fifo_core_data.predicted_from_ras;
     end
 
     /*--------- fetch logic ----------*/
@@ -453,6 +537,7 @@ module inst_fetcher (
     Addr  fetch_req_predicted_branch_pc;
     Addr  fetch_req_predicted_next_pc;
     Addr  fetch_next_pc_after_request;
+    logic fetch_wait_resp_next_req;
 
     typedef enum logic [1:0] {
         FetchMemOwnerNone,
@@ -463,6 +548,7 @@ module inst_fetcher (
     FetchMemOwner fetch_mem_owner;
     logic fetch_inst_mem_fire;
     logic fetch_inst_mem_rvalid;
+    logic icache_rsp_fire;
     logic fetch_recovery_active;
     logic trace_fetch_event;
     logic trace_fetch_fault;
@@ -523,7 +609,8 @@ module inst_fetcher (
         fetch_fifo_wready &&
         (
             (fetch_state == FetchIdle && !need_translate && fetch_pmp_allow) ||
-            (fetch_state == FetchAccess && fetch_pmp_allow)
+            (fetch_state == FetchAccess && fetch_pmp_allow) ||
+            (fetch_wait_resp_next_req && fetch_pmp_allow)
         );
     assign fetch_next_pc_after_request =
         fetch_prediction_valid
@@ -620,22 +707,36 @@ module inst_fetcher (
     assign icache_mem_rvalid =
         mem_if.rvalid &&
         fetch_mem_owner == FetchMemOwnerIcache;
+    assign fetch_fifo_wready =
+        fetch_fifo_storage_wready_two ||
+        (!fetch_fifo_storage_rvalid && !core_if.is_hazard && issue_fifo_wready);
+    assign fetch_wait_resp_next_req =
+        fetch_state == FetchWaitResp &&
+        icache_rsp_fire &&
+        fetch_fifo_rready &&
+        !need_translate;
 	    assign icache_req_valid =
 	        !fetch_redirect &&
 	        fetch_fifo_wready &&
 	        fetch_pmp_allow &&
         (
             (fetch_state == FetchIdle && !need_translate) ||
-            (fetch_state == FetchAccess)
+            (fetch_state == FetchAccess) ||
+            fetch_wait_resp_next_req
         );
     assign icache_req_addr =
-        (fetch_state == FetchIdle && !need_translate) ? fetch_pc : fetch_req_paddr;
+        (fetch_state == FetchIdle && !need_translate) || fetch_wait_resp_next_req
+            ? fetch_pc
+            : fetch_req_paddr;
     assign icache_rsp_ready =
         fetch_state == FetchWaitResp &&
         fetch_fifo_wready;
     assign fetch_inst_mem_fire =
         icache_req_valid &&
         icache_req_ready;
+    assign icache_rsp_fire =
+        icache_rsp_valid &&
+        icache_rsp_ready;
 	    assign fetch_inst_mem_rvalid =
 	        icache_rsp_valid;
 	    assign fetch_redirect = core_if.is_hazard || predictor_redirect;
@@ -896,14 +997,25 @@ module inst_fetcher (
                     end
 
                     FetchWaitResp: begin
-                        if (fetch_inst_mem_rvalid) begin
+                        if (icache_rsp_fire) begin
                             if (trace_fetch_event) begin
                                 $display("[FETCH] response va=%h data=%h", fetch_req_vaddr, icache_rsp_data);
                             end
-                            fetch_state <= FetchIdle;
-                            fetch_req_predicted_branch_valid <= 1'b0;
-                            fetch_req_predicted_branch_pc <= '0;
-                            fetch_req_predicted_next_pc <= '0;
+                            if (fetch_wait_resp_next_req && fetch_inst_mem_fire) begin
+                                fetch_req_vaddr <= fetch_pc;
+                                fetch_req_paddr <= fetch_pc;
+                                fetch_req_predicted_branch_valid <= fetch_prediction_valid;
+                                fetch_req_predicted_branch_pc <= fetch_predicted_branch_pc;
+                                fetch_req_predicted_next_pc <= fetch_predicted_next_pc;
+                                fetch_pc <= fetch_next_pc_after_request;
+                                fetch_start_offset <= fetch_prediction_valid ? fetch_predicted_next_pc[2:0] : 3'd0;
+                                fetch_state <= FetchWaitResp;
+                            end else begin
+                                fetch_state <= FetchIdle;
+                                fetch_req_predicted_branch_valid <= 1'b0;
+                                fetch_req_predicted_branch_pc <= '0;
+                                fetch_req_predicted_next_pc <= '0;
+                            end
                         end
                     end
 
@@ -955,8 +1067,8 @@ module inst_fetcher (
                 fetch_fifo_rvalid,
                 fetch_fifo_rready,
                 issue_fifo_wready,
-                issue_fifo_rvalid,
-                issue_fifo_rready,
+                issue_fifo_core_valid,
+                core_if.rready,
                 fetch_translation_req_valid,
                 fetch_translation_req_ready,
                 fetch_translation_rsp_valid,
@@ -971,6 +1083,61 @@ module inst_fetcher (
                 mem_if.ready,
                 mem_if.rvalid
             );
+        end
+
+        if ($test$plusargs("TRACE_BRANCH_FRONTEND")) begin
+            if (fetch_lookup_valid && fetch_prediction_valid) begin
+                $display("[BR-FE] cycle=%0d event=fetch_predict state=%0d lookup_pc=%016h start=%0d branch_pc=%016h target=%016h",
+                    fetch_debug_cycle,
+                    fetch_state,
+                    fetch_lookup_pc,
+                    fetch_lookup_start_offset,
+                    fetch_predicted_branch_pc,
+                    fetch_predicted_next_pc);
+            end
+            if (icache_req_valid && icache_req_ready) begin
+                $display("[BR-FE] cycle=%0d event=icache_req state=%0d addr=%016h predict=%0b branch_pc=%016h target=%016h next_block=%016h",
+                    fetch_debug_cycle,
+                    fetch_state,
+                    icache_req_addr,
+                    fetch_prediction_valid,
+                    fetch_predicted_branch_pc,
+                    fetch_predicted_next_pc,
+                    fetch_next_pc_after_request);
+            end
+            if (fetch_fifo_wvalid && fetch_fifo_wready) begin
+                $display("[BR-FE] cycle=%0d event=fetch_block state=%0d addr=%016h pred_valid=%0b pred_branch=%016h pred_target=%016h data=%016h",
+                    fetch_debug_cycle,
+                    fetch_state,
+                    fetch_fifo_wdata.addr,
+                    fetch_fifo_wdata.predicted_branch_valid,
+                    fetch_fifo_wdata.predicted_branch_pc,
+                    fetch_fifo_wdata.predicted_next_pc,
+                    fetch_fifo_wdata.bits);
+            end
+            if (issue_fifo_wvalid && issue_fifo_wready) begin
+                $display("[BR-FE] cycle=%0d event=issue pc=%016h inst=%08h rvc=%0b pred_taken=%0b pred_next=%016h fetch_pred_applied=%0b offset=%0d",
+                    fetch_debug_cycle,
+                    issue_fifo_wdata.addr,
+                    issue_fifo_wdata.bits,
+                    issue_fifo_wdata.is_rvc,
+                    issue_fifo_wdata.predicted_taken,
+                    issue_fifo_wdata.predicted_next_pc,
+                    issue_fetch_prediction_applied,
+                    issue_pc_offset);
+            end
+            if (predictor_redirect) begin
+                $display("[BR-FE] cycle=%0d event=late_predict_redirect next=%016h",
+                    fetch_debug_cycle,
+                    issue_predict_next_pc);
+            end
+            if (fetch_redirect) begin
+                $display("[BR-FE] cycle=%0d event=fetch_redirect hazard=%0b predictor=%0b next=%016h",
+                    fetch_debug_cycle,
+                    core_if.is_hazard,
+                    predictor_redirect,
+                    predictor_redirect ? issue_predict_next_pc : core_if.next_pc);
+            end
         end
     end
 `endif

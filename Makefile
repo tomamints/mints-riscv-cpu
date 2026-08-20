@@ -473,7 +473,7 @@ build-lockstep:
 		-CFLAGS "-DSVCPU_WHISPER_LOCKSTEP -std=c++20 $(LOCKSTEP_CPPFLAGS)" \
 		-LDFLAGS "$(LOCKSTEP_LDFLAGS)" \
 		-f $(FILELIST) \
-		--exe $(TB) $(LOCKSTEP_CPP_SRCS) \
+		--exe $(abspath $(TB)) $(abspath $(LOCKSTEP_CPP_SRCS)) \
 		--top-module $(TOP) \
 		--Mdir $(LOCKSTEP_OBJ_DIR)
 	$(MAKE) -C $(LOCKSTEP_OBJ_DIR) -f V$(TOP).mk \

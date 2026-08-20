@@ -180,6 +180,7 @@ Recent 100M-cycle checkpoints:
 | 10.4 | 512-line D-cache + 8-entry store buffer | 39,534,138 | 2.529 | 0.395 | Stable |
 | 10.5 | Experimental write-back D-cache | 39,508,553 | 2.531 | 0.395 | Experimental |
 | 11.1 | Fetch-side conditional branch BTB | 40,260,939 | 2.483 | 0.402 | rv64ui pass |
+| 11.2 | Fetch FIFO bypass + I-cache follow-on request | 41,780,831 | 2.393 | 0.417 | Whisper pass |
 
 Recent improvement summary:
 
@@ -190,6 +191,7 @@ Recent improvement summary:
 | Phase 10.2 -> 10.4 | D-cache capacity and store buffer depth improved load-miss behavior, reaching the current stable CPI 2.529 point. |
 | Phase 10.5 | Write-back reduced write traffic and arbiter pressure, but did not beat the selected write-through stable point. |
 | Phase 11.1 | Fetch-side conditional branch BTB removed about one cycle per trained loop-back branch in a common assembly benchmark and improved the Linux 100M checkpoint from CPI 2.529 to 2.483. |
+| Phase 11.2 | Fetch FIFO/issue FIFO bypass plus I-cache response-to-next-request handoff removed the remaining common assembly branch-loop gap versus Rocket and improved the Linux 100M checkpoint from CPI 2.483 to 2.393. |
 
 Key evidence by phase:
 
@@ -204,8 +206,9 @@ Key evidence by phase:
 | 10.4 | `[PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369`, `[PERF-DSTALL] load_miss=2937174` |
 | 10.5 | `[PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515` |
 | 11.1 | `[PERF-BPRED] pred=5292133 hit=4463782 miss=828351 hit_rate_x1000=843`, `[PERF] retired=40260939 cpi_x1000=2483 ipc_x1000=402` |
+| 11.2 | `[PERF] retired=41780831 cpi_x1000=2393 ipc_x1000=417`, `[PERF] primary ... ifetch=16160494 ...` |
 
-Current stable Phase 10 configuration:
+Current stable configuration:
 
 ```text
 DCACHE_LINE_COUNT=512
@@ -213,21 +216,31 @@ DCACHE_STORE_BUFFER_DEPTH=8
 DCACHE_WRITE_BACK=0
 ```
 
-Current representative checkpoint with fetch-side conditional branch BTB:
+Current representative checkpoint with fetch-side branch BTB and fetch
+fall-through handoff:
 
 ```text
-[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
+[PERF] cycles=100000000 retired=41780831 cpi_x1000=2393 ipc_x1000=417
+[PERF] primary commit=41780831 no_commit=58219169 mem=13905496 muldiv=3334258 data_hazard=699897 ifetch=16160494 other=24119024
 ```
 
-The previous stable write-through checkpoint was:
+The previous stable write-through checkpoint before Phase 11 frontend work was:
 
 ```text
 [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
 ```
 
-The fetch-side BTB change also required `fence.i` to invalidate frontend
-prediction state. `rv64ui-p-fence_i` and the full `rv64ui-p` suite pass after
-that fix.
+The Phase 11 frontend work also required correctness fixes:
+
+```text
+- fence.i invalidates frontend prediction state
+- I-cache response completion is gated by rsp_valid && rsp_ready
+- late branch prediction is disabled while a cross-block 32-bit instruction is
+  being assembled
+```
+
+`rv64ui-p-fence_i`, the full `rv64ui-p` suite, and Whisper lockstep pass after
+these fixes.
 
 See [FRONTEND_BRANCH_BTB.md](FRONTEND_BRANCH_BTB.md) for the benchmark and
 correctness details.
@@ -269,8 +282,9 @@ Recommended next steps:
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
 3. Treat Phase 10 stable configuration as complete:
    `DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=0`.
-4. Treat fetch-side conditional branch BTB as the current mainline frontend
-   improvement, with `fence.i` invalidating branch prediction state.
+4. Treat fetch-side branch BTB plus fetch FIFO/I-cache handoff as the current
+   mainline frontend improvement, with `fence.i` invalidating branch prediction
+   state.
 5. Keep write-back D-cache as an experimental path, not the stable baseline.
 6. For the next mainline phase, measure the stable baseline first, then choose the next bottleneck.
 7. Run Whisper lockstep after any frontend, LSU, cache, or privilege/MMU change.
