@@ -1,6 +1,6 @@
 # Performance Counters
 
-Last updated: 2026-08-18
+Last updated: 2026-08-20
 
 MiNTs-CPU exposes simulation-only performance counters through the
 `+PERF_SUMMARY` Verilator plusarg. They are intended for comparing RTL changes
@@ -26,7 +26,7 @@ make run-opensbi-input \
 Useful summary filter:
 
 ```bash
-grep -E '^\[PERF\] cycles|^\[PERF\] primary|^\[PERF\] active|^\[PERF\] events|^\[PERF-CONTROL\]|^\[PERF-BPRED\]|^\[PERF-BTB\]|^\[PERF-RAS\]' /tmp/perf-100m.log
+grep -aE '^\[PERF\] cycles|^\[PERF\] primary|^\[PERF\] active|^\[PERF\] events|^\[PERF-FETCH-STALL\]|^\[PERF-CONTROL\]|^\[PERF-BPRED\]|^\[PERF-BTB\]|^\[PERF-RAS\]' /tmp/perf-100m.log
 ```
 
 ## Main Counter Groups
@@ -52,7 +52,7 @@ grep -E '^\[PERF\] cycles|^\[PERF\] primary|^\[PERF\] active|^\[PERF\] events|^\
 Stable 100M-cycle result:
 
 ```text
-[PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
 ```
 
 Stable configuration:
@@ -72,7 +72,17 @@ DCACHE_WRITE_BACK=0
 | MEM translation-to-access fast path | reduced fixed LSU request latency |
 | D-cache hit-load fast sideband | reduced response fixed latency |
 | 512-line D-cache + 8-entry store buffer | improved load miss behavior |
+| Fetch-side conditional branch BTB | reduced taken-branch frontend overhead |
 | Write-back experiment | reduced traffic, but did not beat stable write-through CPI |
+
+Current frontend evidence:
+
+```text
+[PERF-FETCH-STALL] fifo_full=6535508 control_recovery=14538081 translation_issue=19996415 translation_req_wait=1 translation_rsp=22025 icache_req=2550762 icache_rsp=5698111 fault=0 no_request=0
+[PERF-CONTROL] branch=828342 jal=715714 jalr=67181 trap=1599 return=1669 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=5292133 hit=4463782 miss=828351 hit_rate_x1000=843
+[PERF-BTB] jalr=420410 hit=353227 miss=67183 hit_rate_x1000=840 entries=32
+```
 
 ## Interpretation Notes
 

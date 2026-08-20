@@ -21,6 +21,7 @@ interface core_inst_if;
     logic bp_update_taken;
     Addr bp_update_target;
     Addr bp_update_return_addr;
+    logic fetch_invalidate;
     logic is_hazard;
     Addr next_pc;
 
@@ -46,12 +47,13 @@ interface core_inst_if;
         output  bp_update_pc,
         output  bp_update_taken,
         output  bp_update_target,
-        output  bp_update_return_addr
+        output  bp_update_return_addr,
+        output  fetch_invalidate
     );
 
     modport slave(
         output   rvalid, raddr, rdata, is_rvc, expt, predicted_taken, predicted_next_pc, predicted_from_btb, predicted_from_ras,
-        input  rready, is_hazard, next_pc, bp_update_valid, bp_update_is_branch, bp_update_is_jalr, bp_update_is_call, bp_update_is_return, bp_update_pc, bp_update_taken, bp_update_target, bp_update_return_addr
+        input  rready, is_hazard, next_pc, bp_update_valid, bp_update_is_branch, bp_update_is_jalr, bp_update_is_call, bp_update_is_return, bp_update_pc, bp_update_taken, bp_update_target, bp_update_return_addr, fetch_invalidate
     );
 
 endinterface

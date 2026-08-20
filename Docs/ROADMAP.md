@@ -1,6 +1,6 @@
 # Roadmap
 
-Last updated: 2026-08-18
+Last updated: 2026-08-20
 
 This roadmap describes the public development direction of MiNTs-CPU.
 
@@ -14,7 +14,7 @@ MiNTs-CPU is currently a Linux-capable RV64IMAC in-order CPU/SoC with:
 - ACLINT, PLIC-compatible interrupt controller, and NS16550A UART
 - I-cache, D-cache, and store buffer
 - forwarding and early control redirect
-- 2-bit branch predictor, JALR BTB, and RAS
+- 2-bit branch predictor, fetch-side conditional branch BTB, JALR BTB, and RAS
 - Whisper lockstep through BusyBox autotest
 
 Stable performance configuration:
@@ -28,7 +28,7 @@ DCACHE_WRITE_BACK=0
 Representative stable checkpoint:
 
 ```text
-100M cycles, CPI ~= 2.529, IPC ~= 0.395
+100M cycles, CPI ~= 2.483, IPC ~= 0.402
 ```
 
 ## Completed Milestones
@@ -42,7 +42,7 @@ Representative stable checkpoint:
 | interrupts | ACLINT timer/software and PLIC external interrupts |
 | Linux | OpenSBI -> Linux 6.12 -> BusyBox autotest |
 | lockstep | Whisper architectural comparison to BusyBox PASS |
-| frontend performance | early redirect, PHT, BTB, RAS |
+| frontend performance | early redirect, PHT, fetch-side branch BTB, JALR BTB, RAS |
 | LSU performance | translation-to-access and hit-load fast paths |
 | cache sizing | stable 512-line D-cache and 8-entry store buffer |
 
@@ -58,6 +58,7 @@ Representative stable checkpoint:
 ### 2. Benchmarking and Reference Comparisons
 
 - add controlled microbenchmarks before making cross-core claims
+- keep the Rocket/MiNTs common assembly loop as a frontend regression test
 - use CPI-stack style summaries instead of a single CPI number
 - keep external core comparisons tied to reproducible workloads and settings
 - separate simulation CPI from FPGA frequency and implementation cost
@@ -72,6 +73,8 @@ Representative stable checkpoint:
 ### 4. Verification
 
 - keep Whisper lockstep as the main correctness gate
+- keep `rv64ui-p-fence_i` in the fast regression path after frontend predictor
+  changes
 - add smaller deterministic regression tests for cache and LSU corner cases
 - preserve BusyBox autotest as the end-to-end Linux gate
 

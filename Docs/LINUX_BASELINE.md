@@ -1,6 +1,6 @@
 # Linux Baseline
 
-Last updated: 2026-08-14
+Last updated: 2026-08-20
 
 This document defines the Linux regression baseline used before and after
 microarchitectural changes.
@@ -66,8 +66,27 @@ make run-opensbi-input \
 Representative stable result:
 
 ```text
+[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
+```
+
+Key frontend counters for this checkpoint:
+
+```text
+[PERF-FETCH-STALL] fifo_full=6535508 control_recovery=14538081 translation_issue=19996415 translation_req_wait=1 translation_rsp=22025 icache_req=2550762 icache_rsp=5698111 fault=0 no_request=0
+[PERF-CONTROL] branch=828342 jal=715714 jalr=67181 trap=1599 return=1669 satp=13 sfence=2000 other=0
+[PERF-BPRED] pred=5292133 hit=4463782 miss=828351 hit_rate_x1000=843
+[PERF-BTB] jalr=420410 hit=353227 miss=67183 hit_rate_x1000=840 entries=32
+```
+
+Previous stable checkpoint before fetch-side conditional branch BTB:
+
+```text
 [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
 ```
+
+The fetch-side BTB improvement increases the fixed-window retired instruction
+count by about 727K instructions and moves CPI from about 2.529 to 2.483 on the
+same 100M-cycle Linux boot workload.
 
 ## Stable Configuration
 

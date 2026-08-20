@@ -1,6 +1,6 @@
 # MiNTs-CPU
 
-Last updated: 2026-08-18
+Last updated: 2026-08-20
 
 **MiNTs-CPU** is a SystemVerilog RV64IMAC in-order RISC-V CPU/SoC capable of
 booting OpenSBI, Linux 6.12, and a BusyBox initramfs in Verilator.
@@ -14,6 +14,7 @@ optimization.
 - Current status: [Docs/CURRENT_STATUS.md](Docs/CURRENT_STATUS.md)
 - Linux setup: [Docs/LINUX_SETUP.md](Docs/LINUX_SETUP.md)
 - Linux baseline: [Docs/LINUX_BASELINE.md](Docs/LINUX_BASELINE.md)
+- Frontend branch BTB: [Docs/FRONTEND_BRANCH_BTB.md](Docs/FRONTEND_BRANCH_BTB.md)
 - Test status: [Docs/TEST_STATUS.md](Docs/TEST_STATUS.md)
 - Performance counters: [Docs/PERFORMANCE_COUNTERS.md](Docs/PERFORMANCE_COUNTERS.md)
 - Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
@@ -27,11 +28,12 @@ optimization.
 - PMP checks on fetch, data, and PTW physical accesses
 - ACLINT MSWI/MTIMER, PLIC-compatible interrupt controller, and NS16550A UART
 - 4KiB I-cache, stable 16KiB D-cache, and 8-entry store buffer
-- Forwarding, early JAL/branch/JALR redirect, 2-bit PHT, JALR BTB, and RAS
+- Forwarding, early JAL/branch/JALR redirect, 2-bit PHT, fetch-side branch
+  BTB, JALR BTB, and RAS
 - OpenSBI -> Linux 6.12 -> BusyBox userspace boot path
 - Whisper lockstep verification through BusyBox autotest
 - Performance tuning from a 300M-cycle CPI 6.918 baseline to a stable
-  100M-cycle CPI 2.529 checkpoint
+  100M-cycle CPI 2.483 checkpoint
 
 ## Current Snapshot
 
@@ -75,7 +77,7 @@ Current claimed scope:
 | UART | Minimal NS16550A-compatible UART at `0x10000000` |
 | Caches | 4KiB I-cache, stable 16KiB D-cache, 32B lines |
 | Store path | write-through D-cache, 8-entry store buffer |
-| Branch prediction | 2-bit PHT, JALR BTB, non-speculative RAS |
+| Branch prediction | 2-bit PHT, fetch-side conditional-branch BTB, JALR BTB, non-speculative RAS |
 | Verification | riscv-tests, custom C tests, Linux boot, Whisper lockstep |
 
 Not claimed:
@@ -180,7 +182,7 @@ DCACHE_WRITE_BACK=0
 Representative 100M-cycle result:
 
 ```text
-[PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
 ```
 
 This number is a simulation checkpoint for comparing microarchitectural

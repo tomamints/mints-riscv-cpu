@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-08-14
+Last updated: 2026-08-20
 
 This document is the current high-level status of **MiNTs-CPU**.
 
@@ -87,7 +87,7 @@ Implemented performance structures:
 | Arbiter | distinguishes I-side, D-side high priority, D-side low priority drain |
 | Control redirect | JAL, conditional branch, and JALR early redirect |
 | Branch predictor | 128-entry 2-bit PHT, BTFNT fallback for cold entries |
-| BTB | 32-entry JALR target BTB |
+| BTB | 32-entry BTB used for fetch-side conditional branch targets and JALR targets |
 | RAS | 8-entry non-speculative return address stack |
 
 Not yet implemented:
@@ -179,6 +179,7 @@ Recent 100M-cycle checkpoints:
 | 10.2 | D-cache hit-load fast sideband | 38,719,295 | 2.582 | 0.387 | Whisper pass |
 | 10.4 | 512-line D-cache + 8-entry store buffer | 39,534,138 | 2.529 | 0.395 | Stable |
 | 10.5 | Experimental write-back D-cache | 39,508,553 | 2.531 | 0.395 | Experimental |
+| 11.1 | Fetch-side conditional branch BTB | 40,260,939 | 2.483 | 0.402 | rv64ui pass |
 
 Recent improvement summary:
 
@@ -188,6 +189,7 @@ Recent improvement summary:
 | Phase 9.4 -> 10.2 | MEM/LSU fixed latency was reduced: translation-to-access bypass and D-cache hit-load sideband moved CPI from 2.725 to 2.582. |
 | Phase 10.2 -> 10.4 | D-cache capacity and store buffer depth improved load-miss behavior, reaching the current stable CPI 2.529 point. |
 | Phase 10.5 | Write-back reduced write traffic and arbiter pressure, but did not beat the selected write-through stable point. |
+| Phase 11.1 | Fetch-side conditional branch BTB removed about one cycle per trained loop-back branch in a common assembly benchmark and improved the Linux 100M checkpoint from CPI 2.529 to 2.483. |
 
 Key evidence by phase:
 
@@ -201,6 +203,7 @@ Key evidence by phase:
 | 10.2 | `[PERF-DCACHE-FAST] hit_load=4986113`, `response_done=1567104` |
 | 10.4 | `[PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369`, `[PERF-DSTALL] load_miss=2937174` |
 | 10.5 | `[PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515` |
+| 11.1 | `[PERF-BPRED] pred=5292133 hit=4463782 miss=828351 hit_rate_x1000=843`, `[PERF] retired=40260939 cpi_x1000=2483 ipc_x1000=402` |
 
 Current stable Phase 10 configuration:
 
@@ -209,6 +212,25 @@ DCACHE_LINE_COUNT=512
 DCACHE_STORE_BUFFER_DEPTH=8
 DCACHE_WRITE_BACK=0
 ```
+
+Current representative checkpoint with fetch-side conditional branch BTB:
+
+```text
+[PERF] cycles=100000000 retired=40260939 cpi_x1000=2483 ipc_x1000=402
+```
+
+The previous stable write-through checkpoint was:
+
+```text
+[PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
+```
+
+The fetch-side BTB change also required `fence.i` to invalidate frontend
+prediction state. `rv64ui-p-fence_i` and the full `rv64ui-p` suite pass after
+that fix.
+
+See [FRONTEND_BRANCH_BTB.md](FRONTEND_BRANCH_BTB.md) for the benchmark and
+correctness details.
 
 Experimental write-back conclusion:
 
@@ -247,7 +269,9 @@ Recommended next steps:
 2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
 3. Treat Phase 10 stable configuration as complete:
    `DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=0`.
-4. Keep write-back D-cache as an experimental path, not the stable baseline.
-5. For the next mainline phase, measure the stable baseline first, then choose the next bottleneck.
-6. Run Whisper lockstep after any frontend, LSU, cache, or privilege/MMU change.
+4. Treat fetch-side conditional branch BTB as the current mainline frontend
+   improvement, with `fence.i` invalidating branch prediction state.
+5. Keep write-back D-cache as an experimental path, not the stable baseline.
+6. For the next mainline phase, measure the stable baseline first, then choose the next bottleneck.
+7. Run Whisper lockstep after any frontend, LSU, cache, or privilege/MMU change.
 ```

@@ -654,6 +654,7 @@ module core (
 
 	logic mems_satp_access;
 	logic mems_sfence_vma;
+	logic mems_fence_i;
 	logic mems_translation_hazard;
 	logic mems_translation_flush_wait;
 	assign mems_satp_access =
@@ -663,6 +664,9 @@ module core (
 		(mems_inst_bits[6:0] == OP_SYSTEM) &&
 		(mems_inst_bits[14:12] == 3'b000) &&
 		(mems_inst_bits[31:25] == 7'b0001001);
+	assign mems_fence_i =
+		(mems_inst_bits[6:0] == OP_MISC_MEM) &&
+		(mems_inst_bits[14:12] == 3'b001);
 	assign mems_translation_hazard = mems_satp_access || mems_sfence_vma;
 	assign mems_translation_flush_wait =
 		mems_valid &&
@@ -734,6 +738,7 @@ module core (
 		 (mems_ctrl.is_jump &&
 		  (mems_inst_bits[6:0] != OP_JAL) &&
 		  (mems_inst_bits[6:0] != OP_JALR)) ||
+		 mems_fence_i ||
 		 (mems_translation_hazard && !dcache_flush_busy));
 	assign control_hazard =
 		mem_control_hazard ||
@@ -747,10 +752,16 @@ module core (
 		!dcache_flush_busy &&
 		!csru_raise_trap &&
 		!mems_expt.valid;
+	assign i_membus.fetch_invalidate =
+		mems_valid &&
+		mems_is_new &&
+		mems_fence_i &&
+		!csru_raise_trap &&
+		!mems_expt.valid;
 	assign control_hazard_pc_next =
 		mem_control_hazard
 			? ((csru_raise_trap) ? csru_trap_vector :
-			   (mems_translation_hazard) ? mems_pc + Addr'(4) :
+			   (mems_translation_hazard || mems_fence_i) ? mems_pc + Addr'(4) :
 			   memq_rdata.jump_addr)
 			: (ex_early_jal_redirect ? ex_early_jal_pc_next :
 			   ex_early_jalr_redirect ? ex_early_jalr_pc_next :

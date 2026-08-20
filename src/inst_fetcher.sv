@@ -27,6 +27,9 @@ module inst_fetcher (
         Addr                              addr;
         logic [MEMBUS_DATA_WIDTH-1:0]     bits;
         ExceptionInfo                     expt;
+        logic                             predicted_branch_valid;
+        Addr                              predicted_branch_pc;
+        Addr                              predicted_next_pc;
     } fetch_fifo_type;
 
     logic           fetch_fifo_flush;
@@ -109,6 +112,12 @@ module inst_fetcher (
     Addr        branch_predicted_next_pc;
     logic       branch_predicted_from_btb;
     logic       branch_predicted_from_ras;
+    logic       fetch_prediction_valid;
+    Addr        fetch_predicted_branch_pc;
+    Addr        fetch_predicted_next_pc;
+    logic [2:0] fetch_lookup_start_offset;
+    logic       issue_fetch_prediction_applied;
+    Addr        issue_fetch_predicted_next_pc;
 
     // instruction converter
     logic [15:0] rvcc_inst16;
@@ -159,15 +168,22 @@ module inst_fetcher (
     branch_predictor static_branch_predictor (
         .clk(clk),
         .rst(rst),
+        .invalidate(core_if.fetch_invalidate),
         .inst_valid(branch_predictor_inst_valid),
         .pc(branch_predictor_pc),
         .inst(branch_predictor_inst),
         .is_rvc(branch_predictor_is_rvc),
+        .fetch_lookup_valid(fetch_lookup_valid),
+        .fetch_lookup_pc(fetch_lookup_pc),
+        .fetch_lookup_start_offset(fetch_lookup_start_offset),
         .prediction_valid(branch_prediction_valid),
         .predicted_taken(branch_predicted_taken),
         .predicted_next_pc(branch_predicted_next_pc),
         .predicted_from_btb(branch_predicted_from_btb),
         .predicted_from_ras(branch_predicted_from_ras),
+        .fetch_prediction_valid(fetch_prediction_valid),
+        .fetch_predicted_branch_pc(fetch_predicted_branch_pc),
+        .fetch_predicted_next_pc(fetch_predicted_next_pc),
         .update_valid(core_if.bp_update_valid),
         .update_is_branch(core_if.bp_update_is_branch),
         .update_is_jalr(core_if.bp_update_is_jalr),
@@ -188,13 +204,26 @@ module inst_fetcher (
     assign issue_predict_redirect =
         issue_fifo_wvalid &&
         branch_prediction_valid &&
-        branch_predicted_taken;
+        branch_predicted_taken &&
+        !issue_fetch_prediction_applied;
     assign issue_predict_next_pc = branch_predicted_next_pc;
     assign predictor_redirect = issue_predict_redirect && !core_if.is_hazard;
+    assign issue_fetch_prediction_applied =
+        issue_fifo_wvalid &&
+        fetch_fifo_rvalid &&
+        fetch_fifo_rdata.predicted_branch_valid &&
+        !issue_fifo_wdata_raw.expt.valid &&
+        issue_fifo_wdata_raw.addr == fetch_fifo_rdata.predicted_branch_pc;
+    assign issue_fetch_predicted_next_pc = fetch_fifo_rdata.predicted_next_pc;
 
     always_comb begin
         issue_fifo_wdata = issue_fifo_wdata_raw;
-        if (branch_prediction_valid) begin
+        if (issue_fetch_prediction_applied) begin
+            issue_fifo_wdata.predicted_taken = 1'b1;
+            issue_fifo_wdata.predicted_next_pc = issue_fetch_predicted_next_pc;
+            issue_fifo_wdata.predicted_from_btb = 1'b1;
+            issue_fifo_wdata.predicted_from_ras = 1'b0;
+        end else if (branch_prediction_valid) begin
             issue_fifo_wdata.predicted_taken = branch_predicted_taken;
             issue_fifo_wdata.predicted_next_pc = branch_predicted_next_pc;
             issue_fifo_wdata.predicted_from_btb = branch_predicted_from_btb;
@@ -254,8 +283,10 @@ module inst_fetcher (
                     end
                 end else begin
                     if (issue_fifo_wready && issue_fifo_wvalid) begin
-                        issue_pc_offset      <= issue_pc_offset
-                                             + ((issue_is_rdata_saved || !rvcc_is_rvc) ? 3'd4 : 3'd2);
+                        issue_pc_offset      <= issue_fetch_prediction_applied
+                                             ? issue_fetch_predicted_next_pc[2:0]
+                                             : issue_pc_offset
+                                               + ((issue_is_rdata_saved || !rvcc_is_rvc) ? 3'd4 : 3'd2);
                         issue_is_rdata_saved <= 1'b0;
                     end
                 end
@@ -358,6 +389,11 @@ module inst_fetcher (
                         issue_fifo_wdata_raw.expt.cause = INSTRUCTION_ACCESS_FAULT;
                         issue_fifo_wdata_raw.expt.value = issue_pmp_addr;
                     end
+                    if (fetch_fifo_rdata.predicted_branch_valid &&
+                        issue_fifo_wdata_raw.addr == fetch_fifo_rdata.predicted_branch_pc &&
+                        !issue_fifo_wdata_raw.expt.valid) begin
+                        fetch_fifo_rready = 1'b1;
+                    end
                 end
             end
         end
@@ -410,6 +446,13 @@ module inst_fetcher (
     logic icache_mem_ready;
     Addr icache_mem_addr;
     logic icache_mem_rvalid;
+    logic fetch_lookup_valid;
+    Addr  fetch_lookup_pc;
+    logic [2:0] fetch_start_offset;
+    logic fetch_req_predicted_branch_valid;
+    Addr  fetch_req_predicted_branch_pc;
+    Addr  fetch_req_predicted_next_pc;
+    Addr  fetch_next_pc_after_request;
 
     typedef enum logic [1:0] {
         FetchMemOwnerNone,
@@ -474,6 +517,18 @@ module inst_fetcher (
 `else
     assign trace_fetch_fault_match = 1'b1;
 `endif
+    assign fetch_lookup_pc = (fetch_state == FetchAccess) ? fetch_req_vaddr : fetch_pc;
+    assign fetch_lookup_start_offset = fetch_start_offset;
+    assign fetch_lookup_valid =
+        fetch_fifo_wready &&
+        (
+            (fetch_state == FetchIdle && !need_translate && fetch_pmp_allow) ||
+            (fetch_state == FetchAccess && fetch_pmp_allow)
+        );
+    assign fetch_next_pc_after_request =
+        fetch_prediction_valid
+            ? {fetch_predicted_next_pc[XLEN-1:3], 3'b000}
+            : fetch_lookup_pc + Addr'(8);
 	    assign fetch_translation_req_valid =
 	        fetch_state == FetchIdle &&
 	        fetch_fifo_wready &&
@@ -519,7 +574,7 @@ module inst_fetcher (
         .clk(clk),
         .rst(rst),
 	        .cancel(fetch_redirect),
-        .invalidate(translation_flush),
+        .invalidate(translation_flush || core_if.fetch_invalidate),
         .req_valid(icache_req_valid),
         .req_ready(icache_req_ready),
         .req_addr(icache_req_addr),
@@ -613,6 +668,11 @@ module inst_fetcher (
         fetch_fifo_wdata.addr = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ? fetch_req_vaddr : fetch_pc;
         fetch_fifo_wdata.bits = (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) ? icache_rsp_data : '0;
         fetch_fifo_wdata.expt = '0;
+        fetch_fifo_wdata.predicted_branch_valid =
+            (fetch_state == FetchWaitResp && fetch_inst_mem_rvalid) &&
+            fetch_req_predicted_branch_valid;
+        fetch_fifo_wdata.predicted_branch_pc = fetch_req_predicted_branch_pc;
+        fetch_fifo_wdata.predicted_next_pc = fetch_req_predicted_next_pc;
         if (fetch_state == FetchFault && fetch_fifo_wready) begin
             fetch_fifo_wdata.addr = fetch_req_vaddr;
             fetch_fifo_wdata.expt = fetch_fault_expt;
@@ -629,6 +689,10 @@ module inst_fetcher (
             fetch_pc         <= INITIAL_PC;
             fetch_req_vaddr  <= '0;
             fetch_req_paddr  <= '0;
+            fetch_start_offset <= 3'd0;
+            fetch_req_predicted_branch_valid <= 1'b0;
+            fetch_req_predicted_branch_pc <= '0;
+            fetch_req_predicted_next_pc <= '0;
             fetch_fault_expt <= '0;
             fetch_mem_owner  <= FetchMemOwnerNone;
             fetch_state      <= FetchIdle;
@@ -743,8 +807,14 @@ module inst_fetcher (
 	                fetch_pc         <= predictor_redirect
 	                    ? {issue_predict_next_pc[XLEN-1:3], 3'b000}
 	                    : {core_if.next_pc[XLEN-1:3], 3'b000};
+                fetch_start_offset <= predictor_redirect
+                    ? issue_predict_next_pc[2:0]
+                    : core_if.next_pc[2:0];
                 fetch_req_vaddr  <= '0;
                 fetch_req_paddr  <= '0;
+                fetch_req_predicted_branch_valid <= 1'b0;
+                fetch_req_predicted_branch_pc <= '0;
+                fetch_req_predicted_next_pc <= '0;
                 fetch_fault_expt <= '0;
                 fetch_state      <= FetchIdle;
             end else begin
@@ -770,7 +840,11 @@ module inst_fetcher (
                                 end
                                 fetch_req_vaddr <= fetch_pc;
                                 fetch_req_paddr <= fetch_pc;
-                                fetch_pc <= fetch_pc + 8;
+                                fetch_req_predicted_branch_valid <= fetch_prediction_valid;
+                                fetch_req_predicted_branch_pc <= fetch_predicted_branch_pc;
+                                fetch_req_predicted_next_pc <= fetch_predicted_next_pc;
+                                fetch_pc <= fetch_next_pc_after_request;
+                                fetch_start_offset <= fetch_prediction_valid ? fetch_predicted_next_pc[2:0] : 3'd0;
                                 fetch_state <= FetchWaitResp;
                             end
                         end
@@ -812,7 +886,11 @@ module inst_fetcher (
                             if (trace_fetch_event) begin
                                 $display("[FETCH] request translated va=%h pa=%h", fetch_req_vaddr, fetch_req_paddr);
                             end
-                            fetch_pc <= fetch_pc + 8;
+                            fetch_req_predicted_branch_valid <= fetch_prediction_valid;
+                            fetch_req_predicted_branch_pc <= fetch_predicted_branch_pc;
+                            fetch_req_predicted_next_pc <= fetch_predicted_next_pc;
+                            fetch_pc <= fetch_next_pc_after_request;
+                            fetch_start_offset <= fetch_prediction_valid ? fetch_predicted_next_pc[2:0] : 3'd0;
                             fetch_state <= FetchWaitResp;
                         end
                     end
@@ -823,6 +901,9 @@ module inst_fetcher (
                                 $display("[FETCH] response va=%h data=%h", fetch_req_vaddr, icache_rsp_data);
                             end
                             fetch_state <= FetchIdle;
+                            fetch_req_predicted_branch_valid <= 1'b0;
+                            fetch_req_predicted_branch_pc <= '0;
+                            fetch_req_predicted_next_pc <= '0;
                         end
                     end
 

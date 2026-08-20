@@ -1,6 +1,6 @@
 # Test Status
 
-Last updated: 2026-08-14
+Last updated: 2026-08-20
 
 This document summarizes the current public test status of MiNTs-CPU.
 
@@ -12,6 +12,7 @@ This document summarizes the current public test status of MiNTs-CPU.
 | custom C tests | Pass in current maintained scope | UART, ACLINT, PLIC, trap, and MMU-focused tests |
 | Linux BusyBox autotest | Pass | OpenSBI -> Linux 6.12 -> BusyBox `/init` autotest |
 | Whisper lockstep | Pass | BusyBox autotest pass marker after 61,610,275 compared instructions |
+| `rv64ui-p-fence_i` | Pass | Fast regression for `fence.i` and frontend predictor invalidation |
 
 ## Strongest Correctness Checkpoint
 
@@ -26,6 +27,16 @@ Run the current riscv-tests set:
 
 ```bash
 make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full
+```
+
+Run the frontend-sensitive `fence.i` regression:
+
+```bash
+python3 tools/run_riscv_tests.py obj_dir/sim core/test/share rv64ui-p-fence_i \
+  --rom build/test/bootrom.hex \
+  --ram_base 0x80000000 \
+  -o results/rv64ui-fence-i \
+  -t 10
 ```
 
 Run Linux BusyBox autotest:
