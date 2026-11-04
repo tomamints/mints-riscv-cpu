@@ -17,5 +17,12 @@ The local Whisper checkout keeps its own license and third-party notice files:
 If the Whisper source tree or binaries built from Whisper are redistributed
 with this project, keep those files with the redistributed material.
 
+veryl-riscv-book
+  Project: https://github.com/nananapo/veryl-riscv-book
+  Used as: starting point for parts of the MiNTs-CPU RTL, rewritten in SystemVerilog
+  License: BSD 3-Clause License
+  Copyright (c) 2025, Kanata Abe
+  License text: LICENSES/veryl-riscv-book-BSD-3-Clause
+
 This notice is for third-party software attribution only. It does not define
 the license of the MiNTs-CPU RTL, documentation, or project-specific tools.
