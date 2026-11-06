@@ -499,6 +499,10 @@ int main(int argc, char** argv)
     std::uint64_t lockstep_trace_start = 0;
     std::uint64_t lockstep_trace_end = 0;
     std::uint64_t lockstep_stop_order = 0;
+    std::uint64_t lockstep_no_retire_timeout = 0;
+    std::uint64_t lockstep_no_retire_cycles = 0;
+    std::uint64_t lockstep_last_retire_pc = 0;
+    std::uint64_t lockstep_last_retire_order = 0;
     const bool lockstep_trace_enabled =
         plusarg_u64(
             argc,
@@ -517,9 +521,17 @@ int main(int argc, char** argv)
             argv,
             "LOCKSTEP_STOP_ORDER",
             lockstep_stop_order);
+    const bool lockstep_no_retire_timeout_enabled =
+        plusarg_u64(
+            argc,
+            argv,
+            "LOCKSTEP_NO_RETIRE_TIMEOUT",
+            lockstep_no_retire_timeout) &&
+        lockstep_no_retire_timeout != 0;
     bool lockstep_started = false;
     bool lockstep_failed = false;
     bool lockstep_stop_reached = false;
+    bool lockstep_no_retire_timeout_reached = false;
     bool lockstep_busybox_pass_reached = false;
     std::string lockstep_uart_window;
     constexpr const char* kBusyboxPassToken = "BUSYBOX-TEST-PASS";
@@ -722,9 +734,12 @@ int main(int argc, char** argv)
         // Observe retire once, immediately after the rising-edge evaluation.
         if (dut->clk == 1 && dut->retire_valid) {
             ++rtl_retire_order;
+            lockstep_no_retire_cycles = 0;
 
             const std::uint64_t rtl_pc =
                 static_cast<std::uint64_t>(dut->retire_pc);
+            lockstep_last_retire_pc = rtl_pc;
+            lockstep_last_retire_order = rtl_retire_order;
 
             // RTL executes the small boot ROM first. Whisper starts directly
             // at OpenSBI, therefore comparison begins at 0x80000000.
@@ -897,6 +912,144 @@ int main(int argc, char** argv)
                         << " pc=0x" << std::hex << rtl_pc << '\n';
                 }
             }
+        } else if (dut->clk == 1 &&
+                   lockstep_started &&
+                   lockstep_no_retire_timeout_enabled) {
+            ++lockstep_no_retire_cycles;
+
+            if (lockstep_no_retire_cycles >= lockstep_no_retire_timeout) {
+                lockstep_no_retire_timeout_reached = true;
+                Verilated::gotFinish(true);
+                std::cerr
+                    << "[LOCKSTEP-NO-RETIRE-TIMEOUT]"
+                    << " cycles_since_retire=" << std::dec
+                    << lockstep_no_retire_cycles
+                    << " compared_order=" << compared_order
+                    << " rtl_retire_order=" << rtl_retire_order
+                    << " last_retire_order=" << lockstep_last_retire_order
+                    << " last_retire_pc=0x" << std::hex
+                    << lockstep_last_retire_pc
+                    << " retire_valid=" << std::dec
+                    << static_cast<unsigned>(dut->retire_valid)
+                    << " pending_mtimer=" << lockstep_mtimer_pending
+                    << " pending_seip=" << lockstep_seip_pending
+                    << " id_v=" << static_cast<unsigned>(dut->lockstep_debug_id_valid)
+                    << " id_pc=0x" << std::hex
+                    << static_cast<std::uint64_t>(dut->lockstep_debug_id_pc)
+                    << " ex_v=" << std::dec
+                    << static_cast<unsigned>(dut->lockstep_debug_ex_valid)
+                    << " ex_pc=0x" << std::hex
+                    << static_cast<std::uint64_t>(dut->lockstep_debug_ex_pc)
+                    << " ex_stall=" << std::dec
+                    << static_cast<unsigned>(dut->lockstep_debug_ex_stall)
+                    << " mem_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_mem_valid)
+                    << " mem_pc=0x" << std::hex
+                    << static_cast<std::uint64_t>(dut->lockstep_debug_mem_pc)
+                    << " mem_stall=" << std::dec
+                    << static_cast<unsigned>(dut->lockstep_debug_mem_stall)
+                    << " wb_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_wb_valid)
+                    << " wb_pc=0x" << std::hex
+                    << static_cast<std::uint64_t>(dut->lockstep_debug_wb_pc)
+                    << " memu_state=" << std::dec
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_state)
+                    << " memu_is_new="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_is_new)
+                    << " memu_wen="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_req_wen)
+                    << " memu_xlate="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_need_translate)
+                    << " memu_tr_req_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_translation_req_valid)
+                    << " memu_tr_req_r="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_translation_req_ready)
+                    << " memu_tr_rsp_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_translation_rsp_valid)
+                    << " memu_tr_mem_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_translation_mem_valid)
+                    << " memu_data_rv="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_data_mem_rvalid)
+                    << " memu_bus_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_bus_valid)
+                    << " memu_bus_r="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_bus_ready)
+                    << " memu_bus_rv="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_bus_rvalid)
+                    << " memu_fl_req="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_fast_load_req)
+                    << " memu_fl_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_fast_load_valid)
+                    << " memu_fs_req="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_fast_store_req)
+                    << " memu_fs_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_memu_fast_store_valid)
+                    << " i_v=" << std::dec
+                    << static_cast<unsigned>(dut->lockstep_debug_i_valid)
+                    << " i_rdy="
+                    << static_cast<unsigned>(dut->lockstep_debug_i_ready)
+                    << " i_rv="
+                    << static_cast<unsigned>(dut->lockstep_debug_i_rvalid)
+                    << " d_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_d_valid)
+                    << " d_rdy="
+                    << static_cast<unsigned>(dut->lockstep_debug_d_ready)
+                    << " d_rv="
+                    << static_cast<unsigned>(dut->lockstep_debug_d_rvalid)
+                    << " dcache_flush_busy="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_flush_busy)
+                    << " dcache_state="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_state)
+                    << " dcache_sb_count="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_store_buffer_count)
+                    << " dcache_sb_issue_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_store_buffer_issue_valid)
+                    << " dcache_sb_issue_fire="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_store_buffer_issue_fire)
+                    << " dcache_sb_empty="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_store_buffer_empty)
+                    << " dcache_cpu_cacheable="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_cpu_cacheable)
+                    << " dcache_hit="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_cache_hit)
+                    << " dcache_overlap="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_cpu_store_buffer_overlap)
+                    << " dcache_load_bypass="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_load_can_bypass_store_buffer)
+                    << " dcache_rsp_valid="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_rsp_valid)
+                    << " dcache_flush_active="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_flush_active)
+                    << " dcache_mem_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_mem_valid)
+                    << " dcache_mem_rdy="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_mem_ready)
+                    << " dcache_mem_rv="
+                    << static_cast<unsigned>(dut->lockstep_debug_dcache_mem_rvalid)
+                    << " amou_state="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_state)
+                    << " amou_sv="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_slave_valid)
+                    << " amou_srdy="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_slave_ready)
+                    << " amou_srv="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_slave_rvalid)
+                    << " amou_mv="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_master_valid)
+                    << " amou_mrdy="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_master_ready)
+                    << " amou_mrv="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_master_rvalid)
+                    << " amou_saved="
+                    << static_cast<unsigned>(dut->lockstep_debug_amou_slave_saved_valid)
+                    << " mmio_v="
+                    << static_cast<unsigned>(dut->lockstep_debug_mmio_valid)
+                    << " mmio_rdy="
+                    << static_cast<unsigned>(dut->lockstep_debug_mmio_ready)
+                    << " mmio_rv="
+                    << static_cast<unsigned>(dut->lockstep_debug_mmio_rvalid)
+                    << '\n';
+            }
         }
 #endif
 
@@ -939,6 +1092,9 @@ int main(int argc, char** argv)
         std::cerr << " (BusyBox autotest passed)";
 
     std::cerr << '\n';
+
+    if (lockstep_no_retire_timeout_reached)
+        return 4;
 #endif
 
 #ifdef TEST_MODE

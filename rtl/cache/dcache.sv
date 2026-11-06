@@ -10,6 +10,17 @@ module dcache #(
 	input logic invalidate,
 	output logic flush_busy,
 	output logic mem_low_priority,
+	output logic [2:0] debug_state,
+	output logic [7:0] debug_store_buffer_count,
+	output logic debug_store_buffer_issue_valid,
+	output logic debug_store_buffer_issue_fire,
+	output logic debug_store_buffer_empty,
+	output logic debug_cpu_cacheable,
+	output logic debug_cache_hit,
+	output logic debug_cpu_store_buffer_overlap,
+	output logic debug_cacheable_load_can_bypass_store_buffer,
+	output logic debug_rsp_valid,
+	output logic debug_flush_active,
 	core_data_if.slave cpu,
 	core_data_if.master mem
 );
@@ -81,18 +92,23 @@ module dcache #(
 	logic [STORE_BUFFER_COUNT_WIDTH-1:0] store_buffer_count;
 	logic store_buffer_issue_valid;
 	logic store_buffer_issue_fire;
+	logic cpu_request_fire;
+	logic cpu_store_fire;
 	logic store_buffer_full;
 	logic store_buffer_full_after_issue;
 	logic store_buffer_empty;
 	logic [STORE_BUFFER_INDEX_WIDTH-1:0] store_buffer_tail_prev;
 	logic cacheable_store_can_enqueue_without_drain;
 	logic cacheable_load_can_bypass_store_buffer;
+	logic cacheable_store_ready_now;
 	logic cpu_store_buffer_overlap;
 	logic [(MEMBUS_DATA_WIDTH/8)-1:0] cpu_load_mask;
 	logic store_buffer_tail_same_word;
 	logic store_buffer_tail_mask_disjoint;
 	logic store_buffer_any_same_word;
 	logic store_buffer_any_same_line;
+	logic store_buffer_combine_match;
+	logic [STORE_BUFFER_INDEX_WIDTH-1:0] store_buffer_combine_index;
 	logic store_buffer_drain_urgent;
 	logic cacheable_store_can_accept_without_drain;
 	logic fill_allocate;
@@ -113,6 +129,13 @@ module dcache #(
 	logic [(MEMBUS_DATA_WIDTH/8)-1:0] fast_load_mask;
 	logic fast_load_store_buffer_overlap;
 	logic fast_load_hit;
+	logic [INDEX_WIDTH-1:0] fast_store_index;
+	logic [TAG_WIDTH-1:0] fast_store_tag;
+	logic fast_store_cacheable;
+	logic fast_store_hit;
+	logic fast_store_accept;
+	logic fast_store_can_accept_now;
+	logic fast_store_combine_match;
 
 	UInt64 perf_req_count;
 	UInt64 perf_load_req_count;
@@ -164,6 +187,7 @@ module dcache #(
 	UInt64 perf_store_combine_tail_disjoint_count;
 	UInt64 perf_store_combine_any_word_count;
 	UInt64 perf_store_combine_any_line_count;
+	UInt64 perf_store_combine_merge_count;
 	UInt64 perf_response_cache_hit_load_count;
 	UInt64 perf_response_fill_critical_count;
 	UInt64 perf_response_bypass_load_count;
@@ -296,6 +320,29 @@ module dcache #(
 		valid[fast_load_index] &&
 		tags[fast_load_index] == fast_load_tag &&
 		!fast_load_store_buffer_overlap;
+	assign fast_store_index = cpu.fast_store_addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
+	assign fast_store_tag = cpu.fast_store_addr[XLEN-1 -: TAG_WIDTH];
+	assign fast_store_cacheable = is_ram(cpu.fast_store_addr);
+	assign fast_store_hit =
+		fast_store_cacheable &&
+		valid[fast_store_index] &&
+		tags[fast_store_index] == fast_store_tag;
+	// Fast-store completion is a contract: the normal CPU store request must
+	// also be accepted in this cycle so the cache/store-buffer side effect
+	// happens.  Keep this conservative; do not rely on space created by a
+	// simultaneous drain.
+	assign fast_store_can_accept_now =
+		state == Idle &&
+		!flush_active &&
+		!invalidate &&
+		!rsp_valid_q &&
+		fast_store_hit &&
+		((WRITE_BACK && fast_store_hit) ||
+		 fast_store_combine_match ||
+		 !store_buffer_full);
+	assign fast_store_accept =
+		cpu.fast_store_req &&
+		fast_store_can_accept_now;
 	assign store_buffer_full = store_buffer_count == STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH);
 	assign cpu_load_mask = access_byte_mask(cpu.funct3, cpu.addr[2:0]);
 	assign cpu_store_buffer_overlap = store_buffer_overlaps(cpu.addr, cpu_load_mask);
@@ -307,17 +354,63 @@ module dcache #(
 		(store_buffer_wmask[store_buffer_tail_prev] & cpu.wmask) == '0;
 	assign store_buffer_any_same_word = store_buffer_has_same_word(cpu.addr);
 	assign store_buffer_any_same_line = store_buffer_has_same_line(cpu.addr);
+
+	always_comb begin
+		store_buffer_combine_match = 1'b0;
+		store_buffer_combine_index = '0;
+		for (int unsigned i = 0; i < STORE_BUFFER_DEPTH; i++) begin
+			logic [STORE_BUFFER_COUNT_WIDTH-1:0] offset;
+			logic [STORE_BUFFER_INDEX_WIDTH-1:0] idx;
+
+			offset = store_buffer_count - STORE_BUFFER_COUNT_WIDTH'(1) - STORE_BUFFER_COUNT_WIDTH'(i);
+			idx = store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(offset);
+
+			if (cpu.valid &&
+				cpu_cacheable &&
+				cpu.wen &&
+				!(WRITE_BACK && cache_hit) &&
+				i < store_buffer_count &&
+				store_buffer_addr[idx][XLEN-1:3] == cpu.addr[XLEN-1:3] &&
+				idx != store_buffer_head &&
+				!store_buffer_combine_match) begin
+				store_buffer_combine_match = 1'b1;
+				store_buffer_combine_index = idx;
+			end
+		end
+	end
+
+	always_comb begin
+		fast_store_combine_match = 1'b0;
+		for (int unsigned i = 0; i < STORE_BUFFER_DEPTH; i++) begin
+			logic [STORE_BUFFER_COUNT_WIDTH-1:0] offset;
+			logic [STORE_BUFFER_INDEX_WIDTH-1:0] idx;
+
+			offset = store_buffer_count - STORE_BUFFER_COUNT_WIDTH'(1) - STORE_BUFFER_COUNT_WIDTH'(i);
+			idx = store_buffer_head + STORE_BUFFER_INDEX_WIDTH'(offset);
+
+			if (cpu.fast_store_req &&
+				i < store_buffer_count &&
+				store_buffer_addr[idx][XLEN-1:3] == cpu.fast_store_addr[XLEN-1:3] &&
+				idx != store_buffer_head &&
+				!fast_store_combine_match) begin
+				fast_store_combine_match = 1'b1;
+			end
+		end
+	end
+
+	// Whether the current CPU store can be handled without scheduling a
+	// store-buffer drain ahead of it.
 	assign cacheable_store_can_accept_without_drain =
 		cpu.valid &&
 		cpu_cacheable &&
 		cpu.wen &&
-		((WRITE_BACK && cache_hit) || !store_buffer_full);
+		((WRITE_BACK && cache_hit) || store_buffer_combine_match || !store_buffer_full);
 	assign cacheable_store_can_enqueue_without_drain =
 		cpu.valid &&
 		cpu_cacheable &&
 		cpu.wen &&
 		!(WRITE_BACK && cache_hit) &&
-		!store_buffer_full;
+		(store_buffer_combine_match || !store_buffer_full);
 	assign cacheable_load_can_bypass_store_buffer =
 		cpu.valid &&
 		cpu_cacheable &&
@@ -326,6 +419,7 @@ module dcache #(
 		!cpu_store_buffer_overlap;
 	assign store_buffer_issue_valid =
 		state == Idle &&
+		!invalidate &&
 		store_buffer_count != '0 &&
 		(flush_active ||
 		 (!cacheable_store_can_accept_without_drain &&
@@ -334,24 +428,58 @@ module dcache #(
 	assign store_buffer_full_after_issue =
 		store_buffer_full &&
 		!store_buffer_issue_fire;
+	// Whether cpu.ready can accept this store now.  This includes the
+	// drain+enqueue case where a full buffer frees one entry in the same cycle.
+	assign cacheable_store_ready_now =
+		(WRITE_BACK && cache_hit) ||
+		store_buffer_combine_match ||
+		!store_buffer_full_after_issue;
 	assign store_buffer_empty = store_buffer_count == '0;
 	assign store_buffer_drain_urgent =
 		store_buffer_count >= STORE_BUFFER_COUNT_WIDTH'(STORE_BUFFER_DEPTH - 1) ||
 		(cpu.valid && !(cpu_cacheable && cpu.wen));
+	assign debug_state = state;
+	assign debug_store_buffer_count = 8'(store_buffer_count);
+	assign debug_store_buffer_issue_valid = store_buffer_issue_valid;
+	assign debug_store_buffer_issue_fire = store_buffer_issue_fire;
+	assign debug_store_buffer_empty = store_buffer_empty;
+	assign debug_cpu_cacheable = cpu_cacheable;
+	assign debug_cache_hit = cache_hit;
+	assign debug_cpu_store_buffer_overlap = cpu_store_buffer_overlap;
+	assign debug_cacheable_load_can_bypass_store_buffer = cacheable_load_can_bypass_store_buffer;
+	assign debug_rsp_valid = rsp_valid_q;
+	assign debug_flush_active = flush_active;
 
 	assign cpu.ready =
-		state == Idle &&
+		!invalidate && state == Idle &&
 		!flush_active &&
 		!rsp_valid_q &&
-		((cpu_cacheable && cpu.wen) ? ((WRITE_BACK && cache_hit) || !store_buffer_full_after_issue) :
+		((cpu_cacheable && cpu.wen) ? cacheable_store_ready_now :
 			(cacheable_load_can_bypass_store_buffer || store_buffer_empty));
+	assign cpu_request_fire = cpu.valid && cpu.ready;
+	assign cpu_store_fire = cpu_request_fire && cpu_cacheable && cpu.wen;
 	assign flush_busy = WRITE_BACK && flush_active;
+
+`ifndef SYNTHESIS
+	always_ff @(posedge clk) begin
+		if (rst && cpu.fast_store_req && cpu.fast_store_valid) begin
+			assert (cpu_store_fire)
+				else $error(
+					"[DCACHE] fast store accepted without normal request handshake: addr=%h full=%b combine=%b",
+					cpu.fast_store_addr,
+					store_buffer_full,
+					store_buffer_combine_match
+				);
+		end
+	end
+`endif
 
 	always_comb begin
 		cpu.rvalid = rsp_valid_q;
 		cpu.rdata = rsp_data_q;
 		cpu.fast_load_valid = fast_load_hit;
 		cpu.fast_load_data = data[fast_load_index][fast_load_word_offset];
+		cpu.fast_store_valid = fast_store_accept;
 
 		mem.valid = 1'b0;
 		mem.addr = '0;
@@ -366,6 +494,8 @@ module dcache #(
 		mem.fast_load_req = 1'b0;
 		mem.fast_load_addr = '0;
 		mem.fast_load_funct3 = 3'b011;
+		mem.fast_store_req = 1'b0;
+		mem.fast_store_addr = '0;
 		mem_low_priority = 1'b0;
 
 		unique case (state)
@@ -378,7 +508,7 @@ module dcache #(
 					mem.wmask = store_buffer_wmask[store_buffer_head];
 					mem.funct3 = store_buffer_funct3[store_buffer_head];
 					mem_low_priority = !store_buffer_drain_urgent;
-				end else if (cpu.valid && cpu.ready) begin
+				end else if (cpu_request_fire) begin
 					if (cpu.is_amo || !cpu_cacheable) begin
 						mem.valid = 1'b1;
 						mem.addr = cpu.addr;
@@ -531,6 +661,7 @@ module dcache #(
 			perf_store_combine_tail_disjoint_count <= '0;
 			perf_store_combine_any_word_count <= '0;
 			perf_store_combine_any_line_count <= '0;
+			perf_store_combine_merge_count <= '0;
 			perf_response_cache_hit_load_count <= '0;
 			perf_response_fill_critical_count <= '0;
 			perf_response_bypass_load_count <= '0;
@@ -616,7 +747,7 @@ module dcache #(
 					perf_cpu_wait_busy_cycle <= perf_cpu_wait_busy_cycle + UInt64'(1);
 				end else if (rsp_valid_q) begin
 					perf_cpu_wait_rsp_pending_cycle <= perf_cpu_wait_rsp_pending_cycle + UInt64'(1);
-				end else if (cpu_cacheable && cpu.wen && store_buffer_full_after_issue) begin
+				end else if (cpu_cacheable && cpu.wen && !cacheable_store_ready_now) begin
 					perf_cpu_wait_store_full_cycle <= perf_cpu_wait_store_full_cycle + UInt64'(1);
 				end else if (cpu_cacheable && !cpu.wen && store_buffer_count != '0 && cpu_store_buffer_overlap) begin
 					perf_cpu_wait_load_overlap_cycle <= perf_cpu_wait_load_overlap_cycle + UInt64'(1);
@@ -636,7 +767,7 @@ module dcache #(
 				perf_store_buffer_drain_count <= perf_store_buffer_drain_count + UInt64'(1);
 			end
 
-			if (state == Idle && cpu.valid && cpu_cacheable && cpu.wen && store_buffer_full_after_issue) begin
+			if (state == Idle && cpu.valid && cpu_cacheable && cpu.wen && !cacheable_store_ready_now) begin
 				perf_store_buffer_full_stall_count <= perf_store_buffer_full_stall_count + UInt64'(1);
 			end
 			if (state == Idle && cpu.valid && cpu_cacheable && !cpu.wen && store_buffer_count != '0) begin
@@ -682,14 +813,16 @@ module dcache #(
 				end
 			end
 
-			if (!invalidate) begin
+			// Complete outstanding write-through transactions even when an
+			// invalidation coincides with a request or response handshake.
+			if (!invalidate || (!WRITE_BACK && state != Idle)) begin
 			unique case (state)
 				Idle: begin
 					if (flush_active) begin
 						if (store_buffer_count_next == '0) begin
 							state <= FlushScan;
 						end
-					end else if (cpu.valid && cpu.ready) begin
+					end else if (cpu_request_fire) begin
 						perf_req_count <= perf_req_count + UInt64'(1);
 						if (cpu.wen) begin
 							perf_store_req_count <= perf_store_req_count + UInt64'(1);
@@ -801,15 +934,26 @@ module dcache #(
 							end
 							if (!(WRITE_BACK && cache_hit)) begin
 								perf_write_through_count <= perf_write_through_count + UInt64'(1);
-								store_buffer_addr[store_buffer_tail] <= cpu.addr;
-								store_buffer_wdata[store_buffer_tail] <= cpu.wdata;
-								store_buffer_wmask[store_buffer_tail] <= cpu.wmask;
-								store_buffer_funct3[store_buffer_tail] <= cpu.funct3;
-								store_buffer_tail <= store_buffer_tail + STORE_BUFFER_INDEX_WIDTH'(1);
-								store_buffer_count_next =
-									store_buffer_count_next + STORE_BUFFER_COUNT_WIDTH'(1);
-								perf_store_buffer_enq_count <=
-									perf_store_buffer_enq_count + UInt64'(1);
+								if (store_buffer_combine_match) begin
+									store_buffer_wdata[store_buffer_combine_index] <= merge_word(
+										store_buffer_wdata[store_buffer_combine_index],
+										cpu.wdata,
+										cpu.wmask);
+									store_buffer_wmask[store_buffer_combine_index] <=
+										store_buffer_wmask[store_buffer_combine_index] | cpu.wmask;
+									perf_store_combine_merge_count <=
+										perf_store_combine_merge_count + UInt64'(1);
+								end else begin
+									store_buffer_addr[store_buffer_tail] <= cpu.addr;
+									store_buffer_wdata[store_buffer_tail] <= cpu.wdata;
+									store_buffer_wmask[store_buffer_tail] <= cpu.wmask;
+									store_buffer_funct3[store_buffer_tail] <= cpu.funct3;
+									store_buffer_tail <= store_buffer_tail + STORE_BUFFER_INDEX_WIDTH'(1);
+									store_buffer_count_next =
+										store_buffer_count_next + STORE_BUFFER_COUNT_WIDTH'(1);
+									perf_store_buffer_enq_count <=
+										perf_store_buffer_enq_count + UInt64'(1);
+								end
 							end
 							state <= Idle;
 						end else begin
@@ -844,7 +988,7 @@ module dcache #(
 						end
 
 						if (fill_count == FILL_COUNT_WIDTH'(WORDS_PER_LINE - 1)) begin
-							if (fill_allocate) begin
+							if (fill_allocate && !invalidate) begin
 								valid[fill_index] <= 1'b1;
 								dirty[fill_index] <= 1'b0;
 								tags[fill_index] <= fill_tag;
@@ -1025,12 +1169,13 @@ module dcache #(
 				perf_store_drain_urgent_wait_cycle,
 				perf_store_drain_low_active_cycle,
 				perf_store_drain_low_wait_cycle);
-			$display("[PERF-STOREBUF-COMBINE] candidate=%0d tail_word=%0d tail_disjoint=%0d any_word=%0d any_line=%0d",
+			$display("[PERF-STOREBUF-COMBINE] candidate=%0d tail_word=%0d tail_disjoint=%0d any_word=%0d any_line=%0d merged=%0d",
 				perf_store_combine_candidate_count,
 				perf_store_combine_tail_word_count,
 				perf_store_combine_tail_disjoint_count,
 				perf_store_combine_any_word_count,
-				perf_store_combine_any_line_count);
+				perf_store_combine_any_line_count,
+				perf_store_combine_merge_count);
 			$display("[PERF-STOREBUF-LOAD] bypass=%0d wait=%0d",
 				perf_store_buffer_load_bypass_count,
 				perf_store_buffer_load_wait_count);

@@ -18,6 +18,9 @@ interface core_data_if;
     logic [2:0]                 fast_load_funct3;
     logic                       fast_load_valid;
     logic [MEMBUS_DATA_WIDTH-1:0]     fast_load_data;
+    logic                       fast_store_req;
+    logic [XLEN-1:0]            fast_store_addr;
+    logic                       fast_store_valid;
 
     logic                       is_amo;
     logic                       aq;
@@ -49,6 +52,9 @@ interface core_data_if;
         output fast_load_funct3,
         input  fast_load_valid,
         input  fast_load_data,
+        output fast_store_req,
+        output fast_store_addr,
+        input  fast_store_valid,
         output is_amo,
         output aq,
         output rl,
@@ -84,6 +90,9 @@ interface core_data_if;
         input  fast_load_funct3,
         output fast_load_valid,
         output fast_load_data,
+        input  fast_store_req,
+        input  fast_store_addr,
+        output fast_store_valid,
         input  is_amo,
         input  aq,
         input  rl,
@@ -113,6 +122,9 @@ interface core_data_if;
         input fast_load_funct3,
         input fast_load_valid,
         input fast_load_data,
+        input fast_store_req,
+        input fast_store_addr,
+        input fast_store_valid,
         input is_amo,
         input aq,
         input rl,

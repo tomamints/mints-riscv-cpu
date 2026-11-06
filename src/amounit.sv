@@ -9,7 +9,15 @@ module amounit (
     output logic           master_low_priority,
     Membus.master          master,
     output logic           amo_commit_valid,
-    output UIntX           amo_commit_wdata
+    output UIntX           amo_commit_wdata,
+    output logic [3:0]     debug_state,
+    output logic           debug_slave_valid,
+    output logic           debug_slave_ready,
+    output logic           debug_slave_rvalid,
+    output logic           debug_master_valid,
+    output logic           debug_master_ready,
+    output logic           debug_master_rvalid,
+    output logic           debug_slave_saved_valid
 );
 
 // ======================================================
@@ -57,6 +65,14 @@ UIntX zaamo_written_data;
 
 assign amo_commit_valid = (state == AMOStoreValid) && master.rvalid;
 assign amo_commit_wdata = zaamo_written_data;
+assign debug_state = state;
+assign debug_slave_valid = slave.valid;
+assign debug_slave_ready = slave.ready;
+assign debug_slave_rvalid = slave.rvalid;
+assign debug_master_valid = master.valid;
+assign debug_master_ready = master.ready;
+assign debug_master_rvalid = master.rvalid;
+assign debug_slave_saved_valid = slave_saved.valid;
 
 
 function automatic void reset_master();
@@ -247,6 +263,7 @@ always_comb begin
     slave.rdata  = '0;
     slave.fast_load_valid = 1'b0;
     slave.fast_load_data = '0;
+    slave.fast_store_valid = 1'b0;
 
     unique case (state)
 

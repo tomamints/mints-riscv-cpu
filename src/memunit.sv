@@ -27,6 +27,22 @@ module memunit (
 	output Addr paddr,
 	output logic stall,
 	output ExceptionInfo expt,
+	output logic [2:0] debug_state,
+	output logic debug_is_new,
+	output logic debug_req_wen,
+	output logic debug_need_translate,
+	output logic debug_translation_req_valid,
+	output logic debug_translation_req_ready,
+	output logic debug_translation_rsp_valid,
+	output logic debug_translation_mem_valid,
+	output logic debug_data_mem_rvalid,
+	output logic debug_membus_valid,
+	output logic debug_membus_ready,
+	output logic debug_membus_rvalid,
+	output logic debug_fast_load_req,
+	output logic debug_fast_load_valid,
+	output logic debug_fast_store_req,
+	output logic debug_fast_store_valid,
 	core_data_if.master membus
 	);
 
@@ -93,6 +109,11 @@ module memunit (
 		logic access_fast_load_candidate;
 		logic translated_fast_load_complete;
 		logic access_fast_load_complete;
+		logic translated_store_complete;
+		logic access_store_complete;
+		logic translated_access_complete;
+		logic access_ready_complete;
+		logic data_store_complete;
 		logic data_fast_load_complete;
 		logic translated_data_mem_fire;
 		logic first_data_mem_fire;
@@ -129,6 +150,7 @@ module memunit (
 		UInt64 perf_mem_response_amo_done_count;
 		UInt64 perf_mem_response_split_first_done_count;
 		UInt64 perf_mem_fast_load_hit_count;
+		UInt64 perf_mem_fast_store_hit_count;
 		UInt64 perf_mem_split_ready_load_cycle;
 		UInt64 perf_mem_split_ready_store_cycle;
 		UInt64 perf_mem_split_ready_bus_wait_cycle;
@@ -204,6 +226,10 @@ module memunit (
 				(paddr >= MMAP_ROM_BEGIN && paddr <= MMAP_ROM_END);
 		endfunction
 
+		function automatic logic is_ram_memory(input Addr paddr);
+			return paddr >= MMAP_RAM_BEGIN && paddr < MMAP_RAM_END;
+		endfunction
+
 		function automatic UIntX extract_load_data(
 			input logic [127:0] data,
 			input logic [2:0] offset,
@@ -233,7 +259,9 @@ module memunit (
 		// A translated fast-load can complete in the same cycle as the translation
 		// response, before req_paddr is updated at the clock edge.  Expose the
 		// just-produced PA for retire/lockstep metadata in that case.
-		assign paddr = translated_fast_load_complete ? translation_pa : req_paddr;
+		assign paddr =
+			translated_access_complete ?
+				translation_pa : req_paddr;
 
 		logic req_needs_write_permission;
 		logic current_needs_write_permission;
@@ -277,6 +305,30 @@ module memunit (
 		assign access_fast_load_complete =
 			access_fast_load_candidate &&
 			membus.fast_load_valid;
+		assign translated_store_complete =
+			translated_access_can_issue &&
+			req_wen &&
+			!req_is_amo &&
+			!req_crosses_word &&
+			is_ram_memory(translation_pa) &&
+			membus.fast_store_valid;
+		assign access_store_complete =
+			valid &&
+			state == AccessWaitReady &&
+			req_wen &&
+			!req_is_amo &&
+			!req_crosses_word &&
+			is_ram_memory(req_paddr) &&
+			membus.fast_store_valid;
+		assign translated_access_complete =
+			translated_fast_load_complete ||
+			translated_store_complete;
+		assign access_ready_complete =
+			access_fast_load_complete ||
+			access_store_complete;
+		assign data_store_complete =
+			translated_store_complete ||
+			access_store_complete;
 		assign data_fast_load_complete =
 			translated_fast_load_complete ||
 			access_fast_load_complete;
@@ -304,6 +356,38 @@ module memunit (
 		assign membus.fast_load_addr =
 			translated_fast_load_candidate ? translation_pa : req_paddr;
 		assign membus.fast_load_funct3 = req_funct3;
+		assign membus.fast_store_req =
+			!translation_mem_valid &&
+			((translated_access_can_issue &&
+			  req_wen &&
+			  !req_is_amo &&
+			  !req_crosses_word &&
+			  is_ram_memory(translation_pa)) ||
+			 (valid &&
+			  state == AccessWaitReady &&
+			  req_wen &&
+			  !req_is_amo &&
+			  !req_crosses_word &&
+			  is_ram_memory(req_paddr)));
+		assign membus.fast_store_addr =
+			(translated_access_can_issue && state == TranslateWait) ?
+				translation_pa : req_paddr;
+		assign debug_state = state;
+		assign debug_is_new = is_new;
+		assign debug_req_wen = req_wen;
+		assign debug_need_translate = need_translate;
+		assign debug_translation_req_valid = translation_req_valid;
+		assign debug_translation_req_ready = translation_req_ready;
+		assign debug_translation_rsp_valid = translation_rsp_valid;
+		assign debug_translation_mem_valid = translation_mem_valid;
+		assign debug_data_mem_rvalid = data_mem_rvalid;
+		assign debug_membus_valid = membus.valid;
+		assign debug_membus_ready = membus.ready;
+		assign debug_membus_rvalid = membus.rvalid;
+		assign debug_fast_load_req = membus.fast_load_req;
+		assign debug_fast_load_valid = membus.fast_load_valid;
+		assign debug_fast_store_req = membus.fast_store_req;
+		assign debug_fast_store_valid = membus.fast_store_valid;
 		assign data_pmp_addr =
 			(state == TranslateWait && translation_rsp_valid && !translation_fault) ? translation_pa : addr;
 		assign data_pmp_size =
@@ -395,16 +479,18 @@ module memunit (
 					membus.funct3 = req_funct3;
 				end
 			end else if (translated_access_can_issue) begin
-				membus.valid  = 1'b1;
-				membus.addr   = translation_pa;
-				membus.wen    = req_wen;
-				membus.wdata  = req_wdata;
-				membus.wmask  = req_wmask;
-				membus.is_amo = req_is_amo;
-				membus.amoop  = req_amoop;
-				membus.aq     = req_aq;
-				membus.rl     = req_rl;
-				membus.funct3 = req_funct3;
+				if (!translated_fast_load_complete) begin
+					membus.valid  = 1'b1;
+					membus.addr   = translation_pa;
+					membus.wen    = req_wen;
+					membus.wdata  = req_wdata;
+					membus.wmask  = req_wmask;
+					membus.is_amo = req_is_amo;
+					membus.amoop  = req_amoop;
+					membus.aq     = req_aq;
+					membus.rl     = req_rl;
+					membus.funct3 = req_funct3;
+				end
 			end else if (access_fast_load_candidate) begin
 				if (!access_fast_load_complete) begin
 					membus.valid  = 1'b1;
@@ -419,16 +505,18 @@ module memunit (
 					membus.funct3 = req_funct3;
 				end
 			end else if (valid && state == AccessWaitReady) begin
-				membus.valid  = 1'b1;
-				membus.addr   = req_paddr;
-			membus.wen    = req_wen;
-			membus.wdata  = req_wdata;
-			membus.wmask  = req_wmask;
-			membus.is_amo = req_is_amo;
-			membus.amoop  = req_amoop;
-			membus.aq     = req_aq;
-			membus.rl     = req_rl;
-			membus.funct3 = req_funct3;
+				if (!access_fast_load_complete) begin
+					membus.valid  = 1'b1;
+					membus.addr   = req_paddr;
+					membus.wen    = req_wen;
+					membus.wdata  = req_wdata;
+					membus.wmask  = req_wmask;
+					membus.is_amo = req_is_amo;
+					membus.amoop  = req_amoop;
+					membus.aq     = req_aq;
+					membus.rl     = req_rl;
+					membus.funct3 = req_funct3;
+				end
 			end else if (valid && state == SplitAccessWaitReady) begin
 				membus.valid  = 1'b1;
 				membus.addr   = {req_paddr[XLEN-1:3], 3'b000} + Addr'(8);
@@ -456,8 +544,8 @@ module memunit (
 
 		case (state)
 			Init:            stall = valid & (is_new && inst_is_memop(ctrl));
-			TranslateWait:   stall = valid & ~translated_fast_load_complete;
-			AccessWaitReady: stall = valid & ~access_fast_load_complete;
+			TranslateWait:   stall = valid & ~translated_access_complete;
+			AccessWaitReady: stall = valid & ~access_ready_complete;
 			AccessWaitValid: stall = valid & (~data_mem_rvalid || req_crosses_word);
 			SplitAccessWaitReady: stall = valid;
 			SplitAccessWaitValid: stall = valid & ~data_mem_rvalid;
@@ -529,6 +617,7 @@ module memunit (
 			perf_mem_response_amo_done_count <= '0;
 			perf_mem_response_split_first_done_count <= '0;
 			perf_mem_fast_load_hit_count <= '0;
+			perf_mem_fast_store_hit_count <= '0;
 			perf_mem_split_ready_load_cycle <= '0;
 			perf_mem_split_ready_store_cycle <= '0;
 			perf_mem_split_ready_bus_wait_cycle <= '0;
@@ -539,6 +628,9 @@ module memunit (
 			if (valid) begin
 				if (data_fast_load_complete) begin
 					perf_mem_fast_load_hit_count <= perf_mem_fast_load_hit_count + UInt64'(1);
+				end
+				if (data_store_complete) begin
+					perf_mem_fast_store_hit_count <= perf_mem_fast_store_hit_count + UInt64'(1);
 				end
 				unique case (state)
 					TranslateWait: begin
@@ -717,7 +809,7 @@ module memunit (
 									state <= Fault;
 								end else begin
 									req_paddr <= translation_pa;
-									if (translated_fast_load_complete) begin
+									if (translated_access_complete) begin
 										state <= Init;
 									end else if (translated_data_mem_fire) begin
 										if (req_wen && !req_is_amo) begin
@@ -733,7 +825,7 @@ module memunit (
 					end
 
 					AccessWaitReady: begin
-						if (access_fast_load_complete) begin
+						if (access_ready_complete) begin
 							state <= Init;
 						end else if (membus.ready) begin
 							if (req_wen && !req_is_amo) begin
@@ -833,8 +925,9 @@ module memunit (
 				perf_mem_response_amo_done_count,
 				perf_mem_response_split_first_done_count,
 				perf_mem_split_response_done_count);
-			$display("[PERF-MEMU-FAST] hit_load=%0d",
-				perf_mem_fast_load_hit_count);
+			$display("[PERF-MEMU-FAST] hit_load=%0d hit_store=%0d",
+				perf_mem_fast_load_hit_count,
+				perf_mem_fast_store_hit_count);
 			$display("[PERF-MEMU-SPLIT] ready_load=%0d ready_store=%0d ready_bus_wait=%0d response_load=%0d response_bus_wait=%0d",
 				perf_mem_split_ready_load_cycle,
 				perf_mem_split_ready_store_cycle,

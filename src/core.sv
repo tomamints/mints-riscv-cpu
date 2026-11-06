@@ -48,6 +48,33 @@ module core (
 	// Existing MACHINE_TIMER_INTERRUPT pulse used by the proven MTIMER
 	// one-shot synchronization path. Keep this unchanged.
 	output logic        lockstep_mtip_trap_taken_o,
+
+	output logic        lockstep_debug_id_valid_o,
+	output Addr         lockstep_debug_id_pc_o,
+	output logic        lockstep_debug_ex_valid_o,
+	output Addr         lockstep_debug_ex_pc_o,
+	output logic        lockstep_debug_ex_stall_o,
+	output logic        lockstep_debug_mem_valid_o,
+	output Addr         lockstep_debug_mem_pc_o,
+	output logic        lockstep_debug_mem_stall_o,
+	output logic        lockstep_debug_wb_valid_o,
+	output Addr         lockstep_debug_wb_pc_o,
+	output logic [2:0]  lockstep_debug_memu_state_o,
+	output logic        lockstep_debug_memu_is_new_o,
+	output logic        lockstep_debug_memu_req_wen_o,
+	output logic        lockstep_debug_memu_need_translate_o,
+	output logic        lockstep_debug_memu_translation_req_valid_o,
+	output logic        lockstep_debug_memu_translation_req_ready_o,
+	output logic        lockstep_debug_memu_translation_rsp_valid_o,
+	output logic        lockstep_debug_memu_translation_mem_valid_o,
+	output logic        lockstep_debug_memu_data_mem_rvalid_o,
+	output logic        lockstep_debug_memu_bus_valid_o,
+	output logic        lockstep_debug_memu_bus_ready_o,
+	output logic        lockstep_debug_memu_bus_rvalid_o,
+	output logic        lockstep_debug_memu_fast_load_req_o,
+	output logic        lockstep_debug_memu_fast_load_valid_o,
+	output logic        lockstep_debug_memu_fast_store_req_o,
+	output logic        lockstep_debug_memu_fast_store_valid_o,
 `endif
 
 	output PrivMode pmp_priv_mode,
@@ -784,6 +811,22 @@ module core (
 		Addr memu_paddr;
 		logic memu_stall;
 		ExceptionInfo memu_expt;
+		logic [2:0] memu_debug_state;
+		logic memu_debug_is_new;
+		logic memu_debug_req_wen;
+		logic memu_debug_need_translate;
+		logic memu_debug_translation_req_valid;
+		logic memu_debug_translation_req_ready;
+		logic memu_debug_translation_rsp_valid;
+		logic memu_debug_translation_mem_valid;
+		logic memu_debug_data_mem_rvalid;
+		logic memu_debug_bus_valid;
+		logic memu_debug_bus_ready;
+		logic memu_debug_bus_rvalid;
+		logic memu_debug_fast_load_req;
+		logic memu_debug_fast_load_valid;
+		logic memu_debug_fast_store_req;
+		logic memu_debug_fast_store_valid;
 		ExceptionInfo csru_expt_info;
 		Addr memu_addr;
 		assign memu_addr = mems_ctrl.is_amo ? memq_rdata.rs1_data : memq_rdata.alu_result;
@@ -815,6 +858,22 @@ module core (
 			.paddr  (memu_paddr),
 			.stall  (memu_stall),
 			.expt   (memu_expt),
+			.debug_state(memu_debug_state),
+			.debug_is_new(memu_debug_is_new),
+			.debug_req_wen(memu_debug_req_wen),
+			.debug_need_translate(memu_debug_need_translate),
+			.debug_translation_req_valid(memu_debug_translation_req_valid),
+			.debug_translation_req_ready(memu_debug_translation_req_ready),
+			.debug_translation_rsp_valid(memu_debug_translation_rsp_valid),
+			.debug_translation_mem_valid(memu_debug_translation_mem_valid),
+			.debug_data_mem_rvalid(memu_debug_data_mem_rvalid),
+			.debug_membus_valid(memu_debug_bus_valid),
+			.debug_membus_ready(memu_debug_bus_ready),
+			.debug_membus_rvalid(memu_debug_bus_rvalid),
+			.debug_fast_load_req(memu_debug_fast_load_req),
+			.debug_fast_load_valid(memu_debug_fast_load_valid),
+			.debug_fast_store_req(memu_debug_fast_store_req),
+			.debug_fast_store_valid(memu_debug_fast_store_valid),
 			.membus (d_membus)
 		);
 
@@ -1063,6 +1122,33 @@ module core (
 	assign lockstep_mtip_trap_taken_o =
 		lockstep_interrupt_trap_taken_o &&
 		(csru_trap_cause == MACHINE_TIMER_INTERRUPT);
+
+	assign lockstep_debug_id_valid_o = ids_valid;
+	assign lockstep_debug_id_pc_o = ids_valid ? ids_pc : Addr'(0);
+	assign lockstep_debug_ex_valid_o = exs_valid;
+	assign lockstep_debug_ex_pc_o = exs_valid ? exs_pc : Addr'(0);
+	assign lockstep_debug_ex_stall_o = exs_stall;
+	assign lockstep_debug_mem_valid_o = mems_valid;
+	assign lockstep_debug_mem_pc_o = mems_valid ? mems_pc : Addr'(0);
+	assign lockstep_debug_mem_stall_o = memu_stall;
+	assign lockstep_debug_wb_valid_o = wbs_valid;
+	assign lockstep_debug_wb_pc_o = wbs_valid ? wbs_pc : Addr'(0);
+	assign lockstep_debug_memu_state_o = memu_debug_state;
+	assign lockstep_debug_memu_is_new_o = memu_debug_is_new;
+	assign lockstep_debug_memu_req_wen_o = memu_debug_req_wen;
+	assign lockstep_debug_memu_need_translate_o = memu_debug_need_translate;
+	assign lockstep_debug_memu_translation_req_valid_o = memu_debug_translation_req_valid;
+	assign lockstep_debug_memu_translation_req_ready_o = memu_debug_translation_req_ready;
+	assign lockstep_debug_memu_translation_rsp_valid_o = memu_debug_translation_rsp_valid;
+	assign lockstep_debug_memu_translation_mem_valid_o = memu_debug_translation_mem_valid;
+	assign lockstep_debug_memu_data_mem_rvalid_o = memu_debug_data_mem_rvalid;
+	assign lockstep_debug_memu_bus_valid_o = memu_debug_bus_valid;
+	assign lockstep_debug_memu_bus_ready_o = memu_debug_bus_ready;
+	assign lockstep_debug_memu_bus_rvalid_o = memu_debug_bus_rvalid;
+	assign lockstep_debug_memu_fast_load_req_o = memu_debug_fast_load_req;
+	assign lockstep_debug_memu_fast_load_valid_o = memu_debug_fast_load_valid;
+	assign lockstep_debug_memu_fast_store_req_o = memu_debug_fast_store_req;
+	assign lockstep_debug_memu_fast_store_valid_o = memu_debug_fast_store_valid;
 `endif
 	assign perf_ifetch_stall = !ids_valid && !control_hazard;
 	assign perf_data_hazard_stall = exs_valid && exs_data_hazard;

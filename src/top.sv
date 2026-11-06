@@ -60,7 +60,66 @@ module core_top #(
     output Inst         lockstep_exception_inst,
     output logic        lockstep_mtip_trap_taken,
     output logic        lockstep_uart_tx_valid,
-    output logic [7:0]  lockstep_uart_tx_char
+    output logic [7:0]  lockstep_uart_tx_char,
+
+    output logic        lockstep_debug_id_valid,
+    output Addr         lockstep_debug_id_pc,
+    output logic        lockstep_debug_ex_valid,
+    output Addr         lockstep_debug_ex_pc,
+    output logic        lockstep_debug_ex_stall,
+    output logic        lockstep_debug_mem_valid,
+    output Addr         lockstep_debug_mem_pc,
+    output logic        lockstep_debug_mem_stall,
+    output logic        lockstep_debug_wb_valid,
+    output Addr         lockstep_debug_wb_pc,
+    output logic [2:0]  lockstep_debug_memu_state,
+    output logic        lockstep_debug_memu_is_new,
+    output logic        lockstep_debug_memu_req_wen,
+    output logic        lockstep_debug_memu_need_translate,
+    output logic        lockstep_debug_memu_translation_req_valid,
+    output logic        lockstep_debug_memu_translation_req_ready,
+    output logic        lockstep_debug_memu_translation_rsp_valid,
+    output logic        lockstep_debug_memu_translation_mem_valid,
+    output logic        lockstep_debug_memu_data_mem_rvalid,
+    output logic        lockstep_debug_memu_bus_valid,
+    output logic        lockstep_debug_memu_bus_ready,
+    output logic        lockstep_debug_memu_bus_rvalid,
+    output logic        lockstep_debug_memu_fast_load_req,
+    output logic        lockstep_debug_memu_fast_load_valid,
+    output logic        lockstep_debug_memu_fast_store_req,
+    output logic        lockstep_debug_memu_fast_store_valid,
+    output logic        lockstep_debug_i_valid,
+    output logic        lockstep_debug_i_ready,
+    output logic        lockstep_debug_i_rvalid,
+    output logic        lockstep_debug_d_valid,
+    output logic        lockstep_debug_d_ready,
+    output logic        lockstep_debug_d_rvalid,
+    output logic        lockstep_debug_dcache_flush_busy,
+    output logic [2:0]  lockstep_debug_dcache_state,
+    output logic [7:0]  lockstep_debug_dcache_store_buffer_count,
+    output logic        lockstep_debug_dcache_store_buffer_issue_valid,
+    output logic        lockstep_debug_dcache_store_buffer_issue_fire,
+    output logic        lockstep_debug_dcache_store_buffer_empty,
+    output logic        lockstep_debug_dcache_cpu_cacheable,
+    output logic        lockstep_debug_dcache_cache_hit,
+    output logic        lockstep_debug_dcache_cpu_store_buffer_overlap,
+    output logic        lockstep_debug_dcache_load_can_bypass_store_buffer,
+    output logic        lockstep_debug_dcache_rsp_valid,
+    output logic        lockstep_debug_dcache_flush_active,
+    output logic        lockstep_debug_dcache_mem_valid,
+    output logic        lockstep_debug_dcache_mem_ready,
+    output logic        lockstep_debug_dcache_mem_rvalid,
+    output logic [3:0]  lockstep_debug_amou_state,
+    output logic        lockstep_debug_amou_slave_valid,
+    output logic        lockstep_debug_amou_slave_ready,
+    output logic        lockstep_debug_amou_slave_rvalid,
+    output logic        lockstep_debug_amou_master_valid,
+    output logic        lockstep_debug_amou_master_ready,
+    output logic        lockstep_debug_amou_master_rvalid,
+    output logic        lockstep_debug_amou_slave_saved_valid,
+    output logic        lockstep_debug_mmio_valid,
+    output logic        lockstep_debug_mmio_ready,
+    output logic        lockstep_debug_mmio_rvalid
 `endif
 );
 
@@ -144,6 +203,25 @@ module core_top #(
     UIntX satp_fetch_value;
     logic translation_flush_fetch_value;
     logic dcache_flush_busy;
+    logic [2:0] dcache_debug_state;
+    logic [7:0] dcache_debug_store_buffer_count;
+    logic dcache_debug_store_buffer_issue_valid;
+    logic dcache_debug_store_buffer_issue_fire;
+    logic dcache_debug_store_buffer_empty;
+    logic dcache_debug_cpu_cacheable;
+    logic dcache_debug_cache_hit;
+    logic dcache_debug_cpu_store_buffer_overlap;
+    logic dcache_debug_load_can_bypass_store_buffer;
+    logic dcache_debug_rsp_valid;
+    logic dcache_debug_flush_active;
+    logic [3:0] amou_debug_state;
+    logic amou_debug_slave_valid;
+    logic amou_debug_slave_ready;
+    logic amou_debug_slave_rvalid;
+    logic amou_debug_master_valid;
+    logic amou_debug_master_ready;
+    logic amou_debug_master_rvalid;
+    logic amou_debug_slave_saved_valid;
     logic sstatus_sum_fetch_value;
     logic sstatus_mxr_fetch_value;
     logic uart_irq;
@@ -372,6 +450,17 @@ module core_top #(
         .invalidate (translation_flush_fetch_value),
         .flush_busy (dcache_flush_busy),
         .mem_low_priority(dcache_mem_low_priority),
+        .debug_state(dcache_debug_state),
+        .debug_store_buffer_count(dcache_debug_store_buffer_count),
+        .debug_store_buffer_issue_valid(dcache_debug_store_buffer_issue_valid),
+        .debug_store_buffer_issue_fire(dcache_debug_store_buffer_issue_fire),
+        .debug_store_buffer_empty(dcache_debug_store_buffer_empty),
+        .debug_cpu_cacheable(dcache_debug_cpu_cacheable),
+        .debug_cache_hit(dcache_debug_cache_hit),
+        .debug_cpu_store_buffer_overlap(dcache_debug_cpu_store_buffer_overlap),
+        .debug_cacheable_load_can_bypass_store_buffer(dcache_debug_load_can_bypass_store_buffer),
+        .debug_rsp_valid(dcache_debug_rsp_valid),
+        .debug_flush_active(dcache_debug_flush_active),
         .cpu        (d_membus_core),
         .mem        (dcache_membus_core)
     );
@@ -385,7 +474,15 @@ module core_top #(
         .slave  (dcache_membus_core),
         .master (d_membus),
         .amo_commit_valid(amo_commit_valid),
-        .amo_commit_wdata(amo_commit_wdata)
+        .amo_commit_wdata(amo_commit_wdata),
+        .debug_state(amou_debug_state),
+        .debug_slave_valid(amou_debug_slave_valid),
+        .debug_slave_ready(amou_debug_slave_ready),
+        .debug_slave_rvalid(amou_debug_slave_rvalid),
+        .debug_master_valid(amou_debug_master_valid),
+        .debug_master_ready(amou_debug_master_ready),
+        .debug_master_rvalid(amou_debug_master_rvalid),
+        .debug_slave_saved_valid(amou_debug_slave_saved_valid)
     );
 
     dma u_dma(
@@ -482,6 +579,32 @@ module core_top #(
         .lockstep_exception_pc_o(lockstep_exception_pc),
         .lockstep_exception_inst_o(lockstep_exception_inst),
         .lockstep_mtip_trap_taken_o(lockstep_mtip_trap_taken),
+        .lockstep_debug_id_valid_o(lockstep_debug_id_valid),
+        .lockstep_debug_id_pc_o(lockstep_debug_id_pc),
+        .lockstep_debug_ex_valid_o(lockstep_debug_ex_valid),
+        .lockstep_debug_ex_pc_o(lockstep_debug_ex_pc),
+        .lockstep_debug_ex_stall_o(lockstep_debug_ex_stall),
+        .lockstep_debug_mem_valid_o(lockstep_debug_mem_valid),
+        .lockstep_debug_mem_pc_o(lockstep_debug_mem_pc),
+        .lockstep_debug_mem_stall_o(lockstep_debug_mem_stall),
+        .lockstep_debug_wb_valid_o(lockstep_debug_wb_valid),
+        .lockstep_debug_wb_pc_o(lockstep_debug_wb_pc),
+        .lockstep_debug_memu_state_o(lockstep_debug_memu_state),
+        .lockstep_debug_memu_is_new_o(lockstep_debug_memu_is_new),
+        .lockstep_debug_memu_req_wen_o(lockstep_debug_memu_req_wen),
+        .lockstep_debug_memu_need_translate_o(lockstep_debug_memu_need_translate),
+        .lockstep_debug_memu_translation_req_valid_o(lockstep_debug_memu_translation_req_valid),
+        .lockstep_debug_memu_translation_req_ready_o(lockstep_debug_memu_translation_req_ready),
+        .lockstep_debug_memu_translation_rsp_valid_o(lockstep_debug_memu_translation_rsp_valid),
+        .lockstep_debug_memu_translation_mem_valid_o(lockstep_debug_memu_translation_mem_valid),
+        .lockstep_debug_memu_data_mem_rvalid_o(lockstep_debug_memu_data_mem_rvalid),
+        .lockstep_debug_memu_bus_valid_o(lockstep_debug_memu_bus_valid),
+        .lockstep_debug_memu_bus_ready_o(lockstep_debug_memu_bus_ready),
+        .lockstep_debug_memu_bus_rvalid_o(lockstep_debug_memu_bus_rvalid),
+        .lockstep_debug_memu_fast_load_req_o(lockstep_debug_memu_fast_load_req),
+        .lockstep_debug_memu_fast_load_valid_o(lockstep_debug_memu_fast_load_valid),
+        .lockstep_debug_memu_fast_store_req_o(lockstep_debug_memu_fast_store_req),
+        .lockstep_debug_memu_fast_store_valid_o(lockstep_debug_memu_fast_store_valid),
 `endif
 
         .pmp_priv_mode(pmp_priv_mode),
@@ -521,6 +644,38 @@ module core_top #(
 `ifdef SVCPU_WHISPER_LOCKSTEP
     assign lockstep_uart_tx_valid = uart_tx_char_valid;
     assign lockstep_uart_tx_char = uart_tx_char;
+    assign lockstep_debug_i_valid = i_membus.valid;
+    assign lockstep_debug_i_ready = i_membus.ready;
+    assign lockstep_debug_i_rvalid = i_membus.rvalid;
+    assign lockstep_debug_d_valid = d_membus.valid;
+    assign lockstep_debug_d_ready = d_membus.ready;
+    assign lockstep_debug_d_rvalid = d_membus.rvalid;
+    assign lockstep_debug_dcache_flush_busy = dcache_flush_busy;
+    assign lockstep_debug_dcache_state = dcache_debug_state;
+    assign lockstep_debug_dcache_store_buffer_count = dcache_debug_store_buffer_count;
+    assign lockstep_debug_dcache_store_buffer_issue_valid = dcache_debug_store_buffer_issue_valid;
+    assign lockstep_debug_dcache_store_buffer_issue_fire = dcache_debug_store_buffer_issue_fire;
+    assign lockstep_debug_dcache_store_buffer_empty = dcache_debug_store_buffer_empty;
+    assign lockstep_debug_dcache_cpu_cacheable = dcache_debug_cpu_cacheable;
+    assign lockstep_debug_dcache_cache_hit = dcache_debug_cache_hit;
+    assign lockstep_debug_dcache_cpu_store_buffer_overlap = dcache_debug_cpu_store_buffer_overlap;
+    assign lockstep_debug_dcache_load_can_bypass_store_buffer = dcache_debug_load_can_bypass_store_buffer;
+    assign lockstep_debug_dcache_rsp_valid = dcache_debug_rsp_valid;
+    assign lockstep_debug_dcache_flush_active = dcache_debug_flush_active;
+    assign lockstep_debug_dcache_mem_valid = dcache_membus_core.valid;
+    assign lockstep_debug_dcache_mem_ready = dcache_membus_core.ready;
+    assign lockstep_debug_dcache_mem_rvalid = dcache_membus_core.rvalid;
+    assign lockstep_debug_amou_state = amou_debug_state;
+    assign lockstep_debug_amou_slave_valid = amou_debug_slave_valid;
+    assign lockstep_debug_amou_slave_ready = amou_debug_slave_ready;
+    assign lockstep_debug_amou_slave_rvalid = amou_debug_slave_rvalid;
+    assign lockstep_debug_amou_master_valid = amou_debug_master_valid;
+    assign lockstep_debug_amou_master_ready = amou_debug_master_ready;
+    assign lockstep_debug_amou_master_rvalid = amou_debug_master_rvalid;
+    assign lockstep_debug_amou_slave_saved_valid = amou_debug_slave_saved_valid;
+    assign lockstep_debug_mmio_valid = mmio_membus.valid;
+    assign lockstep_debug_mmio_ready = mmio_membus.ready;
+    assign lockstep_debug_mmio_rvalid = mmio_membus.rvalid;
 `endif
 
 endmodule : core_top

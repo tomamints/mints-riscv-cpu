@@ -69,6 +69,28 @@ Representative stable result:
 [PERF] cycles=100000000 retired=41780831 cpi_x1000=2393 ipc_x1000=417
 ```
 
+Follow-up measurement with fast stores, store-buffer merging, and the
+write-through cache invalidation/response fix (2026-11-06):
+
+```text
+[PERF] cycles=100000000 retired=42079566 cpi_x1000=2376 ipc_x1000=420
+[PERF-STOREBUF-COMBINE] candidate=3429792 tail_word=73504 tail_disjoint=73477 any_word=87948 any_line=793551 merged=44886
+```
+
+Using the same configuration and command-loop image, this completes 298,735
+more instructions in the fixed window (about 0.7%). The window includes Linux
+boot activity, and the changes were measured together; it does not isolate the
+effect of each optimization. The `tee` process reported an output error, but
+the summary above was recovered from its log. The write-back cache mode has not
+been validated for the invalidation/response fix.
+
+The BusyBox autotest also passed Whisper lockstep with these changes:
+
+```text
+BUSYBOX-TEST-PASS
+[LOCKSTEP] PASS: 61282110 instructions compared (BusyBox autotest passed)
+```
+
 Key frontend counters for this checkpoint:
 
 ```text
