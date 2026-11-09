@@ -14,3 +14,7 @@ cp fpga/de0-cv/blink/quartus/de0_cv_blink.qpf \
    fpga/de0-cv/blink/quartus/de0_cv_blink.sdc "$out/quartus/"
 cd "$out/quartus"
 "$QUARTUS_SH" --flow compile de0_cv_blink
+# openFPGALoader's Altera SRAM backend takes RBF, not SOF.
+quartus_cpf="$(dirname "$QUARTUS_SH")/quartus_cpf"
+if [[ "$QUARTUS_SH" == quartus_sh ]]; then quartus_cpf=quartus_cpf; fi
+"$quartus_cpf" -c output_files/de0_cv_blink.sof output_files/de0_cv_blink.rbf

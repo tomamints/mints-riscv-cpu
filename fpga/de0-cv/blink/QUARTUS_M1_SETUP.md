@@ -36,6 +36,30 @@ Confirmed: unattended installation completed and `quartus_sh --version` returned
 Initial compile failed at `quartus_map`; direct execution reported
 `realloc(): invalid pointer`, exit 134, with approximately 7 GiB available RAM.
 The generic flow message suggesting memory shortage does not establish its cause.
-Investigating runtime library compatibility. Fit, STA, SOF generation and physical
-blink are still unverified at this checkpoint. Do not run the programming step
-until a successful build has produced and checked the SOF.
+Preloading `/lib/x86_64-linux-gnu/libudev.so.1` allowed `quartus_map` to start
+and report HDL errors instead. The Docker build runner includes this setting.
+This workaround is also described by the original reporter in the
+[Altera community](https://community.altera.com/discussions/quartus-prime/running-quartus-prime-standard-on-wsl-crashes-in-libudev-so/260408/replies/260415).
+The blink module's derived `localparam` was moved from the parameter port list
+into the module body for Quartus 20.1 parser compatibility.
+Final result: full compilation, Fit and STA passed; 19 ALMs, 28 registers.
+All four timing corners passed at 50 MHz. Minimum setup slack 15.813 ns,
+hold 0.191 ns, recovery 18.169 ns, removal 0.499 ns; all TNS zero.
+Setup and hold were reported fully constrained. See README for four warnings.
+The Verilator regression passed again after the parser compatibility change.
+
+openFPGALoader rejects SOF for this SRAM backend. `quartus_cpf -c` converted SOF
+to RBF successfully; the build script now includes that conversion.
+Native USB-Blaster SRAM programming reached 100%, reported Done and exited 0.
+The user confirmed the physical LED blink. No flash programming was performed.
+
+Recorded artifact SHA256 (a rebuilt SOF can include changing metadata):
+
+- SOF: `78bce740a0810573a2dd43f12a3d033d2483cb13787fabca43633430aa82edeb`
+- RBF: `b426226caa9d7f63c70364cb2eafa170c7e845fdcb9e602b33020b62b828fa36`
+
+The container also generates en_US.UTF-8 to satisfy Quartus qenv.sh.
+The final locale-equipped image built successfully; compilation and programming
+above used the preceding image with a harmless missing-locale warning.
+Logs are local under `build/logs/`: quartus-install, quartus-version,
+de0cv-blink-quartus, de0cv-blink-convert, de0cv-blink-program.

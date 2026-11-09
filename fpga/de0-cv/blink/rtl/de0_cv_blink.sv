@@ -1,13 +1,13 @@
 `timescale 1ns/1ps
 module de0_cv_blink #(
-    parameter int unsigned HALF_PERIOD_CYCLES = 25_000_000,
-    localparam int unsigned COUNT_WIDTH =
-        HALF_PERIOD_CYCLES > 1 ? $clog2(HALF_PERIOD_CYCLES) : 1
+    parameter int unsigned HALF_PERIOD_CYCLES = 25_000_000
 ) (
     input  logic CLOCK_50,
     input  logic KEY0_N,
     output logic LEDR0
 );
+    localparam int unsigned COUNT_WIDTH =
+        HALF_PERIOD_CYCLES > 1 ? $clog2(HALF_PERIOD_CYCLES) : 1;
     // KEY0 asserts reset asynchronously; release passes through two flops.
     (* async_reg = "true" *) logic reset_meta;
     (* async_reg = "true" *) logic reset_n;

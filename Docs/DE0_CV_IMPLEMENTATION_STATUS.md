@@ -11,7 +11,8 @@ JTAGは回路の構成、UARTはイメージのロードとLinuxコンソール�
 方針の出典は
 [復旧計画](MiNTs_DE0CV_M1_FPGA_Architecture_Recovery_Plan.md)。
 M1上のVerilatorによるLinux 6.12 / BusyBox自動テストは確認済み。
-FPGA実機でのLinux起動、合成、Fit、タイミング収束は未確認。
+Lチカの合成・Fit・STA・SRAM書込み・実機点滅はM1で確認済み。
+CPU/Linux全体のFPGA合成と実機起動は未確認。
 
 作業開始時のGit基準は `3374f8c`。実装ブランチは
 `fpga/de0-cv-bringup`。既存Linuxシミュレーションを回帰基準として維持する。
@@ -114,3 +115,17 @@ UART検証は `bash tools/test-de0cv-uart.sh` で再実行できる。
 - [Quartus Lite 20.1 Linux公式配布ページ](https://www.altera.com/downloads/fpga-development-tools/quartus-prime-lite-edition-design-software-version-20-1-linux)
   には20.1.0.711の本体とCyclone V用デバイスパッケージがある。
   ダウンロード経路は認証ページを指しており、インストール可否と実行可否は別途確認する。
+
+## 2026-11-09 追加チェックポイント
+
+- M1 + amd64 Docker + Quartus Lite 20.1.0.711でLチカFull Compilation成功。
+  50MHz全4コーナーのSTA成功、SOF→RBF変換、Mac native openFPGALoaderで
+  SRAM書込み100% / Done / exit 0。ユーザーが実機点滅を確認した。
+  [手順・障害対策・チェックサム](../fpga/de0-cv/blink/QUARTUS_M1_SETUP.md)を保存。
+  上記の古い「Quartus取得待ち」「別ホスト確認中」の記述はこの結果で更新される。
+- 共通Cテスト起動基盤を復元し、旧UARTの基準は2 PASS / 4 TIMEOUT。
+  詳細は[基準記録](../fpga/de0-cv/UART_C_TEST_BASELINE.md)。
+- 新規16550 regsをCodexが差分レビューし、TBの競合を修正後に単体検証をGO。
+  機能12/12 PASS、意図的TX overflowは期待非ゼロ終了。
+  新規RTL警告0。依存する既存共有ファイルのlint警告66件は残る。
+  regs+PHY結合、SoC接続、C/Linux回帰は未実施。

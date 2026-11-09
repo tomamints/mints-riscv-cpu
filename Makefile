@@ -92,6 +92,13 @@ TEST_ARGS ?=
 TEST_RUNNER ?= tools/run_riscv_tests.py
 DBG_ADDR ?= 0x40000000
 C_TEST ?= debug_output
+# C test sources and the shared harness (bootrom/entry/link script).
+C_TEST_SRC_DIR ?= core/test
+C_TEST_COMMON_DIR ?= tb/sw/common
+BOOTROM_SRC ?= $(C_TEST_COMMON_DIR)/bootrom.S
+C_TEST_ENTRY ?= $(C_TEST_COMMON_DIR)/entry.S
+C_TEST_LD ?= $(C_TEST_COMMON_DIR)/link.ld
+C_TEST_HARNESS_DEFS ?= -DDEBUG_MMIO_ADDR=$(DBG_ADDR) -DRAM_BASE_ADDR=$(RAM_BASE)
 C_TEST_ELF = $(C_TEST_BUILD_DIR)/$(C_TEST).elf
 C_TEST_BIN = $(C_TEST_BUILD_DIR)/$(C_TEST).bin
 C_TEST_HEX = $(C_TEST_BUILD_DIR)/$(C_TEST).bin.hex
@@ -216,9 +223,9 @@ test-rv64si: test-suite
 test-smoke: TEST=rv32ui-p-simple
 test-smoke: test-one
 
-$(C_TEST_BUILD_DIR)/%.elf: core/test/%.c core/test/entry.S core/test/link.ld
+$(C_TEST_BUILD_DIR)/%.elf: $(C_TEST_SRC_DIR)/%.c $(C_TEST_ENTRY) $(C_TEST_LD)
 	mkdir -p $(C_TEST_BUILD_DIR)
-	$(RISCV_GCC) $(RISCV_CFLAGS) -T core/test/link.ld core/test/entry.S $< -o $@
+	$(RISCV_GCC) $(RISCV_CFLAGS) $(C_TEST_HARNESS_DEFS) -T $(C_TEST_LD) $(C_TEST_ENTRY) $< -o $@
 
 $(C_TEST_BUILD_DIR)/%.bin: $(C_TEST_BUILD_DIR)/%.elf
 	$(RISCV_OBJCOPY) -O binary $< $@
@@ -228,13 +235,13 @@ $(C_TEST_BUILD_DIR)/%.bin.hex: $(C_TEST_BUILD_DIR)/%.bin
 
 bootrom-build:
 	mkdir -p $(TEST_BUILD_DIR)
-	$(RISCV_GCC) $(RISCV_CFLAGS) -c core/test/bootrom.S -o $(BOOTROM_OBJ)
+	$(RISCV_GCC) $(RISCV_CFLAGS) $(C_TEST_HARNESS_DEFS) -c $(BOOTROM_SRC) -o $(BOOTROM_OBJ)
 	$(RISCV_OBJCOPY) -O binary $(BOOTROM_OBJ) $(BOOTROM_BIN)
 	$(PYTHON) tools/bin2hex.py 8 $(BOOTROM_BIN) > $(BOOTROM)
 
 c-test-build:
 	mkdir -p $(C_TEST_BUILD_DIR)
-	$(RISCV_GCC) $(RISCV_CFLAGS) -T core/test/link.ld core/test/entry.S core/test/$(C_TEST).c -o $(C_TEST_ELF)
+	$(RISCV_GCC) $(RISCV_CFLAGS) $(C_TEST_HARNESS_DEFS) -T $(C_TEST_LD) $(C_TEST_ENTRY) $(C_TEST_SRC_DIR)/$(C_TEST).c -o $(C_TEST_ELF)
 	$(RISCV_OBJCOPY) -O binary $(C_TEST_ELF) $(C_TEST_BIN)
 	$(PYTHON) tools/bin2hex.py 8 $(C_TEST_BIN) > $(C_TEST_HEX)
 
@@ -255,9 +262,9 @@ $(LINUX_BOOTROM_HEX): $(LINUX_BOOTROM_SRC) tools/bin2hex.py
 	$(RISCV_OBJCOPY) -O binary $(LINUX_BOOTROM_OBJ) $(LINUX_BOOTROM_BIN)
 	$(PYTHON) tools/bin2hex.py 8 $(LINUX_BOOTROM_BIN) > $@
 
-$(BOOTARGS_CHECK_BIN): $(BOOTARGS_CHECK_SRC) core/test/link.ld
+$(BOOTARGS_CHECK_BIN): $(BOOTARGS_CHECK_SRC) $(C_TEST_LD)
 	mkdir -p $(dir $@)
-	$(RISCV_GCC) $(RISCV_CFLAGS) -T core/test/link.ld $< -o $(BOOTARGS_CHECK_ELF)
+	$(RISCV_GCC) $(RISCV_CFLAGS) -T $(C_TEST_LD) $< -o $(BOOTARGS_CHECK_ELF)
 	$(RISCV_OBJCOPY) -O binary $(BOOTARGS_CHECK_ELF) $@
 
 linux-ram-image: $(BOOTARGS_CHECK_RAM_HEX)
