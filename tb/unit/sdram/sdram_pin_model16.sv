@@ -21,7 +21,11 @@ module sdram_pin_model16 (
     function automatic logic [15:0] model_read(input int unsigned address);
         return memory.exists(address)!=0 ? memory[address] : 16'hcafe;
     endfunction
-    always @(negedge clk) begin : model
+    // Monitor ownership continuously, including the device tHZ tail.
+    always @(oe or driving) if(rst_n && oe && driving) $fatal(1,"DQ ownership collision");
+    wire memory_clock;
+    assign #5 memory_clock=clk;
+    always @(posedge memory_clock) begin : model
         logic [3:0] cmd;
         int unsigned address;
         cyc++;
@@ -36,21 +40,22 @@ module sdram_pin_model16 (
                 din=pending_read ^ (INJECT_BAD_DATA ? 16'h0001 : 16'h0000);
                 driving=1;
             end
-            if (cyc==release_due) begin driving=0; din=0; end
+            if (cyc==release_due) begin #6; driving=0; din=16'hd00d ^ 16'(cyc); end
             if (oe && driving) $fatal(1,"DQ ownership collision");
             if (!cke) $fatal(1,"unexpected clock disable");
             cmd={csn,rasn,casn,wen};
             // Checker self-test: present an illegal command in the power-up wait.
             if(INJECT_BAD_INIT && cyc==20) cmd=4'b0000;
             if (cmd!=4'b0111 && cyc<5000) $fatal(1,"power-up delay too short");
+            if (cyc==read_due-1 && dqm!=0) $fatal(1,"read DQM pipeline masked");
             if (configured && cyc-last_ref>350) $fatal(1,"refresh deadline missed");
             foreach(opened[i])
                 if(opened[i] && cyc-act_at[i]>5000) $fatal(1,"maximum active time exceeded");
-            if (cmd!=4'b0111 && cyc-last_ref<3) $fatal(1,"refresh recovery too short");
+            if (cmd!=4'b0111 && cyc-last_ref<4) $fatal(1,"refresh recovery too short");
             case(cmd)
                 4'b0010: begin // PRECHARGE
                     for(int i=0;i<4;i++) if (a[10] || ba==2'(i)) begin
-                        if(opened[i] && cyc-act_at[i]<3) $fatal(1,"tRAS violation");
+                        if(opened[i] && cyc-act_at[i]<6) $fatal(1,"tRAS violation");
                         if(cyc-write_at[i]<2) $fatal(1,"write recovery violation");
                         opened[i]=0; pre_at[i]=cyc;
                     end
@@ -59,7 +64,7 @@ module sdram_pin_model16 (
                 4'b0001: begin // REFRESH
                     if(!precharged) $fatal(1,"refresh before precharge-all");
                     foreach(opened[i])
-                        if(opened[i] || cyc-pre_at[i]<1) $fatal(1,"refresh with active bank");
+                        if(opened[i] || cyc-pre_at[i]<2) $fatal(1,"refresh with active bank");
                     last_ref=cyc; refs++; total_refs++;
                 end
                 4'b0000: begin // MODE REGISTER
@@ -68,12 +73,12 @@ module sdram_pin_model16 (
                     configured=1; mrs_at=cyc;
                 end
                 4'b0011: begin // ACTIVATE
-                    if(!configured || cyc-mrs_at<3 || opened[ba] || cyc-pre_at[ba]<1)
+                    if(!configured || cyc-mrs_at<3 || opened[ba] || cyc-pre_at[ba]<2)
                         $fatal(1,"illegal activate");
                     rows[ba]=a; opened[ba]=1; act_at[ba]=cyc;
                 end
                 4'b0101,4'b0100: begin // READ/WRITE, BL1, explicit precharge
-                    if(!opened[ba] || cyc-act_at[ba]<1 || a[12:10]!=0)
+                    if(!opened[ba] || cyc-act_at[ba]<2 || a[12:10]!=0)
                         $fatal(1,"illegal column command");
                     address=(int'(rows[ba])*4+int'(ba))*1024+int'(a[9:0]);
                     if(cmd==4'b0100) begin

@@ -8,6 +8,10 @@ docker run --rm --init -v "$PWD:/repo" -w /repo \
   "${DOCKER_IMAGE:-mints-linux-verilator:5.046}" bash -c '
     set -euo pipefail
     out=build/test/sdram-bridge64
+    if [[ -e "$out" ]]; then
+      mkdir -p build/test/archive
+      mv "$out" "build/test/archive/sdram-bridge64-$(date -u +%Y%m%dT%H%M%SZ)"
+    fi
     mkdir -p "$out"
     rtl=fpga/de0-cv/sdram/rtl/sdram_bridge64.sv
     verilator --lint-only -Wall --top-module sdram_bridge64 "$rtl" > "$out/lint.log" 2>&1

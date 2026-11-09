@@ -1,12 +1,15 @@
 `timescale 1ns/1ps
 // Single-clock-domain SDR SDRAM controller, fixed 50 MHz, BL=1, CL=3.
 // Commands/data are registered on clk rising edges. The external memory clock
-// must rise half a period later. Physical phase and I/O timing require STA.
+// uses a nominal +5 ns phase shift. Physical phase and I/O timing require STA.
 // One native halfword request outstanding; every request has one response.
-// Reset abandons outstanding work and reinitializes memory (contents lost).
+// rst_n is cold power/clock reset, not a board pushbutton reset. A cold reset
+// requires memory power initialization; external device state is then unknown.
+// soft_reset is synchronous: cancel replies but keep command/refresh operation.
 module sdram_native16 (
     input logic clk,
     input logic rst_n,
+    input logic soft_reset,
     input logic req_valid,
     output logic req_ready,
     input logic [24:0] req_addr,
@@ -45,10 +48,12 @@ module sdram_native16 (
     logic [15:0] saved_data;
     logic [1:0] saved_be;
     logic [15:0] read_data;
+    logic cancelled;
 
     assign {dram_cs_n,dram_ras_n,dram_cas_n,dram_we_n}=command;
+    assign dram_cke=1'b1;
     // Refresh admission reserves 16 clocks before the 350-clock target.
-    assign req_ready = rst_n && init_done && state==IDLE && refresh_age<9'd334;
+    assign req_ready = rst_n && !soft_reset && init_done && state==IDLE && refresh_age<9'd334;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -63,12 +68,12 @@ module sdram_native16 (
             saved_data<='0;
             saved_be<='0;
             read_data<='0;
+            cancelled<=1'b0;
             rsp_valid<=1'b0;
             rsp_data<='0;
             init_done<=1'b0;
             dram_addr<='0;
             dram_ba<='0;
-            dram_cke<=1'b1;
             dram_dqm<=2'b11;
             dq_out<='0;
             dq_oe<=1'b0;
@@ -76,8 +81,10 @@ module sdram_native16 (
             command<=NOP;
             rsp_valid<=1'b0;
             dq_oe<=1'b0;
-            if (init_done && refresh_age!=9'h1ff)
+            // Age starts at each actual REF command, including initialization.
+            if (refresh_age!=9'h1ff)
                 refresh_age<=refresh_age+1'b1;
+            if(soft_reset && state==ACCESS) cancelled<=1'b1;
             case (state)
                 POWER_WAIT: begin
                     // 10,000 clocks = 200 us after reset/clock stability.
@@ -91,6 +98,7 @@ module sdram_native16 (
                 INIT_PRE: begin
                     if (phase==4'd1) begin
                         command<=REF;
+                        refresh_age<='0;
                         refresh_count<=4'd1;
                         phase<='0;
                         state<=INIT_REF;
@@ -106,6 +114,7 @@ module sdram_native16 (
                             state<=INIT_MRS;
                         end else begin
                             command<=REF;
+                            refresh_age<='0;
                             refresh_count<=refresh_count+1'b1;
                         end
                     end else phase<=phase+1'b1;
@@ -116,7 +125,6 @@ module sdram_native16 (
                 end
                 INIT_FINISH: begin
                     init_done<=1'b1;
-                    refresh_age<='0;
                     dram_dqm<=2'b00;
                     state<=IDLE;
                 end
@@ -129,6 +137,7 @@ module sdram_native16 (
                         state<=REF_WAIT;
                     end else if (req_valid && req_ready) begin
                         saved_addr<=req_addr[11:0];
+                        cancelled<=1'b0;
                         saved_write<=req_write;
                         saved_data<=req_wdata;
                         saved_be<=req_be;
@@ -158,7 +167,7 @@ module sdram_native16 (
                     end
                     if (phase==4'd8) begin
                         rsp_data<=saved_write ? 16'd0 : read_data;
-                        rsp_valid<=1'b1;
+                        rsp_valid<=!cancelled && !soft_reset;
                         state<=IDLE;
                     end
                 end

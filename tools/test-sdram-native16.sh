@@ -23,7 +23,7 @@ docker run --rm --init -v "$PWD:/repo" -w /repo \
     "$out/obj/sim" > "$out/run.log" 2>&1
     grep -q "^SDRAM_NATIVE16_PASS" "$out/run.log"
     cat "$out/run.log"
-    for profile in BAD_INIT BAD_DATA; do
+    for profile in BAD_INIT BAD_DATA BAD_REFRESH; do
       verilator --binary --timing --assert --top-module tb_sdram_native16 \
         "-GINJECT_$profile=1" --Mdir "$out/obj_$profile" -o sim \
         "$rtl" "$tb" > "$out/build_$profile.log" 2>&1
@@ -34,8 +34,10 @@ docker run --rm --init -v "$PWD:/repo" -w /repo \
       [[ $rc -ne 0 ]]
       if [[ $profile == BAD_INIT ]]; then
         grep -q "power-up delay too short" "$out/run_$profile.log"
-      else
+      elif [[ $profile == BAD_DATA ]]; then
         grep -q "read .* got .* expected" "$out/run_$profile.log"
+      else
+        grep -q "refresh deadline missed" "$out/run_$profile.log"
       fi
       echo "Expected failure detected: $profile (exit=$rc)"
     done

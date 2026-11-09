@@ -4,8 +4,8 @@
 byte write enables, explicit row closing and periodic refresh. It uses a fixed
 50 MHz controller clock, burst length 1 and CAS latency 3.
 
-The memory clock must sample the registered command outputs half a controller
-period after the controller rising edge. This module does not generate that
+The memory clock must sample the registered command outputs 5 ns after the controller rising
+edge (nominal PLL phase; pin timing must be analyzed). This module does not generate that
 clock, contain a PLL, provide board pin assignments or establish I/O timing.
 Use a separately constrained board wrapper before programming hardware.
 
@@ -21,9 +21,16 @@ Use a separately constrained board wrapper before programming hardware.
   There is no response backpressure.
 - `dq_out` and `dq_oe` connect to a tristate buffer in the board wrapper;
   `dq_in` is the sampled memory input. Do not implement internal tristate nets.
-- Active-low reset cancels pending work and starts a new initialization.
+- Active-low `rst_n` is the cold power initialization reset. It must not be
+  driven by a normal pushbutton restart: the SDRAM device itself has no reset
+  input. A cold power reset cancels pending work and starts initialization.
   `init_done` remains low during initialization. Reset does not preserve memory
   contents as an interface guarantee.
+- `soft_reset` is a synchronous warm restart. It cancels replies, blocks new
+  requests, safely completes the active memory command and keeps refresh running.
+  Writes already performed are not rolled back. Memory contents are retained by
+  the running controller. A board wrapper must synchronize the restart signal.
+  A host must ignore any previously asserted response on the restart edge.
 
 ## Simulation
 
@@ -34,7 +41,8 @@ bash tools/test-sdram-native16.sh
 ```
 
 The runner checks the normal pin-model test and separately expects failures
-when an illegal initialization command or corrupted read data is injected.
+when an illegal initialization command, corrupted read data or missing refresh
+is injected.
 Logs are in `build/test/sdram-native16/`. Previous runs are archived in
 `build/test/archive/`. A simulation pass does not establish physical SDRAM
 timing, retention, or CPU integration.
@@ -54,4 +62,33 @@ bash tools/test-sdram-bridge64.sh
 This bridge has a standalone request/response interface. It is not connected
 to the CPU's Membus. The CPU access-fault path and AMO serialization must be
 implemented before such a connection is made. Bridge and native controller
-must share reset so abandoned replies cannot be mistaken for new requests.
+must share cold reset and synchronous `soft_reset` so abandoned replies cannot
+be mistaken for new requests. Native replies must occur after acceptance,
+never combinationally in the acceptance cycle.
+
+## DE0-CV standalone hardware test
+
+The board wrapper uses a PLL to forward a 50 MHz memory clock shifted by
+5 ns. It checks all 256 byte masks at the last word, then writes and reads
+all 64 MiB using address-dependent data, its inverse, zeros and ones. Each
+write sweep is followed by a one-second refresh/retention interval.
+
+```sh
+bash tools/build-de0cv-sdram-test-docker.sh
+bash tools/build-de0cv-jtag-status.sh
+bash tools/program-de0cv-sdram-test.sh
+python3 tools/run-de0cv-sdram-test.py
+```
+
+Requires the Quartus container/volume from `tools/setup-quartus.sh` and native
+programmer dependencies from `tools/setup-de0cv-programmer.sh`. Programming
+replaces the volatile FPGA configuration. USB-Blaster is sufficient; UART is
+not used. LEDR4 indicates PASS, LEDR5 FAIL, LEDR3 memory initialization and
+LEDR2 PLL lock. KEY0 restarts the test without resetting the SDRAM controller.
+
+The SDC uses a conservative SDRAM timing envelope with additional assumed
+board allowances: 1 ns clock/data skew for command setup/hold and 2 ns
+aggregate read-flight allowance. These allowances have not been measured
+on the board. The build checks all available FPGA timing corners, explicit
+SDRAM read/output paths, and fitted pin locations/directions/I/O standards.
+This standalone test does not establish CPU, cache, AMO or Linux correctness.

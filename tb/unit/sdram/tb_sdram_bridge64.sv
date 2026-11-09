@@ -2,18 +2,37 @@
 module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
     logic clk=0; always #10 clk=~clk;
     logic rst_n=0, valid=0, ready, wr=0, rv, err;
+    logic soft_reset=0;
     logic [63:0] addr=0, wd=0, rd;
     logic [7:0] be=0;
     logic nv,nready=0,nwr,nrv=0;
     logic [24:0] na;
     logic [15:0] nwd,nrd=0;
     logic [1:0] nbe;
-    sdram_bridge64 dut(.clk(clk),.rst_n(rst_n),.req_valid(valid),.req_ready(ready),
+    sdram_bridge64 dut(.clk(clk),.rst_n(rst_n),.soft_reset(soft_reset),.req_valid(valid),.req_ready(ready),
         .req_addr(addr),.req_write(wr),.req_wdata(wd),.req_be(be),
         .rsp_valid(rv),.rsp_data(rd),.rsp_error(err),.native_valid(nv),
         .native_ready(nready),.native_addr(na),.native_write(nwr),
         .native_wdata(nwd),.native_be(nbe),.native_rsp_valid(nrv),.native_rsp_data(nrd));
 
+    // Independent checker for the exact native series, not only readback.
+    logic [63:0] host_address, host_data;
+    logic [7:0] host_be;
+    logic host_write;
+    int series_part=0;
+    always @(posedge clk) if(rst_n && !soft_reset) begin
+        if(valid && ready) begin
+            host_address=addr; host_data=wd; host_be=be; host_write=wr; series_part=0;
+        end
+        if(nv && nready) begin
+            if(na!==25'(((host_address-64'h80000000)>>1)+64'(series_part)) || nwr!==host_write)
+                $fatal(1,"native address/order mapping mismatch");
+            if(nwr && (nwd!==host_data[series_part*16+:16] || nbe!==host_be[series_part*2+:2]))
+                $fatal(1,"native byte/data mapping mismatch");
+            series_part++;
+        end
+        if(rv && (err || host_write) && rd!==0) $fatal(1,"nonzero error/write response");
+    end
     // Separate halfword memory, variable acceptance and response delay.
     logic [15:0] mem[int unsigned];
     bit busy=0;
@@ -23,7 +42,7 @@ module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
     logic [43:0] held;
     generate if(!INTEGRATED) begin : g_mock
     always @(posedge clk) begin
-        if(!rst_n) begin busy=0; stalled=0; end
+        if(!rst_n || soft_reset) begin busy=0; stalled=0; end
         else begin
             if(stalled && (!nv || {na,nwr,nwd,nbe}!==held)) $fatal(1,"unstable native request");
             stalled=nv && !nready;
@@ -45,7 +64,7 @@ module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
     end
     always @(negedge clk) begin
         cycles++;
-        if(!rst_n) begin nready=0; nrv=0; end
+        if(!rst_n || soft_reset) begin nready=0; nrv=0; end
         else if(nrv) begin nrv=0; busy=0; nready=0; end
         else if(busy) begin
             nready=0;
@@ -58,7 +77,7 @@ module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
         logic [1:0] mb, mdqm;
         logic cke,csn,rasn,casn,wen,oe;
         logic [15:0] dout,din;
-        sdram_native16 native_dut(.clk(clk),.rst_n(rst_n),.req_valid(nv),
+        sdram_native16 native_dut(.clk(clk),.rst_n(rst_n),.soft_reset(soft_reset),.req_valid(nv),
             .req_ready(nready),.req_addr(na),.req_write(nwr),.req_wdata(nwd),
             .req_be(nbe),.rsp_valid(nrv),.rsp_data(nrd),.init_done(),
             .dram_addr(ma),.dram_ba(mb),.dram_dqm(mdqm),.dram_cke(cke),
@@ -101,6 +120,27 @@ module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
                 access_word(target,0,0,0,0,expected_word);
             end
         end
+        for(int bitno=3;bitno<26;bitno++) begin
+            logic [63:0] target, pattern;
+            target=64'h80000000+(64'd1<<bitno);
+            pattern=64'd1<<bitno;
+            access_word(target,1,pattern,8'hff,0,0);
+            access_word(target,0,0,0,0,pattern);
+        end
+        begin
+            int unsigned rng;
+            logic [63:0] target, pattern;
+            rng=32'h20261109;
+            for(int i=0;i<100;i++) begin
+                rng=rng^(rng<<13); rng=rng^(rng>>17); rng=rng^(rng<<5);
+                target=64'h80000000+64'(rng & 32'h03fffff0);
+                pattern=64'(rng)*64'h0000000100000001;
+                access_word(target,1,pattern,8'hff,0,0);
+                access_word(target+8,1,~pattern,8'hff,0,0);
+                access_word(target,0,0,0,0,pattern);
+                access_word(target+8,0,0,0,0,~pattern);
+            end
+        end
         // Invalid ranges/alignments must never reach the native address port.
         access_word(64'h7ffffff8,1,'1,8'hff,1,0);
         access_word(64'h84000000,1,'1,8'hff,1,0);
@@ -109,6 +149,20 @@ module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
         for(int b=1;b<8;b++) access_word(64'h80000000+64'(b),0,0,0,1,0);
         access_word(64'h80000000,0,0,0,0,64'hfedcba9876543210);
         access_word(64'h83fffff8,0,0,0,0,64'hfedcba9876543210);
+        // Cancel an in-flight word after its first native acceptance.
+        begin
+            int n0;
+            step(); valid=1; addr=64'h80000000; wr=0; n0=native_count;
+            do @(posedge clk); while(!ready);
+            step(); valid=0;
+            while(native_count==n0) step();
+            soft_reset=1;
+            repeat(3) step();
+            if(rv || ready || nv) $fatal(1,"bridge soft reset state");
+            soft_reset=0;
+            access_word(64'h80000000,1,64'h5a5a1234aa55ff00,8'hff,0,0);
+            access_word(64'h80000000,0,0,0,0,64'h5a5a1234aa55ff00);
+        end
         $display("SDRAM_BRIDGE64_PASS integrated=%0d native_transactions=%0d",INTEGRATED,native_count);
         $finish;
     end

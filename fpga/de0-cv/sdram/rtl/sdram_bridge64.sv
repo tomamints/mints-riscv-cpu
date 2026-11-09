@@ -5,6 +5,7 @@
 // RAM is [0x80000000,0x84000000); accesses must be 8-byte aligned.
 module sdram_bridge64 (
     input logic clk, rst_n,
+    input logic soft_reset,
     input logic req_valid,
     output logic req_ready,
     input logic [63:0] req_addr,
@@ -31,8 +32,8 @@ module sdram_bridge64 (
     logic [47:0] read_acc;
     logic [7:0] saved_be;
     logic [1:0] part;
-    assign req_ready=rst_n && state==IDLE;
-    assign native_valid=rst_n && state==SEND;
+    assign req_ready=rst_n && !soft_reset && state==IDLE;
+    assign native_valid=rst_n && !soft_reset && state==SEND;
     assign native_addr=base_halfword+{23'd0,part};
     assign native_write=saved_write;
     assign native_wdata=saved_data[part*16 +:16];
@@ -45,6 +46,11 @@ module sdram_bridge64 (
         end else begin
             rsp_valid<=0;
             rsp_error<=0;
+            if(soft_reset) begin
+                state<=IDLE;
+                read_acc<='0;
+                part<='0;
+            end else begin
             case(state)
                 IDLE: if(req_valid && req_ready) begin
                     if(req_addr<64'h80000000 || req_addr>64'h83fffff8 || req_addr[2:0]!=0) begin
@@ -70,6 +76,7 @@ module sdram_bridge64 (
                 end
                 default: state<=IDLE;
             endcase
+            end
         end
     end
 endmodule
