@@ -1,0 +1,16 @@
+FROM ubuntu:24.04
+
+# Native ARM64 on Apple Silicon; all generated host binaries stay in Linux.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    autoconf automake bc bison build-essential ca-certificates curl \
+    device-tree-compiler file flex gawk gcc-riscv64-unknown-elf \
+    gcc-riscv64-linux-gnu git help2man libelf-dev libfl-dev libgmp-dev \
+    libmpc-dev libmpfr-dev libssl-dev libtool make patch perl python3 \
+    rsync texinfo xz-utils zlib1g-dev && \
+    git clone --depth 1 --branch v5.046 \
+      https://github.com/verilator/verilator.git /tmp/verilator && \
+    cd /tmp/verilator && autoconf && ./configure && \
+    make -j4 && make install && \
+    rm -rf /tmp/verilator /var/lib/apt/lists/*
+
+WORKDIR /repo

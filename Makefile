@@ -224,19 +224,19 @@ $(C_TEST_BUILD_DIR)/%.bin: $(C_TEST_BUILD_DIR)/%.elf
 	$(RISCV_OBJCOPY) -O binary $< $@
 
 $(C_TEST_BUILD_DIR)/%.bin.hex: $(C_TEST_BUILD_DIR)/%.bin
-	$(PYTHON) core/test/bin2hex.py 8 $< > $@
+	$(PYTHON) tools/bin2hex.py 8 $< > $@
 
 bootrom-build:
 	mkdir -p $(TEST_BUILD_DIR)
 	$(RISCV_GCC) $(RISCV_CFLAGS) -c core/test/bootrom.S -o $(BOOTROM_OBJ)
 	$(RISCV_OBJCOPY) -O binary $(BOOTROM_OBJ) $(BOOTROM_BIN)
-	$(PYTHON) core/test/bin2hex.py 8 $(BOOTROM_BIN) > $(BOOTROM)
+	$(PYTHON) tools/bin2hex.py 8 $(BOOTROM_BIN) > $(BOOTROM)
 
 c-test-build:
 	mkdir -p $(C_TEST_BUILD_DIR)
 	$(RISCV_GCC) $(RISCV_CFLAGS) -T core/test/link.ld core/test/entry.S core/test/$(C_TEST).c -o $(C_TEST_ELF)
 	$(RISCV_OBJCOPY) -O binary $(C_TEST_ELF) $(C_TEST_BIN)
-	$(PYTHON) core/test/bin2hex.py 8 $(C_TEST_BIN) > $(C_TEST_HEX)
+	$(PYTHON) tools/bin2hex.py 8 $(C_TEST_BIN) > $(C_TEST_HEX)
 
 c-test: $(SIM) bootrom-build c-test-build
 	DBG_ADDR=$(DBG_ADDR) $(SIM) $(BOOTROM) $(C_TEST_HEX) $(CYCLES)
@@ -249,11 +249,11 @@ $(DTB): $(DTS)
 
 linux-bootrom-build: $(LINUX_BOOTROM_HEX)
 
-$(LINUX_BOOTROM_HEX): $(LINUX_BOOTROM_SRC)
+$(LINUX_BOOTROM_HEX): $(LINUX_BOOTROM_SRC) tools/bin2hex.py
 	mkdir -p $(dir $@)
 	$(RISCV_GCC) $(RISCV_CFLAGS) -c $< -o $(LINUX_BOOTROM_OBJ)
 	$(RISCV_OBJCOPY) -O binary $(LINUX_BOOTROM_OBJ) $(LINUX_BOOTROM_BIN)
-	$(PYTHON) core/test/bin2hex.py 8 $(LINUX_BOOTROM_BIN) > $@
+	$(PYTHON) tools/bin2hex.py 8 $(LINUX_BOOTROM_BIN) > $@
 
 $(BOOTARGS_CHECK_BIN): $(BOOTARGS_CHECK_SRC) core/test/link.ld
 	mkdir -p $(dir $@)
@@ -365,7 +365,7 @@ os2-min-build:
 	mkdir -p $(OS2_MIN_BUILD_DIR)
 	$(RISCV_GCC) $(OS2_MIN_CFLAGS) $(OS2_MIN_DEFS) -T $(OS2_MIN_DIR)/kernel.ld $(OS2_MIN_SRCS) -o $(OS2_MIN_ELF)
 	$(RISCV_OBJCOPY) -O binary $(OS2_MIN_ELF) $(OS2_MIN_BIN)
-	$(PYTHON) core/test/bin2hex.py 8 $(OS2_MIN_BIN) > $(OS2_MIN_HEX)
+	$(PYTHON) tools/bin2hex.py 8 $(OS2_MIN_BIN) > $(OS2_MIN_HEX)
 
 test-os2-min: CYCLES=500000
 test-os2-min: OS2_MIN_DEFS=-DOS2_MIN_NO_INPUT

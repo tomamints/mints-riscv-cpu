@@ -1,10 +1,17 @@
 # Test Status
 
-Last updated: 2026-08-20
+Last updated: 2026-11-09
 
 This document summarizes the current public test status of MiNTs-CPU.
 
 ## Main Regression Gates
+
+On 2026-11-09, a fresh Apple M1 environment was rebuilt using the Docker
+workflow, and the user confirmed Linux 6.12.0 boot through
+`BUSYBOX-TEST-PASS`. The local boot log corroborates the pass marker. See
+[the M1 checkpoint](REBUILD_FROM_CLEAN.md#m1-rebuild-checkpoint-and-remaining-variability)
+for the environment and repaired prerequisites. Whisper lockstep was not
+rerun in this session.
 
 | Test | Status | Notes |
 |---|---|---|

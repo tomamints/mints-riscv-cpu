@@ -130,6 +130,16 @@ Docs/
 
 ## Build And Run
 
+For a fresh checkout on Apple Silicon with Docker Desktop running:
+
+```bash
+bash tools/rebuild-linux.sh   # download dependencies and build; does not boot Linux
+bash tools/run-linux.sh       # boot Linux and run the BusyBox autotest
+```
+
+See [Rebuild From Clean](Docs/REBUILD_FROM_CLEAN.md) for artifacts, logs, and
+individual rebuild stages.
+
 Normal simulator:
 
 ```bash

@@ -1,0 +1,6 @@
+.git
+build
+obj_dir*
+whisper
+results*
+*.log
