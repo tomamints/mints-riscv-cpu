@@ -233,6 +233,16 @@ Core riscv-tests:
 make test-riscv-all TEST_TIMEOUT=20 TEST_OUT=results-full
 ```
 
+Build pinned upstream RV64 integer and privileged `p` test binaries with
+`bash tools/setup-riscv-tests.sh`. Sources stay in `local/riscv-tests/`;
+ELFs and matching RAM hex images are generated in `build/riscv-tests/isa/`.
+For example, run the integer suite inside the Linux container:
+
+```bash
+docker run --rm --init -v "$PWD:/repo" -w /repo mints-linux-verilator:5.046 \
+  make test-rv64ui TEST_DIR=build/riscv-tests/isa TEST_OUT=build/test/isa
+```
+
 ## Third-party Tools
 
 This project optionally uses

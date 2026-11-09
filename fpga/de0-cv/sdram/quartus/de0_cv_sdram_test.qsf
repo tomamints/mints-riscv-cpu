@@ -16,83 +16,83 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to CLOCK_50
 set_location_assignment PIN_U7 -to KEY0_N
 set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to KEY0_N
 set_location_assignment PIN_AB11 -to DRAM_CLK
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_CLK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_CLK
 set_location_assignment PIN_R6 -to DRAM_CKE
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_CKE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_CKE
 set_location_assignment PIN_U6 -to DRAM_CS_N
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_CS_N
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_CS_N
 set_location_assignment PIN_AB6 -to DRAM_RAS_N
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_RAS_N
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_RAS_N
 set_location_assignment PIN_V6 -to DRAM_CAS_N
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_CAS_N
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_CAS_N
 set_location_assignment PIN_AB5 -to DRAM_WE_N
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_WE_N
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_WE_N
 set_location_assignment PIN_U12 -to DRAM_LDQM
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_LDQM
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_LDQM
 set_location_assignment PIN_N8 -to DRAM_UDQM
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_UDQM
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_UDQM
 set_location_assignment PIN_W8 -to DRAM_ADDR[0]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[0]
 set_location_assignment PIN_T8 -to DRAM_ADDR[1]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[1]
 set_location_assignment PIN_U11 -to DRAM_ADDR[2]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[2]
 set_location_assignment PIN_Y10 -to DRAM_ADDR[3]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[3]
 set_location_assignment PIN_N6 -to DRAM_ADDR[4]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[4]
 set_location_assignment PIN_AB10 -to DRAM_ADDR[5]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[5]
 set_location_assignment PIN_P12 -to DRAM_ADDR[6]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[6]
 set_location_assignment PIN_P7 -to DRAM_ADDR[7]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[7]
 set_location_assignment PIN_P8 -to DRAM_ADDR[8]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[8]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[8]
 set_location_assignment PIN_R5 -to DRAM_ADDR[9]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[9]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[9]
 set_location_assignment PIN_U8 -to DRAM_ADDR[10]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[10]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[10]
 set_location_assignment PIN_P6 -to DRAM_ADDR[11]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[11]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[11]
 set_location_assignment PIN_R7 -to DRAM_ADDR[12]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_ADDR[12]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_ADDR[12]
 set_location_assignment PIN_Y9 -to DRAM_DQ[0]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[0]
 set_location_assignment PIN_T10 -to DRAM_DQ[1]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[1]
 set_location_assignment PIN_R9 -to DRAM_DQ[2]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[2]
 set_location_assignment PIN_Y11 -to DRAM_DQ[3]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[3]
 set_location_assignment PIN_R10 -to DRAM_DQ[4]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[4]
 set_location_assignment PIN_R11 -to DRAM_DQ[5]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[5]
 set_location_assignment PIN_R12 -to DRAM_DQ[6]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[6]
 set_location_assignment PIN_AA12 -to DRAM_DQ[7]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[7]
 set_location_assignment PIN_AA9 -to DRAM_DQ[8]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[8]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[8]
 set_location_assignment PIN_AB8 -to DRAM_DQ[9]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[9]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[9]
 set_location_assignment PIN_AA8 -to DRAM_DQ[10]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[10]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[10]
 set_location_assignment PIN_AA7 -to DRAM_DQ[11]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[11]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[11]
 set_location_assignment PIN_V10 -to DRAM_DQ[12]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[12]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[12]
 set_location_assignment PIN_V9 -to DRAM_DQ[13]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[13]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[13]
 set_location_assignment PIN_U10 -to DRAM_DQ[14]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[14]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[14]
 set_location_assignment PIN_T9 -to DRAM_DQ[15]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_DQ[15]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_DQ[15]
 set_location_assignment PIN_T7 -to DRAM_BA[0]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_BA[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_BA[0]
 set_location_assignment PIN_AB7 -to DRAM_BA[1]
-set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to DRAM_BA[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to DRAM_BA[1]
 set_location_assignment PIN_AA2 -to LEDR[0]
 set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to LEDR[0]
 set_location_assignment PIN_AA1 -to LEDR[1]
@@ -126,3 +126,47 @@ set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to DRAM_LDQM
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to DRAM_UDQM
 set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to key_meta
 set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to key_sync
+
+# SDRAM has an LVTTL interface. Explicit drive/load values prevent implicit
+# 2mA CMOS defaults and zero external-capacitance timing models.
+set_instance_assignment -name CURRENT_STRENGTH_NEW 8MA -to DRAM_*
+set_instance_assignment -name SLEW_RATE 1 -to DRAM_*
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_CLK
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_CKE
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_CS_N
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_RAS_N
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_CAS_N
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_WE_N
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_LDQM
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_UDQM
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[0]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[1]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[2]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[3]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[4]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[5]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[6]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[7]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[8]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[9]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[10]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[11]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_ADDR[12]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[0]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[1]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[2]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[3]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[4]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[5]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[6]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[7]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[8]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[9]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[10]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[11]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[12]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[13]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[14]
+set_instance_assignment -name BOARD_MODEL_FAR_C 8P -to DRAM_DQ[15]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_BA[0]
+set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to DRAM_BA[1]

@@ -86,9 +86,19 @@ replaces the volatile FPGA configuration. USB-Blaster is sufficient; UART is
 not used. LEDR4 indicates PASS, LEDR5 FAIL, LEDR3 memory initialization and
 LEDR2 PLL lock. KEY0 restarts the test without resetting the SDRAM controller.
 
+SDRAM pins use 3.3-V LVTTL with explicit 8 mA drive and fast slew. The
+board model assumes 6 pF on clock/commands and 8 pF on DQ, including a
+2 pF board allowance. These are conservative design assumptions rather than
+measurements.
+
 The SDC uses a conservative SDRAM timing envelope with additional assumed
 board allowances: 1 ns clock/data skew for command setup/hold and 2 ns
 aggregate read-flight allowance. These allowances have not been measured
 on the board. The build checks all available FPGA timing corners, explicit
 SDRAM read/output paths, and fitted pin locations/directions/I/O standards.
 This standalone test does not establish CPU, cache, AMO or Linux correctness.
+
+The JTAG-only reserved TDI/TMS/TDO ports are excluded from the unconstrained
+port rejection. SDRAM ports and every clock must be constrained.
+The polling tool requires observing the test in progress before accepting PASS;
+`--accept-existing` reads a previously completed result without asserting freshness.

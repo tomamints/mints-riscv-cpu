@@ -2,13 +2,25 @@
 # Independent fitted-pin check against the DE0-CV board pin table.
 set -euo pipefail
 pinfile="$1"
+fitfile="${pinfile%.pin}.fit.rpt"
 count=0
 while read -r name location direction; do
   actual=$(awk -F: -v n="$name" '{p=$1; gsub(/^ +| +$/,"",p)} p==n {for(i=2;i<=4;i++) {gsub(/^ +| +$/,"",$i)}; print $2 ":" $3 ":" $4; exit}' "$pinfile")
-  expected="$location:$direction:3.3-V LVCMOS"
+  standard="3.3-V LVCMOS"
+  [[ "$name" == DRAM_* ]] && standard="3.3-V LVTTL"
+  expected="$location:$direction:$standard"
   [[ "$actual" == "$expected" ]] || {
     echo "PIN FAIL $name expected $expected, found $actual" >&2; exit 1;
   }
+  if [[ "$name" == DRAM_* ]]; then
+    fitted=$(awk -F';' -v n="$name" '{p=$2; gsub(/^ +| +$/,"",p)} p==n && /8mA/ && /3.3-V LVTTL/ {print; exit}' "$fitfile")
+    [[ -n "$fitted" ]] || { echo "PIN FAIL $name: fitted 8mA LVTTL drive missing" >&2; exit 1; }
+    if [[ "$name" == DRAM_DQ\[* ]]; then
+      [[ "$fitted" == *'8 pF'* ]] || {
+        echo "PIN FAIL $name: fitted 8pF load missing" >&2; exit 1;
+      }
+    fi
+  fi
   count=$((count+1))
 done <<'PINS'
 CLOCK_50 M9 input

@@ -10,6 +10,9 @@ if [[ -e "$out" ]]; then
   mv "$out" "build/fpga/archive/de0-cv-sdram-test-$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 mkdir -p "$out/rtl" "$out/quartus"
+sha256sum fpga/de0-cv/sdram/rtl/*.sv fpga/de0-cv/sdram/quartus/* \
+  tools/check-de0cv-sdram-pins.sh tools/build-de0cv-sdram-test.sh \
+  > "$out/source-sha256.txt"
 cp fpga/de0-cv/sdram/rtl/*.sv "$out/rtl/"
 cp fpga/de0-cv/sdram/quartus/* "$out/quartus/"
 cd "$out/quartus"
@@ -20,5 +23,6 @@ if grep -nE 'Critical Warning|Ignored assignment' output_files/*.rpt; then
 fi
 bash "$root/tools/check-de0cv-sdram-pins.sh" output_files/de0_cv_sdram_test.pin
 "$qbin/quartus_sta" -t check_constraints.tcl | tee check_constraints.log
+(cd "$root" && sha256sum -c "$out/source-sha256.txt")
 "$qbin/quartus_cpf" -c output_files/de0_cv_sdram_test.sof output_files/de0_cv_sdram_test.rbf
 sha256sum output_files/de0_cv_sdram_test.{sof,rbf} | tee output_files/sha256.txt
