@@ -1,0 +1,50 @@
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
+set_global_assignment -name DEVICE 5CEBA4F23C7
+set_global_assignment -name TOP_LEVEL_ENTITY de0_cv_uart_echo
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/uart_baud_gen.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/uart_tx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/uart_rx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/uart_phy.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/uart_echo_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/de0_cv_uart_echo.sv
+set_global_assignment -name SDC_FILE de0_cv_uart_echo.sdc
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
+
+# QSF names are written unbraced (Quartus/Terasic native form). Quartus 20.1 keeps
+# braces as part of the node name and ignores such assignments (Critical Warning
+# 136021); see UART_BOARD_ECHO_DESIGN.md section 14. SDC/Tcl files keep braces.
+# Terasic DE0-CV User Manual (2015-05-04): Table 3-2 (KEY0), 3-4 (LEDR), 3-6 (CLOCK_50),
+# Figure 3-12 / Table 3-7 (JP1 = GPIO 0: pin 8 = GPIO_0_D7, pin 10 = GPIO_0_D9).
+set_location_assignment PIN_M9  -to CLOCK_50
+set_location_assignment PIN_U7  -to KEY0_N
+set_location_assignment PIN_K22 -to UART_TXD
+set_location_assignment PIN_M21 -to UART_RXD
+set_location_assignment PIN_AA2 -to LEDR[0]
+set_location_assignment PIN_AA1 -to LEDR[1]
+set_location_assignment PIN_W2  -to LEDR[2]
+set_location_assignment PIN_Y3  -to LEDR[3]
+set_location_assignment PIN_N2  -to LEDR[4]
+set_location_assignment PIN_N1  -to LEDR[5]
+set_location_assignment PIN_U2  -to LEDR[6]
+set_location_assignment PIN_U1  -to LEDR[7]
+set_location_assignment PIN_L2  -to LEDR[8]
+set_location_assignment PIN_L1  -to LEDR[9]
+
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CLOCK_50
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to KEY0_N
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LEDR[*]
+# GPIO bank voltage: 3.3-V LVTTL is PENDING confirmation against the official
+# schematic or Terasic reference QSF (UART_BOARD_ECHO_DESIGN.md section 4).
+# Do not program the board before that confirmation.
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
+# An unconnected RX input idles High instead of floating.
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to UART_RXD
+
+# Asynchronous-input synchronizers (KEY0 reset release, UART RX line).
+set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to reset_meta
+set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to reset_n
+set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to *u_rx|rxd_meta
+set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to *u_rx|rxd_sync

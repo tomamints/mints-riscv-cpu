@@ -43,10 +43,14 @@ module uart_baud_gen #(
     localparam logic [ACC_W-1:0] CLK_C = ACC_W'(CLK_HZ);
     localparam logic [ACC_W-1:0] REF_C = ACC_W'(REF_HZ);
 
+    // Elaboration-time parameter check for simulation/lint. Quartus 20.1 Lite
+    // rejects $error in a generate block, so it is hidden from synthesis only.
+    // synthesis translate_off
     if (REF_HZ == 0 || REF_HZ >= CLK_HZ || CLK_HZ >= 32'h8000_0000) begin : g_param_error
         $error("uart_baud_gen: require 0 < REF_HZ < CLK_HZ < 2**31 (REF_HZ=%0d CLK_HZ=%0d)",
                REF_HZ, CLK_HZ);
     end
+    // synthesis translate_on
 
     logic [ACC_W-1:0] acc;
     logic [ACC_W-1:0] acc_sum;

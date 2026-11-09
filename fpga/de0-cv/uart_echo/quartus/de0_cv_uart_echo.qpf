@@ -1,0 +1,2 @@
+QUARTUS_VERSION = "20.1"
+PROJECT_REVISION = "de0_cv_uart_echo"
