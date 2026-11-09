@@ -1,0 +1,15 @@
+FROM ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+
+# Build this image with --platform linux/amd64 on Apple Silicon.
+# Proprietary installers are mounted separately after the user downloads them.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates file libasound2 libelf1 libfontconfig1 libfreetype6 \
+    libglib2.0-0 libncurses5 libnss3 libsm6 libstdc++6 libusb-0.1-4 \
+    libx11-6 libxext6 libxft2 libxi6 libxrender1 libxt6 libxtst6 \
+    locales perl unzip zlib1g && \
+    locale-gen en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+WORKDIR /repo

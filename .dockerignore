@@ -1,5 +1,6 @@
 .git
 build
+local
 obj_dir*
 whisper
 results*

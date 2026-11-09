@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
+  export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+fi
+docker run --rm --init --platform linux/amd64 -v "$PWD:/repo" \
+  -v "${QUARTUS_VOLUME:-mints-quartus-20.1}:/opt/intelFPGA_lite" \
+  -e QUARTUS_SH=/opt/intelFPGA_lite/20.1/quartus/bin/quartus_sh \
+  "${QUARTUS_IMAGE:-mints-quartus:20.1}" bash tools/build-de0cv-blink.sh
