@@ -3,7 +3,12 @@ import eei::*;
 module dcache #(
 	parameter int unsigned LINE_COUNT = 128,
 	parameter int unsigned STORE_BUFFER_DEPTH = 4,
-	parameter bit WRITE_BACK = 1'b0
+	parameter bit WRITE_BACK = 1'b0,
+	// 0: data array as before (combinational reads, fast_load enabled).
+	// 1: data in 4 synchronous byte-enable RAM banks (ram_1r1w_be64, one per word
+	//    of a line); fast_load disabled (fast_load_valid=0, fast_load_data=0),
+	//    so loads take the normal request path. Requires WRITE_BACK=0.
+	parameter int unsigned DATA_RAM_STYLE = 0
 ) (
 	input logic clk,
 	input logic rst,
@@ -53,7 +58,17 @@ module dcache #(
 	logic [LINE_COUNT-1:0] valid;
 	logic [LINE_COUNT-1:0] dirty;
 	logic [TAG_WIDTH-1:0] tags [LINE_COUNT];
-	UInt64 data [LINE_COUNT][WORDS_PER_LINE];
+	// Data storage is implemented in the g_data_* generate blocks below. The rest
+	// of the module talks to it only through these request/response signals.
+	logic data_rd_hit_req;                  // accepted load hit (Idle)
+	logic data_wr_store_req;                // accepted store hit (Idle)
+	logic data_wr_fill_req;                 // last fill beat with allocate && !invalidate
+	UInt64 data_rd_hit_word;                // STYLE 0: data[cpu_index][cpu_word_offset]
+	UInt64 data_fast_load_word;             // STYLE 0: fast_load read; STYLE 1: constant 0
+	UInt64 data_writeback_word;             // STYLE 0: writeback read; STYLE 1: constant 0
+	UInt64 data_bank_rdata [WORDS_PER_LINE];// STYLE 1: bank read data (valid after the read edge)
+	logic rsp_from_bank_q;                  // STYLE 1: current response comes from a bank
+	logic [WORD_OFFSET_WIDTH-1:0] rsp_word_q;
 
 	Addr saved_addr;
 	UInt64 saved_wdata;
@@ -124,7 +139,11 @@ module dcache #(
 	Addr cpu_victim_line_addr;
 	logic [INDEX_WIDTH-1:0] fast_load_index;
 	logic [TAG_WIDTH-1:0] fast_load_tag;
+	// Read only by the DATA_RAM_STYLE 0 fast-load data path (g_data_regs);
+	// unused when DATA_RAM_STYLE 1 disables fast_load.
+	/* verilator lint_off UNUSEDSIGNAL */
 	logic [WORD_OFFSET_WIDTH-1:0] fast_load_word_offset;
+	/* verilator lint_on UNUSEDSIGNAL */
 	logic fast_load_cacheable;
 	logic [(MEMBUS_DATA_WIDTH/8)-1:0] fast_load_mask;
 	logic fast_load_store_buffer_overlap;
@@ -460,6 +479,109 @@ module dcache #(
 	assign cpu_store_fire = cpu_request_fire && cpu_cacheable && cpu.wen;
 	assign flush_busy = WRITE_BACK && flush_active;
 
+	// ------------------------------------------------------------------
+	// Data storage requests. These reproduce exactly the conditions under which
+	// the original always_ff read/wrote the data array:
+	//   load hit  : Idle, not flushing, accepted cacheable load, cache_hit
+	//   store hit : Idle, not flushing, accepted cacheable store, cache_hit
+	//   fill      : LoadFillWait, last beat, fill_allocate && !invalidate
+	// cpu_request_fire implies !invalidate (cpu.ready). All three are gated by
+	// rst so no bank access happens during reset.
+	// ------------------------------------------------------------------
+	assign data_rd_hit_req =
+		rst && state == Idle && !flush_active && cpu_request_fire &&
+		cpu_cacheable && !cpu.wen && cache_hit;
+	assign data_wr_store_req =
+		rst && state == Idle && !flush_active && cpu_request_fire &&
+		cpu_cacheable && cpu.wen && cache_hit;
+	assign data_wr_fill_req =
+		rst && state == LoadFillWait && mem.rvalid &&
+		fill_count == FILL_COUNT_WIDTH'(WORDS_PER_LINE - 1) &&
+		fill_allocate && !invalidate;
+
+	genvar data_w;
+	generate
+	if (DATA_RAM_STYLE == 0) begin : g_data_regs
+		// Original storage: combinational reads, read-modify-write store merge.
+		UInt64 data [LINE_COUNT][WORDS_PER_LINE];
+
+		always_ff @(posedge clk) begin
+			if (data_wr_store_req) begin
+				data[cpu_index][cpu_word_offset] <= merge_word(
+					data[cpu_index][cpu_word_offset],
+					cpu.wdata,
+					cpu.wmask);
+			end
+			if (data_wr_fill_req) begin
+				for (int unsigned i = 0; i < WORDS_PER_LINE; i++) begin
+					data[fill_index][i] <= (WORD_OFFSET_WIDTH'(i) == fill_next_word) ? mem.rdata : fill_data[i];
+				end
+			end
+		end
+
+		assign data_rd_hit_word    = data[cpu_index][cpu_word_offset];
+		assign data_fast_load_word = data[fast_load_index][fast_load_word_offset];
+		assign data_writeback_word = data[writeback_index][writeback_word];
+		for (data_w = 0; data_w < WORDS_PER_LINE; data_w = data_w + 1) begin : g_no_bank
+			assign data_bank_rdata[data_w] = '0;
+		end
+	end else begin : g_data_banks
+		// One synchronous 1R1W byte-enable bank per word of a line. The old array
+		// does not exist in this branch (no duplicate storage).
+		for (data_w = 0; data_w < WORDS_PER_LINE; data_w = data_w + 1) begin : g_bank
+			logic        bank_we;
+			logic [7:0]  bank_wbe;
+			UInt64       bank_wdata;
+			logic [INDEX_WIDTH-1:0] bank_waddr;
+
+			assign bank_we =
+				data_wr_fill_req ||
+				(data_wr_store_req && cpu_word_offset == WORD_OFFSET_WIDTH'(data_w));
+			assign bank_wbe   = data_wr_fill_req ? 8'hFF : cpu.wmask;
+			assign bank_waddr = data_wr_fill_req ? fill_index : cpu_index;
+			assign bank_wdata = data_wr_fill_req ?
+				((WORD_OFFSET_WIDTH'(data_w) == fill_next_word) ? mem.rdata : fill_data[data_w]) :
+				cpu.wdata;
+
+			ram_1r1w_be64 #(
+				.DEPTH(LINE_COUNT),
+				.STYLE(2)
+			) u_bank (
+				.clk  (clk),
+				.we   (bank_we),
+				.waddr(bank_waddr),
+				.wbe  (bank_wbe),
+				.wdata(bank_wdata),
+				.re   (data_rd_hit_req),
+				.raddr(cpu_index),
+				.rdata(data_bank_rdata[data_w])
+			);
+		end
+		assign data_rd_hit_word    = '0;
+		assign data_fast_load_word = '0;   // fast_load disabled
+		assign data_writeback_word = '0;   // WRITE_BACK=1 is unsupported with banks
+
+		// Unsupported configuration must also stop synthesis, not only simulation:
+		// an undefined module is instantiated only in that configuration.
+		if (WRITE_BACK) begin : g_unsupported_write_back
+`ifndef VERILATOR
+			dcache_unsupported_write_back_with_data_ram_style_1 u_unsupported ();
+`endif
+		end
+	end
+	endgenerate
+
+	// synthesis translate_off
+	always @(posedge clk) begin
+		if (rst) begin
+			if (data_wr_store_req && data_wr_fill_req)
+				$fatal(1, "[DCACHE] store-hit write and fill write in the same cycle");
+			if (data_rd_hit_req && (data_wr_store_req || data_wr_fill_req))
+				$fatal(1, "[DCACHE] data read and data write in the same cycle (must be exclusive)");
+		end
+	end
+	// synthesis translate_on
+
 `ifndef SYNTHESIS
 	always_ff @(posedge clk) begin
 		if (rst && cpu.fast_store_req && cpu.fast_store_valid) begin
@@ -476,9 +598,11 @@ module dcache #(
 
 	always_comb begin
 		cpu.rvalid = rsp_valid_q;
-		cpu.rdata = rsp_data_q;
-		cpu.fast_load_valid = fast_load_hit;
-		cpu.fast_load_data = data[fast_load_index][fast_load_word_offset];
+		cpu.rdata = (DATA_RAM_STYLE != 0 && rsp_from_bank_q) ? data_bank_rdata[rsp_word_q] : rsp_data_q;
+		// STYLE 1: fast_load is disabled and its data is a constant, so no
+		// combinational path from the data storage to the CPU remains.
+		cpu.fast_load_valid = (DATA_RAM_STYLE == 0) && fast_load_hit;
+		cpu.fast_load_data = data_fast_load_word;
 		cpu.fast_store_valid = fast_store_accept;
 
 		mem.valid = 1'b0;
@@ -551,7 +675,7 @@ module dcache #(
 				mem.valid = 1'b1;
 				mem.addr = writeback_line_addr + (Addr'(writeback_word) << 3);
 				mem.wen = 1'b1;
-				mem.wdata = data[writeback_index][writeback_word];
+				mem.wdata = data_writeback_word;
 				mem.wmask = '1;
 				mem.funct3 = 3'b011;
 			end
@@ -577,6 +701,12 @@ module dcache #(
 		if (STORE_BUFFER_DEPTH < 2 || (STORE_BUFFER_DEPTH & (STORE_BUFFER_DEPTH - 1)) != 0) begin
 			$fatal(1, "DCACHE STORE_BUFFER_DEPTH must be a power of two and at least 2");
 		end
+		if (DATA_RAM_STYLE > 1) begin
+			$fatal(1, "DCACHE DATA_RAM_STYLE must be 0 or 1");
+		end
+		if (WRITE_BACK && DATA_RAM_STYLE != 0) begin
+			$fatal(1, "DCACHE WRITE_BACK=1 with DATA_RAM_STYLE=1 is unsupported (writeback/flush read data combinationally)");
+		end
 	end
 
 	always_ff @(posedge clk or negedge rst) begin
@@ -600,6 +730,8 @@ module dcache #(
 			fill_word_valid <= '0;
 			rsp_valid_q <= 1'b0;
 			rsp_data_q <= '0;
+			rsp_from_bank_q <= 1'b0;
+			rsp_word_q <= '0;
 			writeback_line_addr <= '0;
 			writeback_index <= '0;
 			writeback_word <= '0;
@@ -686,6 +818,9 @@ module dcache #(
 
 			store_buffer_count_next = store_buffer_count;
 			rsp_valid_q <= 1'b0;
+			// Every response source other than the load-hit path below leaves this 0,
+			// so a stale bank selection can never be used.
+			rsp_from_bank_q <= 1'b0;
 
 			if (store_buffer_count == '0) begin
 				perf_store_buffer_occ_empty_cycle <= perf_store_buffer_occ_empty_cycle + UInt64'(1);
@@ -869,7 +1004,11 @@ module dcache #(
 							perf_write_back_evict_count <= perf_write_back_evict_count + UInt64'(1);
 							state <= WritebackReq;
 						end else if (cpu_cacheable && !cpu.wen && cache_hit) begin
-							rsp_data_q <= data[cpu_index][cpu_word_offset];
+							// STYLE 0: registered from the array. STYLE 1: the bank read
+							// issued at this edge (data_rd_hit_req) supplies the data.
+							rsp_data_q <= data_rd_hit_word;
+							rsp_from_bank_q <= (DATA_RAM_STYLE != 0);
+							rsp_word_q <= cpu_word_offset;
 							rsp_valid_q <= 1'b1;
 							perf_hit_count <= perf_hit_count + UInt64'(1);
 							perf_load_hit_count <= perf_load_hit_count + UInt64'(1);
@@ -919,10 +1058,7 @@ module dcache #(
 							if (cache_hit) begin
 								perf_hit_count <= perf_hit_count + UInt64'(1);
 								perf_store_hit_count <= perf_store_hit_count + UInt64'(1);
-								data[cpu_index][cpu_word_offset] <= merge_word(
-									data[cpu_index][cpu_word_offset],
-									cpu.wdata,
-									cpu.wmask);
+								// data write: data_wr_store_req (g_data_* blocks)
 								if (WRITE_BACK) begin
 									dirty[cpu_index] <= 1'b1;
 									perf_write_back_store_hit_count <=
@@ -992,9 +1128,7 @@ module dcache #(
 								valid[fill_index] <= 1'b1;
 								dirty[fill_index] <= 1'b0;
 								tags[fill_index] <= fill_tag;
-								for (int unsigned i = 0; i < WORDS_PER_LINE; i++) begin
-									data[fill_index][i] <= (WORD_OFFSET_WIDTH'(i) == fill_next_word) ? mem.rdata : fill_data[i];
-								end
+								// data write: data_wr_fill_req (g_data_* blocks)
 							end
 							fill_allocate <= 1'b0;
 							state <= Idle;

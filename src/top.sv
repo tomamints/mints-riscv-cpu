@@ -13,6 +13,10 @@ import util::*;
 `define SVCPU_DCACHE_WRITE_BACK 0
 `endif
 
+`ifndef SVCPU_DCACHE_DATA_RAM_STYLE
+`define SVCPU_DCACHE_DATA_RAM_STYLE 0
+`endif
+
 module core_top #(
     parameter bit    RAM_FILEPATH_IS_ENV = 1,
     parameter string RAM_FILEPATH        = "RAM_FILE_PATH",
@@ -20,7 +24,8 @@ module core_top #(
     parameter string ROM_FILEPATH        = "ROM_FILE_PATH",
     parameter int unsigned DCACHE_LINE_COUNT = `SVCPU_DCACHE_LINE_COUNT,
     parameter int unsigned DCACHE_STORE_BUFFER_DEPTH = `SVCPU_DCACHE_STORE_BUFFER_DEPTH,
-    parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK
+    parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK,
+    parameter int unsigned DCACHE_DATA_RAM_STYLE = `SVCPU_DCACHE_DATA_RAM_STYLE
 ) (
 `ifdef TEST_MODE
     output logic test_success,
@@ -443,7 +448,8 @@ module core_top #(
     dcache #(
         .LINE_COUNT(DCACHE_LINE_COUNT),
         .STORE_BUFFER_DEPTH(DCACHE_STORE_BUFFER_DEPTH),
-        .WRITE_BACK(DCACHE_WRITE_BACK)
+        .WRITE_BACK(DCACHE_WRITE_BACK),
+        .DATA_RAM_STYLE(DCACHE_DATA_RAM_STYLE)
     ) dcache0 (
         .clk        (clk),
         .rst        (rst),

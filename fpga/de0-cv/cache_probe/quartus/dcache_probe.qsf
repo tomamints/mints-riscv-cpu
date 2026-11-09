@@ -1,0 +1,16 @@
+# Analysis-only dcache resource probe. All ports except clk are VIRTUAL_PIN; the
+# project is never assembled or programmed to the board. Source files and
+# set_parameter / VERILOG_MACRO lines are appended per configuration by
+# tools/build-dcache-probe.sh. QSF names are unbraced (Quartus-native form).
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CEBA4F23C7
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
+set_global_assignment -name TOP_LEVEL_ENTITY dcache_probe_top
+set_global_assignment -name SDC_FILE dcache_probe.sdc
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_instance_assignment -name VIRTUAL_PIN ON -to rst
+set_instance_assignment -name VIRTUAL_PIN ON -to invalidate
+set_instance_assignment -name VIRTUAL_PIN ON -to flush_busy
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_low_priority
+set_instance_assignment -name VIRTUAL_PIN ON -to cpu_*
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_*

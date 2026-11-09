@@ -29,6 +29,7 @@ rtl/mmu/address_translation.sv
 rtl/mmu/instruction_translation.sv
 rtl/mmu/data_translation.sv
 rtl/cache/icache.sv
+fpga/de0-cv/mem_probe/rtl/ram_1r1w_be64.sv
 rtl/cache/dcache.sv
 src/muldivunit.sv
 src/memunit.sv
