@@ -38,3 +38,20 @@ when an illegal initialization command or corrupted read data is injected.
 Logs are in `build/test/sdram-native16/`. Previous runs are archived in
 `build/test/archive/`. A simulation pass does not establish physical SDRAM
 timing, retention, or CPU integration.
+
+## Standalone 64-bit bridge
+
+`rtl/sdram_bridge64.sv` serializes each aligned 64-bit request into four native
+halfword operations. It accepts CPU byte addresses only in
+`0x80000000..0x83fffff8`. Out-of-range or unaligned requests return
+`rsp_error=1` without issuing a native operation. Reads assemble little-endian
+halfwords; writes split eight byte enables into four pairs.
+
+```sh
+bash tools/test-sdram-bridge64.sh
+```
+
+This bridge has a standalone request/response interface. It is not connected
+to the CPU's Membus. The CPU access-fault path and AMO serialization must be
+implemented before such a connection is made. Bridge and native controller
+must share reset so abandoned replies cannot be mistaken for new requests.
