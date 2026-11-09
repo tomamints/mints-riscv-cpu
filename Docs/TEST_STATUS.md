@@ -13,6 +13,13 @@ workflow, and the user confirmed Linux 6.12.0 boot through
 for the environment and repaired prerequisites. Whisper lockstep was not
 rerun in this session.
 
+The separate DE0-CV UART PHY also passed its bit-level unit tests at 50MHz
+and 20MHz on 2026-11-09 (`bash tools/test-de0cv-uart.sh`), with clean RTL
+`-Wall` lint. This does not cover 16550/FIFO/IRQ integration or physical UART
+operation. The DE0-CV blink simulation passed its real 25M-cycle divider,
+reset and small-divider checks (`bash tools/test-de0cv-blink.sh`); FPGA
+configuration and timing closure are still pending.
+
 | Test | Status | Notes |
 |---|---|---|
 | riscv-tests | Pass in current maintained scope | RV64IMAC-oriented tests and selected supervisor/custom tests |
