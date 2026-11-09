@@ -3,7 +3,8 @@
 Design and review record: [`../UART_BOARD_ECHO_DESIGN.md`](../UART_BOARD_ECHO_DESIGN.md).
 Status (2026-11-09): RTL lint and core/top simulations passed; Quartus Fit,
 all-corner timing and constraint/pin audits passed. SRAM programming reached
-100% / Done / exit 0. Physical UART echo is pending wiring and host testing.
+100% / Done / exit 0. Physical UART echo tests passed on the connected FTDI TTL232R-3V3.
+Operator LED observation and the optional BREAK diagnostic remain pending.
 GPIO 3.3 V evidence is recorded in [GPIO_VOLTAGE_EVIDENCE.md](GPIO_VOLTAGE_EVIDENCE.md).
 A PASS here is a physical-layer echo PASS, not a 16550 or Linux UART PASS.
 
@@ -41,3 +42,20 @@ SRAM configuration is volatile: after powering the board off for wiring, run
 Resource checkpoint: 227 ALMs, 270 registers, one M10K (128 bits).
 Worst setup/hold slack across four corners: 11.845/0.146 ns at 50 MHz.
 Unconstrained paths: zero; remaining warnings are classified in the design record.
+
+## Physical host test (2026-11-09)
+
+Adapter: FTDI TTL232R-3V3, VID:PID 0403:6001, serial FTF2VQ98.
+Port on this Mac: `/dev/cu.usbserial-FTF2VQ98` (may differ on another host).
+
+```sh
+build/venv-uart/bin/python tools/uart_echo_test.py --port /dev/cu.usbserial-FTF2VQ98 --expect-vid-pid 0403:6001
+```
+
+115200 8N1, seed 20261109, pyserial 3.5: single byte, all 256 byte values,
+4096 bytes in 16-byte chunks, 4096 bytes continuous, and final silence all
+passed with exit 0 and complete byte comparison. Log:
+`build/logs/uart-echo-20261109-212209.log`.
+The first JTAG scan after wiring timed out; retry identified the device and
+SRAM programming reached 100% / Done / exit 0 before the host test.
+This confirms physical echo, not CPU/16550 IRQ or Linux on the FPGA.

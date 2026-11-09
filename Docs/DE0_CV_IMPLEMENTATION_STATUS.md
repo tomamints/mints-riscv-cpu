@@ -129,3 +129,14 @@ UART検証は `bash tools/test-de0cv-uart.sh` で再実行できる。
   機能12/12 PASS、意図的TX overflowは期待非ゼロ終了。
   新規RTL警告0。依存する既存共有ファイルのlint警告66件は残る。
   regs+PHY結合、SoC接続、C/Linux回帰は未実施。
+
+## G3 UART physical communication checkpoint (2026-11-09)
+
+PHY+FIFO echo project passed simulation, Quartus Fit and all-corner STA.
+After user wiring JP1-8/10/12, FTDI TTL232R-3V3 (0403:6001) was detected.
+Native SRAM programming succeeded on retry (first JTAG scan timed out).
+Host echo test at 115200 8N1 passed single/all256/chunk4096/stream4096/silence,
+exit 0. See `fpga/de0-cv/uart_echo/README.md` for exact commands and limits.
+LED observation and optional BREAK diagnostic are pending; CPU/16550/IRQ/Linux
+on the physical FPGA remain unverified. Next major work is G4 M10K banks and
+G6 SDRAM architecture/standalone testing, followed by CPU resource reduction.
