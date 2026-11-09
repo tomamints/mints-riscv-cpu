@@ -1,6 +1,5 @@
 # G3: DE0-CV physical UART echo (no CPU, no SDRAM)
 
-Design and review record: [`../UART_BOARD_ECHO_DESIGN.md`](../UART_BOARD_ECHO_DESIGN.md).
 Status (2026-11-09): RTL lint and core/top simulations passed; Quartus Fit,
 all-corner timing and constraint/pin audits passed. SRAM programming reached
 100% / Done / exit 0. Physical UART echo tests passed on the connected FTDI TTL232R-3V3.
@@ -41,7 +40,7 @@ SRAM configuration is volatile: after powering the board off for wiring, run
 
 Resource checkpoint: 227 ALMs, 270 registers, one M10K (128 bits).
 Worst setup/hold slack across four corners: 11.845/0.146 ns at 50 MHz.
-Unconstrained paths: zero; remaining warnings are classified in the design record.
+Unconstrained paths: zero; remaining warnings include unused signals, fixed LEDs, RAM pass-through, default I/O drive settings and Lite license notices.
 
 ## Physical host test (2026-11-09)
 

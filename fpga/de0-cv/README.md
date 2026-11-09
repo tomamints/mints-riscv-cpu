@@ -15,7 +15,7 @@ Lチカの回路・検証・書込み手順は [`blink/README.md`](blink/README.
 | `../../tb/unit/uart/tb_uart_phy.sv` | ビットレベル TB（DUT とは独立したデコーダとホストモデル） |
 | `../../tb/unit/uart/uart_phy_tb.f` | Verilator 用 filelist（リポジトリ直下からの相対パス） |
 
-詳細な仕様・設計判断・テスト項目は [`UART_DESIGN.md`](UART_DESIGN.md) を参照。
+PHY実装は `rtl/uart_phy.sv`、テストは `../../tools/test-de0cv-uart.sh` を参照。
 既存の `uart_ns16550`、core、top、`core.f` には**まだ接続していない**。FIFO、IRQ、16550 分割は次段階。
 
 ### 仕様の要点
