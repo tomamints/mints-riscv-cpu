@@ -29,6 +29,8 @@ while read -r f; do [[ -n $f ]] && cp "$f" "$out/rtl/"; done < "$files"
   echo 'set_global_assignment -name NUM_PARALLEL_PROCESSORS 1'
   echo 'set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files'
   echo 'set_global_assignment -name VERILOG_MACRO "SYNTHESIS=1"'
+  echo "set_global_assignment -name VERILOG_MACRO \"SVCPU_TLB_ENTRIES=${TLB_ENTRIES:-8}\""
+  echo "TLB_ENTRIES=${TLB_ENTRIES:-8}" >> "$out/profile.txt"
   echo 'set_global_assignment -name SDC_FILE cpu_probe.sdc'
   echo 'set_instance_assignment -name VIRTUAL_PIN ON -to v_*'
   while read -r f; do [[ -n $f ]] && echo "set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/$(basename "$f")"; done < "$files"
@@ -47,16 +49,20 @@ echo 'PROJECT_REVISION = "cpu_probe"' > "$out/quartus/cpu_probe.qpf"
 } > "$out/quartus/cpu_probe.sdc"
 q=/opt/intelFPGA_lite/20.1/quartus/bin
 rc=0
+# MAP_ONLY=1 stops after Analysis & Synthesis (quick area estimate; exit status
+# then reflects Map only).
+fit="&& $q/quartus_fit cpu_probe > fit.log 2>&1"
+if [[ ${MAP_ONLY:-0} == 1 ]]; then fit=""; fi
 docker run --rm --init --name "cpu-probe-$label" --platform linux/amd64 \
   -v "${QUARTUS_VOLUME:-mints-quartus-20.1}:/opt/intelFPGA_lite" -v "$PWD/$out:/work" -w /work/quartus \
   -e LD_PRELOAD=/lib/x86_64-linux-gnu/libudev.so.1 "${QUARTUS_IMAGE:-mints-quartus:20.1}" \
-  bash -c "$q/quartus_map cpu_probe > map.log 2>&1 && $q/quartus_fit cpu_probe > fit.log 2>&1" || rc=$?
+  bash -c "$q/quartus_map cpu_probe > map.log 2>&1 $fit" || rc=$?
 r=$out/quartus/output_files
 summary=$out/summary.txt
 {
   echo "label=$label rc=$rc"; cat "$out/profile.txt"
-  grep -E "Estimate of Logic utilization|Dedicated logic registers|Total block memory bits" "$r/cpu_probe.map.rpt" 2>/dev/null | sed 's/^; */map: /'
-  grep -E "Fitter Status|Logic utilization|Total registers|Total block memory bits|Total RAM Blocks" "$r/cpu_probe.fit.summary" 2>/dev/null | sed 's/^/fit: /'
+  grep -E "Estimate of Logic utilization|Dedicated logic registers|Total block memory bits" "$r/cpu_probe.map.rpt" 2>/dev/null | sed 's/^; */map: /' || true
+  grep -E "Fitter Status|Logic utilization|Total registers|Total block memory bits|Total RAM Blocks" "$r/cpu_probe.fit.summary" 2>/dev/null | sed 's/^/fit: /' || true
   ignored=$({ grep -cE "Critical Warning \(136021\)|Ignored assignment" "$r/cpu_probe.map.rpt" "$r/cpu_probe.fit.rpt" 2>/dev/null || true; } | awk -F: '{s+=$2} END{print s+0}')
   echo "ignored_assignments=$ignored"
 } > "$summary"
@@ -64,5 +70,5 @@ awk '/; Analysis & Synthesis Resource Utilization by Entity/{f=1;next} f&&/Analy
   "$r/cpu_probe.map.rpt" 2>/dev/null > "$out/by_entity.txt" || true
 cat "$summary"
 grep -q "^ignored_assignments=0$" "$summary" || rc=1
-grep -q "Fitter Status : Successful" "$summary" || rc=1
+[[ -n $fit ]] && { grep -q "Fitter Status : Successful" "$summary" || rc=1; }
 exit $rc

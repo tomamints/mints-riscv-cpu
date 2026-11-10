@@ -1,3 +1,7 @@
+// TLB size (I and D translation each): performance only. Default 8.
+`ifndef SVCPU_TLB_ENTRIES
+`define SVCPU_TLB_ENTRIES 8
+`endif
 import eei::*;
 
 module address_translation #(
@@ -296,7 +300,7 @@ module address_translation #(
 	endfunction
 
 	tlb #(
-		.ENTRY_COUNT(8),
+		.ENTRY_COUNT(`SVCPU_TLB_ENTRIES),
 		.VPN_WIDTH(27),
 		.PPN_WIDTH(44),
 		.ASID_WIDTH(16)
