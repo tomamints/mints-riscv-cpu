@@ -1,7 +1,10 @@
 import eei::*;
 import corectrl::*;
 
-module inst_fetcher (
+module inst_fetcher #(
+    parameter int unsigned ICACHE_LINE_COUNT = 128,
+    parameter int unsigned ICACHE_DATA_RAM_STYLE = 0
+) (
     input  logic             clk,
     input  logic             rst,
     input  PrivMode          priv_mode,
@@ -657,7 +660,7 @@ module inst_fetcher (
         .ptw_mem_rdata(mem_if.rdata)
     );
 
-    icache fetch_icache (
+    icache #(.LINE_COUNT(ICACHE_LINE_COUNT), .DATA_RAM_STYLE(ICACHE_DATA_RAM_STYLE)) fetch_icache (
         .clk(clk),
         .rst(rst),
 	        .cancel(fetch_redirect),

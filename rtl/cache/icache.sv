@@ -1,7 +1,8 @@
 import eei::*;
 
 module icache #(
-	parameter int unsigned LINE_COUNT = 128
+	parameter int unsigned LINE_COUNT = 128,
+	parameter int unsigned DATA_RAM_STYLE = 0
 ) (
 	input logic clk,
 	input logic rst,
@@ -38,14 +39,18 @@ module icache #(
 		FillReq,
 		FillWait,
 		Response,
-		InvalidateWait
+		InvalidateWait,
+		LookupWait
 	} State;
 
 	State state;
 
 	logic [LINE_COUNT-1:0] valid;
 	logic [TAG_WIDTH-1:0] tags [LINE_COUNT];
-	UInt64 data [LINE_COUNT][WORDS_PER_LINE];
+	UInt64 hit_word;
+	UInt64 bank_rdata [WORDS_PER_LINE];
+	logic [WORD_OFFSET_WIDTH-1:0] lookup_word;
+	logic data_read, data_write;
 
 	Addr fill_line_addr;
 	logic fill_active;
@@ -95,6 +100,31 @@ module icache #(
 		(req_addr >= MMAP_RAM_BEGIN && req_addr < MMAP_RAM_END) ||
 		(req_addr >= MMAP_ROM_BEGIN && req_addr <= MMAP_ROM_END);
 	assign cache_hit = req_cacheable && valid[req_index] && tags[req_index] == req_tag;
+	assign data_read = rst && !cancel && !invalidate && req_valid && req_ready &&
+	                   cache_hit && (state == Idle || state == Response);
+	assign data_write = rst && !invalidate && state == FillWait && mem_rvalid &&
+	                    !fill_uncached && fill_allocate &&
+	                    fill_count == FILL_COUNT_WIDTH'(WORDS_PER_LINE - 1);
+	genvar w;
+	generate
+	if (DATA_RAM_STYLE == 0) begin : g_register_data
+		UInt64 data [LINE_COUNT][WORDS_PER_LINE];
+		assign hit_word = data[req_index][req_word_offset];
+		for (w = 0; w < WORDS_PER_LINE; w = w + 1) begin : g_word
+			always_ff @(posedge clk) if (data_write)
+				data[fill_index][w] <= WORD_OFFSET_WIDTH'(w) == fill_next_word ? mem_rdata : fill_data[w];
+		end
+	end else begin : g_sync_data
+		for (w = 0; w < WORDS_PER_LINE; w = w + 1) begin : g_word
+			ram_1r1w_be64 #(.DEPTH(LINE_COUNT), .STYLE(2)) bank (
+				.clk(clk), .we(data_write), .waddr(fill_index), .wbe(8'hff),
+				.wdata(WORD_OFFSET_WIDTH'(w) == fill_next_word ? mem_rdata : fill_data[w]),
+				.re(data_read), .raddr(req_index), .rdata(bank_rdata[w])
+			);
+		end
+		assign hit_word = bank_rdata[lookup_word];
+	end
+	endgenerate
 	assign fill_line_match =
 		fill_active &&
 		fill_allocate &&
@@ -137,7 +167,7 @@ module icache #(
 		(fill_line_addr + (Addr'(fill_next_word) << 3));
 
 	initial begin
-		if (LINE_COUNT < 2 || (LINE_COUNT & (LINE_COUNT - 1)) != 0) begin
+		if (LINE_COUNT < 2 || (LINE_COUNT & (LINE_COUNT - 1)) != 0 || DATA_RAM_STYLE > 1) begin
 			$fatal(1, "ICACHE LINE_COUNT must be a power of two and at least 2");
 		end
 	end
@@ -145,6 +175,7 @@ module icache #(
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin
 			state <= Idle;
+			lookup_word <= '0;
 			rsp_valid <= 1'b0;
 			rsp_data <= '0;
 			fill_line_addr <= '0;
@@ -174,6 +205,7 @@ module icache #(
 				valid[i] <= 1'b0;
 			end
 		end else begin
+			if (data_read) lookup_word <= req_word_offset;
 			if (!cancel &&
 				(state == FillReq || state == FillWait) &&
 				fill_cpu_waiting &&
@@ -235,10 +267,10 @@ module icache #(
 							end
 
 							if (cache_hit) begin
-								rsp_data <= data[req_index][req_word_offset];
-								rsp_valid <= 1'b1;
+								rsp_data <= hit_word;
+								rsp_valid <= DATA_RAM_STYLE == 0;
 								perf_hit_count <= perf_hit_count + UInt64'(1);
-								state <= Response;
+								state <= DATA_RAM_STYLE == 0 ? Response : LookupWait;
 							end else begin
 								fill_line_addr <= req_cacheable ? req_line_addr : req_beat_addr;
 								fill_active <= 1'b1;
@@ -312,9 +344,6 @@ module icache #(
 									if (fill_allocate) begin
 										valid[fill_index] <= 1'b1;
 										tags[fill_index] <= fill_tag;
-										for (int unsigned i = 0; i < WORDS_PER_LINE; i++) begin
-											data[fill_index][i] <= (WORD_OFFSET_WIDTH'(i) == fill_next_word) ? mem_rdata : fill_data[i];
-										end
 									end
 									fill_active <= 1'b0;
 									state <= rsp_remains ? Response : Idle;
@@ -345,10 +374,10 @@ module icache #(
 							end
 
 							if (cache_hit) begin
-								rsp_data <= data[req_index][req_word_offset];
-								rsp_valid <= 1'b1;
+								rsp_data <= hit_word;
+								rsp_valid <= DATA_RAM_STYLE == 0;
 								perf_hit_count <= perf_hit_count + UInt64'(1);
-								state <= Response;
+								state <= DATA_RAM_STYLE == 0 ? Response : LookupWait;
 							end else begin
 								fill_line_addr <= req_cacheable ? req_line_addr : req_beat_addr;
 								fill_active <= 1'b1;
@@ -374,6 +403,14 @@ module icache #(
 						end
 					end
 
+					LookupWait: begin
+						if (cancel) state <= Idle;
+						else begin
+							rsp_data <= hit_word;
+							rsp_valid <= 1'b1;
+							state <= Response;
+						end
+					end
 					default: state <= Idle;
 				endcase
 			end

@@ -17,6 +17,13 @@ import util::*;
 `define SVCPU_DCACHE_DATA_RAM_STYLE 0
 `endif
 
+`ifndef SVCPU_ICACHE_LINE_COUNT
+`define SVCPU_ICACHE_LINE_COUNT 128
+`endif
+`ifndef SVCPU_ICACHE_DATA_RAM_STYLE
+`define SVCPU_ICACHE_DATA_RAM_STYLE 0
+`endif
+
 module core_top #(
     parameter bit    RAM_FILEPATH_IS_ENV = 1,
     parameter string RAM_FILEPATH        = "RAM_FILE_PATH",
@@ -25,7 +32,9 @@ module core_top #(
     parameter int unsigned DCACHE_LINE_COUNT = `SVCPU_DCACHE_LINE_COUNT,
     parameter int unsigned DCACHE_STORE_BUFFER_DEPTH = `SVCPU_DCACHE_STORE_BUFFER_DEPTH,
     parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK,
-    parameter int unsigned DCACHE_DATA_RAM_STYLE = `SVCPU_DCACHE_DATA_RAM_STYLE
+    parameter int unsigned DCACHE_DATA_RAM_STYLE = `SVCPU_DCACHE_DATA_RAM_STYLE,
+    parameter int unsigned ICACHE_LINE_COUNT = `SVCPU_ICACHE_LINE_COUNT,
+    parameter int unsigned ICACHE_DATA_RAM_STYLE = `SVCPU_ICACHE_DATA_RAM_STYLE
 ) (
 `ifdef TEST_MODE
     output logic test_success,
@@ -668,7 +677,7 @@ module core_top #(
 
 
 
-    inst_fetcher fethcer (
+    inst_fetcher #(.ICACHE_LINE_COUNT(ICACHE_LINE_COUNT), .ICACHE_DATA_RAM_STYLE(ICACHE_DATA_RAM_STYLE)) fethcer (
         .clk       (clk),
         .rst       (rst),
         .priv_mode (pmp_priv_mode),
