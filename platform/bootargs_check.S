@@ -1,7 +1,10 @@
+#ifndef LINUX_DTB_ADDR
+#define LINUX_DTB_ADDR 0x87f00000          /* legacy simulation profile */
+#endif
     .section .text.init
     .globl _start
 _start:
-    li      t0, 0x87f00000
+    li      t0, LINUX_DTB_ADDR
     bne     a1, t0, fail
     bne     a0, zero, fail
 

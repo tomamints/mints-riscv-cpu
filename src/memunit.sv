@@ -158,7 +158,8 @@ module memunit (
 		UInt64 perf_mem_split_response_bus_wait_cycle;
 		UInt64 perf_mem_split_response_done_count;
 
-		localparam Addr MMAP_RAM_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
+		// end of the normal (cacheable) RAM range: eei capacity profile (legacy 16 MiB)
+		localparam Addr MMAP_RAM_END = MMAP_RAM_NORMAL_END;
 
 	function automatic logic [3:0] access_size_bytes(input logic [1:0] funct3_lo);
 		unique case (funct3_lo)

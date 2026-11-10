@@ -40,7 +40,8 @@ module dcache #(
 	localparam int unsigned STORE_BUFFER_INDEX_WIDTH =
 		STORE_BUFFER_DEPTH <= 1 ? 1 : $clog2(STORE_BUFFER_DEPTH);
 	localparam int unsigned STORE_BUFFER_COUNT_WIDTH = $clog2(STORE_BUFFER_DEPTH + 1);
-	localparam Addr MMAP_RAM_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
+	// end of the normal (cacheable) RAM range: eei capacity profile (legacy 16 MiB)
+	localparam Addr MMAP_RAM_END = MMAP_RAM_NORMAL_END;
 
 	typedef enum logic [2:0] {
 		Idle,

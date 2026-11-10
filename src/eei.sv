@@ -49,9 +49,38 @@ package eei;
 	localparam int MEMBUS_DATA_WIDTH = 64;
 
 	//RAM
-	localparam int RAM_ADDR_WIDTH = 24;
+	// Capacity profile (C3 M3c). Without SVCPU_RAM_SIZE_BYTES the legacy
+	// simulation profile is kept bit-for-bit:
+	//   - RAM_ADDR_WIDTH = 24 (2^24 64-bit words = 128 MiB simulation array),
+	//   - every address >= MMAP_RAM_BEGIN decodes as RAM (no upper bound),
+	//   - the "normal memory" range used by the caches and memunit (cacheable,
+	//     misaligned-capable, fast store) ends at BEGIN + 2^24 bytes = 16 MiB,
+	//     the historical value of `(1 << RAM_ADDR_WIDTH)`.
+	// With SVCPU_RAM_SIZE_BYTES (board profile, e.g. 64 MiB) the size is the one
+	// source: array depth, a bounded RAM decode and the normal range all derive
+	// from it, so no address above the RAM can alias into it.
 	localparam int RAM_DATA_WIDTH = 64;
 	localparam Addr MMAP_RAM_BEGIN = Addr'('h8000_0000);
+// RAM_SIZE_VALID is checked at elaboration in src/top.sv (non-zero, a power of
+// two, a multiple of 8, and BEGIN + SIZE without 64-bit overflow).
+`ifdef SVCPU_RAM_SIZE_BYTES
+	localparam Addr RAM_SIZE_BYTES = Addr'(`SVCPU_RAM_SIZE_BYTES);
+	localparam int  RAM_ADDR_WIDTH = $clog2(RAM_SIZE_BYTES / 8);
+	localparam bit  RAM_DECODE_BOUNDED = 1'b1;
+	localparam bit  RAM_SIZE_VALID = RAM_SIZE_BYTES != 0 &&
+	                                 (RAM_SIZE_BYTES & (RAM_SIZE_BYTES - 1)) == 0 &&
+	                                 RAM_SIZE_BYTES[2:0] == 3'b000 &&
+	                                 RAM_SIZE_BYTES <= ~MMAP_RAM_BEGIN;
+	localparam Addr MMAP_RAM_LIMIT = MMAP_RAM_BEGIN + RAM_SIZE_BYTES;      // first byte above RAM
+	localparam Addr MMAP_RAM_NORMAL_END = MMAP_RAM_LIMIT;
+`else
+	localparam int  RAM_ADDR_WIDTH = 24;
+	localparam Addr RAM_SIZE_BYTES = Addr'(1) << (RAM_ADDR_WIDTH + 3);
+	localparam bit  RAM_DECODE_BOUNDED = 1'b0;
+	localparam bit  RAM_SIZE_VALID = 1'b1;
+	localparam Addr MMAP_RAM_LIMIT = MMAP_RAM_BEGIN + RAM_SIZE_BYTES;      // unused: decode unbounded
+	localparam Addr MMAP_RAM_NORMAL_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
+`endif
 
 	//ROM
 	localparam int ROM_ADDR_WIDTH = 9;

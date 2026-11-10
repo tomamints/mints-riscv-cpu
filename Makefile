@@ -132,26 +132,65 @@ OS2_MIN_BUILD_DIR ?= build/os2_min
 OS2_MIN_ELF = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).elf
 OS2_MIN_BIN = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin
 OS2_MIN_HEX = $(OS2_MIN_BUILD_DIR)/$(OS2_MIN_NAME).bin.hex
-DTS ?= platform/riscv_cpu.dts
-DTB ?= build/platform/riscv_cpu.dtb
+# Platform capacity profile (C3 M3c):
+#   legacy  - default simulation platform, unchanged: 128 MiB RAM image, DTB
+#             source 0x87f00000, outputs in build/platform/;
+#   de0cv64 - DE0-CV board profile: 64 MiB RAM (bounded decode, full-range
+#             normal/cacheable memory), 20 MHz timebase DTS, DTB source
+#             0x83f00000, outputs in build/platform/de0cv64/ so the artifacts of
+#             the two profiles never mix.
+PLATFORM_PROFILE ?= legacy
 LINUX_BOOTROM_ADDR ?= 0x80000000
+# Offset of OpenSBI's FDT copy (generic FW_JUMP_FDT_ADDR - FW_TEXT_START; the
+# built fw_jump.elf has fw_next_arg1 = 0x82200000). Reserved in the RAM image.
+LINUX_FDT_RELOC_OFFSET ?= 0x2200000
+LINUX_FDT_RELOC_RESERVE ?= 0x10000
+ifeq ($(PLATFORM_PROFILE),legacy)
+PLATFORM_BUILD_DIR = build/platform
+DTS ?= platform/riscv_cpu.dts
 LINUX_DTB_ADDR ?= 0x87f00000
 LINUX_DTB_OFFSET ?= 0x7f00000
 LINUX_RAM_SIZE ?= 0x8000000
+else ifeq ($(PLATFORM_PROFILE),de0cv64)
+PLATFORM_BUILD_DIR = build/platform/de0cv64
+DTS ?= platform/riscv_cpu_de0cv64.dts
+LINUX_DTB_ADDR ?= 0x83f00000
+LINUX_DTB_OFFSET ?= 0x3f00000
+LINUX_RAM_SIZE ?= 0x4000000
+# The board has exactly 64 MiB; checked at parse time, so it applies to every
+# target (simulator builds included), not only to the image targets.
+ifneq ($(shell printf %d $(LINUX_RAM_SIZE)),67108864)
+$(error PLATFORM_PROFILE=de0cv64 requires LINUX_RAM_SIZE=0x4000000, got $(LINUX_RAM_SIZE))
+endif
+# RTL capacity, as a decimal value (no shell quoting of an SV literal).
+VERILATOR_DEFINES += -DSVCPU_RAM_SIZE_BYTES=$(shell printf %d $(LINUX_RAM_SIZE))
+# Profile-isolated simulator directories (a command-line OBJ_DIR still wins;
+# the sim.cfg guard below rejects reusing a directory built for another config).
+OBJ_DIR = obj_dir_de0cv64
+INPUT_OBJ_DIR = obj_dir_input_de0cv64
+TRACE_OBJ_DIR = obj_dir_trace_de0cv64
+LOCKSTEP_OBJ_DIR = obj_dir_lockstep_de0cv64
+else
+$(error PLATFORM_PROFILE must be legacy or de0cv64)
+endif
+DTB ?= $(PLATFORM_BUILD_DIR)/riscv_cpu.dtb
 LINUX_BOOTROM_SRC ?= platform/bootrom_linux.S
-LINUX_BOOTROM_OBJ = build/platform/bootrom_linux.o
-LINUX_BOOTROM_BIN = build/platform/bootrom_linux.bin
-LINUX_BOOTROM_HEX = build/platform/bootrom_linux.hex
+LINUX_BOOTROM_OBJ = $(PLATFORM_BUILD_DIR)/bootrom_linux.o
+LINUX_BOOTROM_BIN = $(PLATFORM_BUILD_DIR)/bootrom_linux.bin
+LINUX_BOOTROM_HEX = $(PLATFORM_BUILD_DIR)/bootrom_linux.hex
+# Records the profile values; artifacts depend on it, so changing any value
+# (for example LINUX_DTB_ADDR=...) rebuilds the bootrom, DTB and RAM images.
+PLATFORM_CFG = $(PLATFORM_BUILD_DIR)/platform.cfg
 BOOTARGS_CHECK_SRC ?= platform/bootargs_check.S
-BOOTARGS_CHECK_ELF = build/platform/bootargs_check.elf
-BOOTARGS_CHECK_BIN = build/platform/bootargs_check.bin
-BOOTARGS_CHECK_RAM_HEX = build/platform/bootargs_check_ram.hex
+BOOTARGS_CHECK_ELF = $(PLATFORM_BUILD_DIR)/bootargs_check.elf
+BOOTARGS_CHECK_BIN = $(PLATFORM_BUILD_DIR)/bootargs_check.bin
+BOOTARGS_CHECK_RAM_HEX = $(PLATFORM_BUILD_DIR)/bootargs_check_ram.hex
 OPENSBI_PAYLOAD_SRCS = platform/opensbi_payload_entry.S platform/opensbi_payload.c
 OPENSBI_PAYLOAD_LD ?= platform/opensbi_payload.ld
 OPENSBI_PAYLOAD_ELF = build/platform/opensbi_payload.elf
 OPENSBI_PAYLOAD_BIN = build/platform/opensbi_payload.bin
 OPENSBI_BIN ?=
-OPENSBI_RAM_HEX = build/platform/opensbi_ram.hex
+OPENSBI_RAM_HEX = $(PLATFORM_BUILD_DIR)/opensbi_ram.hex
 OPENSBI_CYCLES ?= 200000000
 LINUX_IMAGE_BIN ?=
 LINUX_IMAGE_OFFSET ?= 0x200000
@@ -168,20 +207,21 @@ LINUX_IMAGE_OFFSET ?= 0x200000
 run: $(SIM)
 	$(SIM) $(ROM) $(RAM) $(CYCLES)
 
-$(SIM): $(RTL_SRCS) $(TB) $(FILELIST)
+# The sim.cfg guards (order-only) run before any use of an existing simulator.
+$(SIM): $(RTL_SRCS) $(TB) $(FILELIST) | check-sim-cfg
 	$(MAKE) build
 
-$(INPUT_SIM): $(RTL_SRCS) $(TB) $(FILELIST)
+$(INPUT_SIM): $(RTL_SRCS) $(TB) $(FILELIST) | check-input-sim-cfg
 	$(MAKE) build-input
 
-$(TRACE_SIM): $(RTL_SRCS) $(TB) $(FILELIST)
+$(TRACE_SIM): $(RTL_SRCS) $(TB) $(FILELIST) | check-trace-sim-cfg
 	$(MAKE) build-trace
 
 $(LOCKSTEP_SIM): $(RTL_SRCS) $(TB) $(FILELIST) \
 		$(WHISPER_LOCKSTEP_DIR)/WhisperRef.hpp \
 		$(WHISPER_LOCKSTEP_DIR)/WhisperRef.cpp \
 		$(WHISPER_LIB) \
-		$(LOCKSTEP_CPP_SRCS)
+		$(LOCKSTEP_CPP_SRCS) | check-lockstep-sim-cfg
 	$(MAKE) build-lockstep
 
 # Lockstep executable run.
@@ -270,27 +310,82 @@ c-test: $(SIM) bootrom-build c-test-build
 
 dtb: $(DTB)
 
-$(DTB): $(DTS)
+# ---- platform profile consistency: fail instead of building inconsistent images ----
+.PHONY: check-platform-profile FORCE
+check-platform-profile:
+	@test $$(( $(LINUX_DTB_ADDR) )) -eq $$(( $(LINUX_BOOTROM_ADDR) + $(LINUX_DTB_OFFSET) )) || \
+	  { echo "LINUX_DTB_ADDR $(LINUX_DTB_ADDR) != LINUX_BOOTROM_ADDR + LINUX_DTB_OFFSET"; exit 1; }
+	@test $$(( $(LINUX_DTB_OFFSET) + 0x10000 )) -le $$(( $(LINUX_RAM_SIZE) )) || \
+	  { echo "DTB source offset $(LINUX_DTB_OFFSET) leaves no room in LINUX_RAM_SIZE $(LINUX_RAM_SIZE)"; exit 1; }
+	@if test "$(PLATFORM_PROFILE)" = de0cv64; then \
+	  test $$(( $(LINUX_RAM_SIZE) )) -eq $$(( 0x4000000 )) || { echo "de0cv64 requires LINUX_RAM_SIZE 0x4000000"; exit 1; }; \
+	fi
+
+# The profile record is rewritten only when its content changes. It covers every
+# value that affects the bootrom, bootargs check, DTB and RAM images.
+PLATFORM_CFG_TEXT = PLATFORM_PROFILE=$(PLATFORM_PROFILE) DTS=$(DTS) DTC=$(DTC) \
+	LINUX_BOOTROM_ADDR=$(LINUX_BOOTROM_ADDR) LINUX_DTB_ADDR=$(LINUX_DTB_ADDR) \
+	LINUX_DTB_OFFSET=$(LINUX_DTB_OFFSET) LINUX_RAM_SIZE=$(LINUX_RAM_SIZE) \
+	LINUX_FDT_RELOC_OFFSET=$(LINUX_FDT_RELOC_OFFSET) LINUX_FDT_RELOC_RESERVE=$(LINUX_FDT_RELOC_RESERVE) \
+	LINUX_IMAGE_OFFSET=$(LINUX_IMAGE_OFFSET) RISCV_GCC=$(RISCV_GCC) RISCV_CFLAGS=$(RISCV_CFLAGS)
+
+# Simulator build record: every value that changes the generated model. A sim
+# directory built for one configuration is never reused for another: the guard
+# fails with both records instead of silently reusing (or rebuilding over) it.
+# Existing binaries without records must be rebuilt explicitly in a separate
+# directory; their configuration cannot be inferred from the requested flags.
+SIM_CFG_TEXT = PLATFORM_PROFILE=$(PLATFORM_PROFILE) RAM_BACKEND=$(RAM_BACKEND) \
+	FILELIST=$(FILELIST) DEFINES=$(VERILATOR_DEFINES) FLAGS=$(VERILATOR_FLAGS)
+define sim_cfg_guard
+	@mkdir -p $(1)
+	@if test -f $(1)/sim.cfg; then \
+	  echo '$(SIM_CFG_TEXT) VARIANT=$(2)' | cmp -s - $(1)/sim.cfg || \
+	  { echo "$(1) was built for: $$(cat $(1)/sim.cfg)"; echo "requested: $(SIM_CFG_TEXT) VARIANT=$(2)"; \
+	    echo "use a different OBJ_DIR (profiles default to isolated directories)"; exit 1; }; \
+	else \
+	  if test -e $(1)/sim; then \
+	    echo "$(1)/sim has no verified build record; use a new directory and build explicitly"; exit 1; \
+	  fi; \
+	fi
+endef
+# Explicit build targets (re)generate the model and then rewrite the record.
+define sim_cfg_record
+	@echo '$(SIM_CFG_TEXT) VARIANT=$(2)' > $(1)/sim.cfg
+endef
+.PHONY: check-sim-cfg check-input-sim-cfg check-trace-sim-cfg check-lockstep-sim-cfg
+check-sim-cfg:
+	$(call sim_cfg_guard,$(OBJ_DIR),plain)
+check-input-sim-cfg:
+	$(call sim_cfg_guard,$(INPUT_OBJ_DIR),input)
+check-trace-sim-cfg:
+	$(call sim_cfg_guard,$(TRACE_OBJ_DIR),trace)
+check-lockstep-sim-cfg:
+	$(call sim_cfg_guard,$(LOCKSTEP_OBJ_DIR),lockstep)
+$(PLATFORM_CFG): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(PLATFORM_CFG_TEXT)' | cmp -s - $@ || echo '$(PLATFORM_CFG_TEXT)' > $@
+
+$(DTB): $(DTS) $(PLATFORM_CFG) | check-platform-profile
 	mkdir -p $(dir $@)
 	$(DTC) -I dts -O dtb -o $@ $<
 
 linux-bootrom-build: $(LINUX_BOOTROM_HEX)
 
-$(LINUX_BOOTROM_HEX): $(LINUX_BOOTROM_SRC) tools/bin2hex.py
+$(LINUX_BOOTROM_HEX): $(LINUX_BOOTROM_SRC) tools/bin2hex.py $(PLATFORM_CFG) | check-platform-profile
 	mkdir -p $(dir $@)
-	$(RISCV_GCC) $(RISCV_CFLAGS) -c $< -o $(LINUX_BOOTROM_OBJ)
+	$(RISCV_GCC) $(RISCV_CFLAGS) -DLINUX_DTB_ADDR=$(LINUX_DTB_ADDR) -c $< -o $(LINUX_BOOTROM_OBJ)
 	$(RISCV_OBJCOPY) -O binary $(LINUX_BOOTROM_OBJ) $(LINUX_BOOTROM_BIN)
 	$(PYTHON) tools/bin2hex.py 8 $(LINUX_BOOTROM_BIN) > $@
 
-$(BOOTARGS_CHECK_BIN): $(BOOTARGS_CHECK_SRC) $(C_TEST_LD)
+$(BOOTARGS_CHECK_BIN): $(BOOTARGS_CHECK_SRC) $(C_TEST_LD) $(PLATFORM_CFG) | check-platform-profile
 	mkdir -p $(dir $@)
-	$(RISCV_GCC) $(RISCV_CFLAGS) -T $(C_TEST_LD) $< -o $(BOOTARGS_CHECK_ELF)
+	$(RISCV_GCC) $(RISCV_CFLAGS) -DLINUX_DTB_ADDR=$(LINUX_DTB_ADDR) -T $(C_TEST_LD) $< -o $(BOOTARGS_CHECK_ELF)
 	$(RISCV_OBJCOPY) -O binary $(BOOTARGS_CHECK_ELF) $@
 
 linux-ram-image: $(BOOTARGS_CHECK_RAM_HEX)
 
-$(BOOTARGS_CHECK_RAM_HEX): $(BOOTARGS_CHECK_BIN) $(DTB)
-	$(PYTHON) tools/make_linux_ram_hex.py --payload $(BOOTARGS_CHECK_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) -o $@
+$(BOOTARGS_CHECK_RAM_HEX): $(BOOTARGS_CHECK_BIN) $(DTB) $(PLATFORM_CFG)
+	$(PYTHON) tools/make_linux_ram_hex.py --payload $(BOOTARGS_CHECK_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) --reserve $(LINUX_FDT_RELOC_OFFSET):$(LINUX_FDT_RELOC_RESERVE):opensbi-fdt-copy -o $@
 
 test-linux-bootargs: CYCLES=20000
 test-linux-bootargs: $(SIM) linux-bootrom-build linux-ram-image
@@ -306,12 +401,12 @@ $(OPENSBI_PAYLOAD_BIN): $(OPENSBI_PAYLOAD_SRCS) $(OPENSBI_PAYLOAD_LD)
 test-opensbi-payload: LINUX_IMAGE_BIN=$(OPENSBI_PAYLOAD_BIN)
 test-opensbi-payload: opensbi-payload-build run-opensbi
 
-opensbi-ram-image: $(DTB)
+opensbi-ram-image: $(DTB) $(PLATFORM_CFG) | check-platform-profile
 	test -n "$(OPENSBI_BIN)" || (echo "Set OPENSBI_BIN=/path/to/fw_jump.bin"; exit 1)
 	if test -n "$(LINUX_IMAGE_BIN)"; then \
-		$(PYTHON) tools/make_linux_ram_hex.py --payload $(OPENSBI_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) --blob $(LINUX_IMAGE_OFFSET):$(LINUX_IMAGE_BIN) -o $(OPENSBI_RAM_HEX); \
+		$(PYTHON) tools/make_linux_ram_hex.py --payload $(OPENSBI_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) --reserve $(LINUX_FDT_RELOC_OFFSET):$(LINUX_FDT_RELOC_RESERVE):opensbi-fdt-copy --blob $(LINUX_IMAGE_OFFSET):$(LINUX_IMAGE_BIN) -o $(OPENSBI_RAM_HEX); \
 	else \
-		$(PYTHON) tools/make_linux_ram_hex.py --payload $(OPENSBI_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) -o $(OPENSBI_RAM_HEX); \
+		$(PYTHON) tools/make_linux_ram_hex.py --payload $(OPENSBI_BIN) --dtb $(DTB) --dtb-offset $(LINUX_DTB_OFFSET) --size $(LINUX_RAM_SIZE) --reserve $(LINUX_FDT_RELOC_OFFSET):$(LINUX_FDT_RELOC_RESERVE):opensbi-fdt-copy -o $(OPENSBI_RAM_HEX); \
 	fi
 
 run-opensbi: $(SIM) linux-bootrom-build opensbi-ram-image
@@ -473,22 +568,28 @@ sim:
 	mv $(OBJ_DIR)/V$(TOP_MODULE) $(OBJ_DIR)/$(SIM_NAME)
 
 build:
+	mkdir -p $(OBJ_DIR)
 	$(VERILATOR) --cc $(VERILATOR_DEFINES) -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(OBJ_DIR)
 	make -C $(OBJ_DIR) -f V$(TOP).mk
 	mv $(OBJ_DIR)/V$(TOP) $(OBJ_DIR)/$(SIM_NAME)
+	$(call sim_cfg_record,$(OBJ_DIR),plain)
 	@echo "✅ Build complete. Run simulation with: make run"
 	@echo "🧹 Cleaned build files."
 
 build-input:
+	mkdir -p $(INPUT_OBJ_DIR)
 	$(VERILATOR) --cc $(VERILATOR_DEFINES) -DENABLE_DEBUG_INPUT -CFLAGS -DENABLE_DEBUG_INPUT -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(INPUT_OBJ_DIR)
 	make -C $(INPUT_OBJ_DIR) -f V$(TOP).mk
 	mv $(INPUT_OBJ_DIR)/V$(TOP) $(INPUT_OBJ_DIR)/$(SIM_NAME)
+	$(call sim_cfg_record,$(INPUT_OBJ_DIR),input)
 	@echo "✅ Debug-input build complete. Run with: make test-input"
 
 build-trace:
+	mkdir -p $(TRACE_OBJ_DIR)
 	$(VERILATOR) --trace --cc $(VERILATOR_DEFINES) -CFLAGS -DTRACE -f $(FILELIST) --exe $(TB) --top-module $(TOP) --Mdir $(TRACE_OBJ_DIR)
 	make -C $(TRACE_OBJ_DIR) -f V$(TOP).mk
 	mv $(TRACE_OBJ_DIR)/V$(TOP) $(TRACE_OBJ_DIR)/$(SIM_NAME)
+	$(call sim_cfg_record,$(TRACE_OBJ_DIR),trace)
 	@echo "✅ Trace build complete. Run with: make trace-output or make trace-dma"
 
 
@@ -507,4 +608,5 @@ build-lockstep:
 		CFG_CXXFLAGS_STD="-std=gnu++20" \
 		VM_CFLAGS="-Os"
 	mv $(LOCKSTEP_OBJ_DIR)/V$(TOP) $(LOCKSTEP_OBJ_DIR)/$(SIM_NAME)
+	$(call sim_cfg_record,$(LOCKSTEP_OBJ_DIR),lockstep)
 	@echo "✅ Lockstep build complete: $(LOCKSTEP_SIM)"

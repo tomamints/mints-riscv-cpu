@@ -30,7 +30,8 @@ module icache #(
 	localparam int unsigned WORD_OFFSET_WIDTH = $clog2(WORDS_PER_LINE);
 	localparam int unsigned FILL_COUNT_WIDTH = $clog2(WORDS_PER_LINE + 1);
 	localparam int unsigned TAG_WIDTH = XLEN - LINE_OFFSET_WIDTH - INDEX_WIDTH;
-	localparam Addr MMAP_RAM_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
+	// end of the normal (cacheable) RAM range: eei capacity profile (legacy 16 MiB)
+	localparam Addr MMAP_RAM_END = MMAP_RAM_NORMAL_END;
 
 	typedef enum logic [2:0] {
 		Idle,

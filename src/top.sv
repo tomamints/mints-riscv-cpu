@@ -128,6 +128,16 @@ module core_top #(
 `endif
 );
 
+    // Capacity profile check (C3 M3c): an explicit SVCPU_RAM_SIZE_BYTES must be
+    // non-zero, a power of two, a multiple of 8 and not overflow BEGIN + SIZE.
+    // An invalid size instantiates a module that does not exist, so elaboration
+    // fails in both simulation and synthesis. Absent in the legacy profile.
+`ifdef SVCPU_RAM_SIZE_BYTES
+    if (!RAM_SIZE_VALID) begin : g_invalid_ram_size
+        svcpu_error_invalid_ram_size_profile invalid_ram_size_profile ();
+    end
+`endif
+
     // アドレスをデータ単位に変換
     function automatic logic [RAM_ADDR_WIDTH-1:0] addr_to_ramaddr(
         input logic [XLEN-1:0] addr

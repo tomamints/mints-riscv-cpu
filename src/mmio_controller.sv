@@ -73,7 +73,10 @@ module mmio_controller (
         if ((MMAP_PLIC_BEGIN   <= addr) && (addr <= MMAP_PLIC_END))  return PLIC;
         if ((MMAP_DMA_BEGIN    <= addr) && (addr <= MMAP_DMA_END))   return DMA;
         if ((MMAP_UART_BEGIN   <= addr) && (addr <= MMAP_UART_END))  return UART;
-        if (addr >= MMAP_RAM_BEGIN)                                  return RAM;
+        // Legacy profile: unbounded. Board profile: [BEGIN, MMAP_RAM_LIMIT), compared
+        // against the precomputed limit (no arithmetic on addr); anything above is
+        // UNKNOWN (not answered; see the simulation check below).
+        if (addr >= MMAP_RAM_BEGIN && (!RAM_DECODE_BOUNDED || addr < MMAP_RAM_LIMIT)) return RAM;
         return UNKNOWN;
     endfunction
 
@@ -276,4 +279,19 @@ module mmio_controller (
         end
     end
 
+`ifndef SYNTHESIS
+    // Board profile: an access that decodes to no device is never answered (the
+    // CPU stalls). This simulation-only check reports it instead of hanging
+    // silently; it is NOT an architectural exception and the hardware has no
+    // diagnostic for it yet. Required later: the Membus error path (access fault
+    // to the CPU) and a hardware-visible diagnostic. Legacy behaviour unchanged.
+    always_ff @(posedge clk) begin
+        if (RAM_DECODE_BOUNDED && rst && !req_saved.valid && req_core.valid && get_device(req_core.addr) == UNKNOWN) begin
+            if ($test$plusargs("MMIO_UNKNOWN_NONFATAL"))
+                $display("MMIO_UNKNOWN_ACCESS addr=%h wen=%b", req_core.addr, req_core.wen);
+            else
+                $fatal(1, "MMIO_UNKNOWN_ACCESS addr=%h wen=%b", req_core.addr, req_core.wen);
+        end
+    end
+`endif
 endmodule

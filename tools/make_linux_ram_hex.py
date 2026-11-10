@@ -19,6 +19,9 @@ def main():
     parser.add_argument("--dtb", required=True)
     parser.add_argument("--dtb-offset", type=lambda value: int(value, 0), required=True)
     parser.add_argument("--blob", action="append", default=[], help="Extra blob as OFFSET:PATH")
+    parser.add_argument("--reserve", action="append", default=[],
+                        help="Range that no region may overlap, as OFFSET:SIZE:NAME "
+                             "(e.g. the OpenSBI FDT copy destination); nothing is written there")
     parser.add_argument("--size", type=lambda value: int(value, 0), required=True)
     parser.add_argument("--bytes-per-line", type=int, default=8)
     parser.add_argument("-o", "--output", required=True)
@@ -53,6 +56,17 @@ def main():
 
     if args.dtb_offset + len(dtb) > args.size:
         raise SystemExit("DTB does not fit in RAM image")
+
+    for reserve in args.reserve:
+        parts = reserve.split(":", 2)
+        if len(parts) != 3:
+            raise SystemExit("--reserve must be OFFSET:SIZE:NAME")
+        r_start, r_size, r_name = int(parts[0], 0), int(parts[1], 0), parts[2]
+        if r_start < 0 or r_size <= 0 or r_start + r_size > args.size:
+            raise SystemExit(f"reserved range {r_name} does not fit in RAM image")
+        for start, data, path in regions:
+            if start < r_start + r_size and r_start < start + len(data):
+                raise SystemExit(f"{path} overlaps reserved range {r_name}")
 
     with open(args.output, "w", encoding="ascii") as f:
         for start, data, _ in sorted_regions:
