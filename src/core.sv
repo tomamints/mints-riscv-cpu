@@ -1922,7 +1922,7 @@ module core (
 
 	////////////////////////FIFO/////////////////////
 	fifo#(
-		.DATA_TYPE(exq_type),
+		.DATA_WIDTH($bits(exq_type)),
 		.WIDTH(1)
 	)id_ex_fifo(
 		.clk (clk),
@@ -1938,7 +1938,7 @@ module core (
 	);
 
 	fifo#(
-		.DATA_TYPE(memq_type),
+		.DATA_WIDTH($bits(memq_type)),
 		.WIDTH(1)
 	)ex_mem_fifo(
 		.clk (clk),
@@ -1955,7 +1955,7 @@ module core (
 
 
 	fifo#(
-		.DATA_TYPE(wbq_type),
+		.DATA_WIDTH($bits(wbq_type)),
 		.WIDTH(1)
 	)mem_wbq_fifo(
 		.clk (clk),

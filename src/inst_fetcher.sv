@@ -49,7 +49,7 @@ module inst_fetcher (
     logic           fetch_fifo_bypass_fire;
 
     fifo #(
-        .DATA_TYPE (fetch_fifo_type),
+        .DATA_WIDTH($bits(fetch_fifo_type)),
         .WIDTH     (3)
     ) fetch_fifo (
         .clk         (clk),
@@ -111,7 +111,7 @@ module inst_fetcher (
     logic           issue_fifo_core_valid;
 
     fifo #(
-        .DATA_TYPE (issue_fifo_type),
+        .DATA_WIDTH($bits(issue_fifo_type)),
         .WIDTH     (2)
     ) issue_fifo (
         .clk    (clk),
