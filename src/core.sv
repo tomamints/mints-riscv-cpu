@@ -98,6 +98,11 @@ module core (
 	input  logic external_seip,
 	aclint_if.slave aclint
 );
+	InstCtrl exs_ctrl;
+	InstCtrl mems_ctrl;
+	ExceptionInfo mems_expt;
+	InstCtrl wbs_ctrl;
+
 
 
 	typedef struct packed {
@@ -224,9 +229,12 @@ module core (
 	end
 
 ////////////////// ID Stage /////////////////////
-	logic ids_valid = i_membus.rvalid;
-	Addr ids_pc = i_membus.raddr;
-	Inst ids_inst_bits = i_membus.rdata;
+	logic ids_valid;
+	assign ids_valid = i_membus.rvalid;
+	Addr ids_pc;
+	assign ids_pc = i_membus.raddr;
+	Inst ids_inst_bits;
+	assign ids_inst_bits = i_membus.rdata;
 	logic ids_inst_valid;
 	InstCtrl ids_ctrl;
 	UIntX ids_imm;
@@ -274,24 +282,36 @@ module core (
 
 	////////////////EX Stage /////////////////
 
-	logic exs_valid      = exq_rvalid;
-	Addr  exs_pc         = exq_rdata.addr;
-	Inst  exs_inst_bits  = exq_rdata.bits;
-	InstCtrl  exs_ctrl   = exq_rdata.ctrl;
-	UIntX  exs_imm       = exq_rdata.imm;
-	logic exs_predicted_taken = exq_rdata.predicted_taken;
-	Addr  exs_predicted_next_pc = exq_rdata.predicted_next_pc;
-	logic exs_predicted_from_btb = exq_rdata.predicted_from_btb;
-	logic exs_predicted_from_ras = exq_rdata.predicted_from_ras;
+	logic exs_valid;
+
+	assign exs_valid = exq_rvalid;
+	Addr exs_pc;
+	assign exs_pc = exq_rdata.addr;
+	Inst exs_inst_bits;
+	assign exs_inst_bits = exq_rdata.bits;
+	assign exs_ctrl = exq_rdata.ctrl;
+	UIntX exs_imm;
+	assign exs_imm = exq_rdata.imm;
+	logic exs_predicted_taken;
+	assign exs_predicted_taken = exq_rdata.predicted_taken;
+	Addr exs_predicted_next_pc;
+	assign exs_predicted_next_pc = exq_rdata.predicted_next_pc;
+	logic exs_predicted_from_btb;
+	assign exs_predicted_from_btb = exq_rdata.predicted_from_btb;
+	logic exs_predicted_from_ras;
+	assign exs_predicted_from_ras = exq_rdata.predicted_from_ras;
 
 
 	//レジスタ
 	UIntX regfile [31:0]; //regfileを32個作った
 
 	//レジスタ番号
-	logic [4:0] exs_rs1_addr = exs_inst_bits[19:15];
-	logic [4:0] exs_rs2_addr = exs_inst_bits[24:20];
-	logic [4:0] exs_rd_addr = exs_inst_bits[11:7];
+	logic [4:0] exs_rs1_addr;
+	assign exs_rs1_addr = exs_inst_bits[19:15];
+	logic [4:0] exs_rs2_addr;
+	assign exs_rs2_addr = exs_inst_bits[24:20];
+	logic [4:0] exs_rd_addr;
+	assign exs_rd_addr = exs_inst_bits[11:7];
 
 	UIntX exs_rs1_data,exs_rs2_data;
 	UIntX exs_rs1_forwarded_data, exs_rs2_forwarded_data;
@@ -674,12 +694,16 @@ module core (
 	////////////MEM Stage ////////////////
 
 	logic mems_is_new;
-	logic mems_valid      = memq_rvalid;
-	Addr  mems_pc         = memq_rdata.addr;
-	Inst  mems_inst_bits  = memq_rdata.bits;
-	InstCtrl  mems_ctrl   = memq_rdata.ctrl;
-	ExceptionInfo  mems_expt   = memq_rdata.expt;
-	logic[4:0]  mems_rd_addr       = mems_inst_bits[11:7];
+	logic mems_valid;
+	assign mems_valid = memq_rvalid;
+	Addr mems_pc;
+	assign mems_pc = memq_rdata.addr;
+	Inst mems_inst_bits;
+	assign mems_inst_bits = memq_rdata.bits;
+	assign mems_ctrl = memq_rdata.ctrl;
+	assign mems_expt = memq_rdata.expt;
+	logic[4:0] mems_rd_addr;
+	assign mems_rd_addr = mems_inst_bits[11:7];
 
 	logic mems_satp_access;
 	logic mems_sfence_vma;
@@ -706,7 +730,7 @@ module core (
 	assign mems_branch_taken = inst_is_br(mems_ctrl) && memq_rdata.br_taken;
 
 	assign ex_early_jal_pc_next = exs_alu_result;
-	assign ex_early_jalr_pc_next = exs_alu_result & ~Addr'(1);
+	assign ex_early_jalr_pc_next = exs_alu_result & ~(Addr'(1));
 	assign ex_early_jalr_misaligned =
 		IALIGN == 32 &&
 		ex_early_jalr_pc_next[1:0] != 2'b00;
@@ -997,13 +1021,20 @@ module core (
 
 	//////////WB Stage //////////
 
-	logic wbs_valid      = wbq_rvalid;
-	Addr  wbs_pc         = wbq_rdata.addr;
-	Inst  wbs_inst_bits  = wbq_rdata.bits;
-	InstCtrl  wbs_ctrl   = wbq_rdata.ctrl;
-	UIntX  wbs_imm       = wbq_rdata.imm;
+	logic wbs_valid;
 
-	logic [4:0] wbs_rd_addr = wbs_inst_bits[11:7];
+	assign wbs_valid = wbq_rvalid;
+	Addr wbs_pc;
+	assign wbs_pc = wbq_rdata.addr;
+	Inst wbs_inst_bits;
+	assign wbs_inst_bits = wbq_rdata.bits;
+	assign wbs_ctrl = wbq_rdata.ctrl;
+	UIntX wbs_imm;
+	assign wbs_imm = wbq_rdata.imm;
+
+	logic [4:0] wbs_rd_addr;
+
+	assign wbs_rd_addr = wbs_inst_bits[11:7];
 	UIntX wbs_wb_data;
 	logic wbs_writes_minstret;
 	logic architectural_retire;

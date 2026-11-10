@@ -390,7 +390,9 @@ module address_translation #(
 	);
 
 	always_ff @(posedge clk or negedge rst) begin
-		if (!rst || flush) begin
+		if (!rst) begin
+			ptw_pmp_fault_pending <= 1'b0;
+		end else if (flush) begin
 			ptw_pmp_fault_pending <= 1'b0;
 		end else begin
 			ptw_pmp_fault_pending <= 1'b0;
@@ -699,7 +701,25 @@ module address_translation #(
 	end
 
 	always_ff @(posedge clk or negedge rst) begin
-		if (!rst || flush) begin
+		if (!rst) begin
+			state <= Idle;
+			pending_va <= '0;
+			pending_priv_mode <= M;
+			pending_access_type <= PMP_ACCESS_READ;
+			pending_sum <= 1'b0;
+			pending_mxr <= 1'b0;
+			pending_satp <= '0;
+			ptw_started <= 1'b0;
+			result_pa <= '0;
+			result_fault <= 1'b0;
+			result_fault_detail <= SV39_FAULT_NONE;
+			result_fault_cause <= CsrCause'(0);
+			result_fault_value <= '0;
+			refill_pa <= '0;
+			refill_leaf_pte <= '0;
+			refill_leaf_level <= 2'd0;
+			refill_leaf_valid <= 1'b0;
+		end else if (flush) begin
 			state <= Idle;
 			pending_va <= '0;
 			pending_priv_mode <= M;

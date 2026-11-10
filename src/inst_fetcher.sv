@@ -1,9 +1,22 @@
 import eei::*;
 import corectrl::*;
 
+`ifndef SVCPU_BP_PHT_ENTRIES
+`define SVCPU_BP_PHT_ENTRIES 128
+`endif
+`ifndef SVCPU_BP_BTB_ENTRIES
+`define SVCPU_BP_BTB_ENTRIES 32
+`endif
+`ifndef SVCPU_BP_RAS_ENTRIES
+`define SVCPU_BP_RAS_ENTRIES 8
+`endif
+
 module inst_fetcher #(
     parameter int unsigned ICACHE_LINE_COUNT = 128,
-    parameter int unsigned ICACHE_DATA_RAM_STYLE = 0
+    parameter int unsigned ICACHE_DATA_RAM_STYLE = 0,
+    parameter int unsigned BP_PHT_ENTRIES = `SVCPU_BP_PHT_ENTRIES,
+    parameter int unsigned BP_BTB_ENTRIES = `SVCPU_BP_BTB_ENTRIES,
+    parameter int unsigned BP_RAS_ENTRIES = `SVCPU_BP_RAS_ENTRIES
 ) (
     input  logic             clk,
     input  logic             rst,
@@ -221,7 +234,9 @@ module inst_fetcher #(
 
     assign issue_pmp_allow = need_translate ? 1'b1 : issue_pmp_allow_raw;
 
-    branch_predictor static_branch_predictor (
+    branch_predictor #(
+        .PHT_ENTRIES(BP_PHT_ENTRIES), .BTB_ENTRIES(BP_BTB_ENTRIES), .RAS_ENTRIES(BP_RAS_ENTRIES)
+    ) static_branch_predictor (
         .clk(clk),
         .rst(rst),
         .invalidate(core_if.fetch_invalidate),

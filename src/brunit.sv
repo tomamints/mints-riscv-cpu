@@ -8,9 +8,13 @@ module brunit(
 	output logic take
 	);
 
-	logic beq = op1 == op2;
-	logic blt = $signed(op1) < $signed(op2);
-	logic bltu = op1 < op2;
+	logic beq;
+
+	assign beq = op1 == op2;
+	logic blt;
+	assign blt = $signed(op1) < $signed(op2);
+	logic bltu;
+	assign bltu = op1 < op2;
 
 	always_comb begin
 		case (funct3)

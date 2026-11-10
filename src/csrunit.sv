@@ -156,7 +156,8 @@ module csrunit (
 		(csr_addr == INSTRET) ? !mcounteren[2] :
 										1'b0;
 
-	logic zicntr_denied_U =
+	logic zicntr_denied_U;
+	assign zicntr_denied_U =
 		(csr_addr == CYCLE)   ? !scounteren[0] :
 		(csr_addr == TIME)    ? !scounteren[1] :
 		(csr_addr == INSTRET) ? !scounteren[2] :
@@ -216,7 +217,7 @@ module csrunit (
 	assign sstatus_sum = mstatus[18];
 	assign sstatus_mxr = mstatus[19];
 
-	assign mip = (mip_reg & ~UIntX'('h0000_0000_0000_0a88)) | {
+	assign mip = (mip_reg & ~(UIntX'('h0000_0000_0000_0a88))) | {
 		{(XLEN - 12){1'b0}},
 		external_meip, // MEIP
 		1'b0, // 0
