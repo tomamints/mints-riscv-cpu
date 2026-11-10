@@ -50,8 +50,9 @@ profile=(
   "SYNTHESIS=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
   "SVCPU_BP_PHT_ENTRIES=32" "SVCPU_BP_BTB_ENTRIES=${BP_BTB_ENTRIES:-4}" "SVCPU_BP_RAS_ENTRIES=4"
   "SVCPU_TLB_ENTRIES=${TLB_ENTRIES:-4}"
+  "SVCPU_PMP_CARRY_COMPARE=${PMP_CARRY_COMPARE:-1}"
 )
-printf '%s\n' "${profile[@]}" > "$out/profile.txt"
+printf '%s\n' "${profile[@]}" "PERF=${PERF:-0}" > "$out/profile.txt"
 sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
 {
   echo 'set_global_assignment -name FAMILY "Cyclone V"'
@@ -61,6 +62,15 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
   echo 'set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files'
   echo 'set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"'
   echo 'set_global_assignment -name SDC_FILE de0cv_soc.sdc'
+  # PERF=1: aggressive timing-driven (does NOT fit: 109 % ALM); default 0: synthesis/fit for the 20 MHz CPU clock.
+  if [[ ${PERF:-0} == 1 ]]; then
+    echo 'set_global_assignment -name OPTIMIZATION_MODE "AGGRESSIVE PERFORMANCE"'
+    echo 'set_global_assignment -name ALLOW_REGISTER_RETIMING ON'
+    echo 'set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON'
+    echo 'set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON'
+    echo 'set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON'
+    echo 'set_global_assignment -name FITTER_EFFORT "STANDARD FIT"'
+  fi
   for m in "${profile[@]}"; do echo "set_global_assignment -name VERILOG_MACRO \"$m\""; done
   for f in $files; do echo "set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/$(basename "$f")"; done
   # SDRAM, clock and LED pins/IO/board models of the verified SDRAM test.

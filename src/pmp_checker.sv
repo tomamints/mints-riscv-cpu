@@ -10,7 +10,12 @@ import eei::*;
 // and non-empty region. A whole-space NAPOT entry keeps the original rule (it
 // matches and contains any non-zero-sized access). Priority: lowest matching
 // entry decides. Equivalence with the original checker: tools/test-pmp-prefix.sh.
-module pmp_checker (
+// CARRY_COMPARE=1 computes each 65-bit compare as the borrow of a subtraction,
+// which maps onto carry chains (shorter delay, more area): use it only on
+// timing-critical instances. The result is identical for both settings.
+module pmp_checker #(
+    parameter bit CARRY_COMPARE = 1'b0
+) (
     input PrivMode priv_mode,
     input Addr access_start,
     input UIntX access_size,
@@ -19,6 +24,17 @@ module pmp_checker (
     input PmpRegion [7:0] pmp_regions,
     output logic allow
 );
+    // a < b on 65-bit unsigned values
+    function automatic logic lt65(input logic [XLEN:0] a, input logic [XLEN:0] b);
+        logic [XLEN+1:0] d;
+        if (CARRY_COMPARE) begin
+            d = {1'b0, a} - {1'b0, b};
+            return d[XLEN+1];
+        end else begin
+            return a < b;
+        end
+    endfunction
+
     always_comb begin
         logic matched;
         logic [XLEN:0] access_end;
@@ -44,9 +60,9 @@ module pmp_checker (
                     default:          permission_ok = 1'b0;
                 endcase
                 entry_overlaps = size_nonzero && r.valid &&
-                    (r.all || ({1'b0, access_start} < r.end_addr && access_end > {1'b0, r.start}));
+                    (r.all || (lt65({1'b0, access_start}, r.end_addr) && lt65({1'b0, r.start}, access_end)));
                 entry_contains = size_nonzero && r.valid &&
-                    (r.all || (access_start >= r.start && access_end <= r.end_addr));
+                    (r.all || (!lt65({1'b0, access_start}, {1'b0, r.start}) && !lt65(r.end_addr, access_end)));
                 if (!matched && entry_overlaps) begin
                     matched = 1'b1;
                     allow = entry_contains && permission_ok;

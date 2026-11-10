@@ -33,6 +33,11 @@ TLB_ENTRIES ?= 8
 ifneq ($(TLB_ENTRIES),8)
 VERILATOR_DEFINES += -DSVCPU_TLB_ENTRIES=$(TLB_ENTRIES)
 endif
+# Carry-chain PMP compares on the critical checkers (same results; board timing).
+PMP_CARRY_COMPARE ?= 0
+ifneq ($(PMP_CARRY_COMPARE),0)
+VERILATOR_DEFINES += -DSVCPU_PMP_CARRY_COMPARE=$(PMP_CARRY_COMPARE)
+endif
 # Simulation-only RAM latency shim (C3 M1). The source is added only when enabled,
 # so the default file list and build are unchanged.
 ifeq ($(RAM_LATENCY_SHIM),1)

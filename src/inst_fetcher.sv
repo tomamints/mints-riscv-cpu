@@ -1,3 +1,8 @@
+// Carry-chain PMP compares on timing-critical checkers (board profile); the
+// result is identical either way (tools/test-pmp-prefix.sh checks both).
+`ifndef SVCPU_PMP_CARRY_COMPARE
+`define SVCPU_PMP_CARRY_COMPARE 0
+`endif
 import eei::*;
 import corectrl::*;
 
@@ -208,7 +213,7 @@ module inst_fetcher #(
     logic issue_pmp_allow_raw;
     logic issue_pmp_allow;
 
-    pmp_checker pmp_issue_checker (
+    pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) pmp_issue_checker (
         .priv_mode(priv_mode),
         .access_start(issue_pmp_addr),
         .access_size(issue_pmp_size),
@@ -705,9 +710,16 @@ module inst_fetcher #(
     assign icache_mem_rvalid =
         mem_if.rvalid &&
         fetch_mem_owner == FetchMemOwnerIcache;
-    assign fetch_fifo_wready =
-        fetch_fifo_storage_wready_two ||
-        (!fetch_fifo_storage_rvalid && !core_if.is_hazard && issue_fifo_wready);
+    // An empty multi-entry FIFO (head == tail) always has two free slots, so
+    // the former "|| (!storage_rvalid && !is_hazard && issue_fifo_wready)" term
+    // never changed this signal. Dropping it keeps the value bit-for-bit and
+    // removes a combinational control_hazard -> I-cache request path.
+    assign fetch_fifo_wready = fetch_fifo_storage_wready_two;
+`ifndef SYNTHESIS
+    always_ff @(posedge clk)
+        if (rst && !fetch_fifo_storage_rvalid && !fetch_fifo_storage_wready_two)
+            $fatal(1, "inst_fetcher: empty fetch FIFO without two free slots");
+`endif
     assign fetch_wait_resp_next_req =
         fetch_state == FetchWaitResp &&
         icache_rsp_fire &&

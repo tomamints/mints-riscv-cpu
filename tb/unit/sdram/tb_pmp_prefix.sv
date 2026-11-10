@@ -1,5 +1,7 @@
 `timescale 1ns/1ps
-module tb_pmp_prefix;
+module tb_pmp_prefix #(
+    parameter bit CARRY_COMPARE = 1'b0
+);
     import eei::*;
     PrivMode mode;
     PmpAccessType kind;
@@ -10,7 +12,7 @@ module tb_pmp_prefix;
     pmp_region_decode decode(.pmpcfg0(cfg),.pmpaddr0(pa[0]),.pmpaddr1(pa[1]),.pmpaddr2(pa[2]),
         .pmpaddr3(pa[3]),.pmpaddr4(pa[4]),.pmpaddr5(pa[5]),.pmpaddr6(pa[6]),.pmpaddr7(pa[7]),
         .regions(regions));
-    pmp_checker dut(.priv_mode(mode),.access_start(start),.access_size(size),.access_type(kind),
+    pmp_checker #(.CARRY_COMPARE(CARRY_COMPARE)) dut(.priv_mode(mode),.access_start(start),.access_size(size),.access_type(kind),
         .pmpcfg0(cfg),.pmp_regions(regions),.allow(actual));
     pmp_checker_reference reference(.priv_mode(mode),.access_start(start),.access_size(size),.access_type(kind),
         .pmpcfg0(cfg),.pmpaddr0(pa[0]),.pmpaddr1(pa[1]),.pmpaddr2(pa[2]),.pmpaddr3(pa[3]),
@@ -92,6 +94,6 @@ module tb_pmp_prefix;
             for(int j=0;j<8;j++)pa[j]=random64();
             check();
         end
-        $display("PMP_PREFIX_PASS checks=%0d",checks);$finish;
+        $display("PMP_PREFIX_PASS checks=%0d carry_compare=%0d",checks,CARRY_COMPARE);$finish;
     end
 endmodule

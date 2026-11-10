@@ -33,7 +33,7 @@ files="$(sed "/^#/d;/^$/d" core.f | tr "\n" " ") rtl/peripheral/uart16550_regs.s
 sha256sum $files "$IMAGE" > "$out/sources.sha256"
 verilator --binary --timing -O3 -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD --top-module tb_de0cv_soc \
   -DSYNTHESIS=1 -DSVCPU_RAM_EXTERNAL -DSVCPU_PHYSICAL_UART -DSVCPU_RAM_SIZE_BYTES=67108864 \
-  -DSVCPU_BP_PHT_ENTRIES=32 -DSVCPU_BP_BTB_ENTRIES=4 -DSVCPU_BP_RAS_ENTRIES=4 -DSVCPU_TLB_ENTRIES=4 \
+  -DSVCPU_BP_PHT_ENTRIES=32 -DSVCPU_BP_BTB_ENTRIES=4 -DSVCPU_BP_RAS_ENTRIES=4 -DSVCPU_TLB_ENTRIES=4 -DSVCPU_PMP_CARRY_COMPARE=1 \
   -GBOOTROM_HEX="\"build/platform/de0cv64/bootrom_linux.hex\"" \
   -j 4 --Mdir "$out/obj" -o sim $files > "$out/build.log" 2>&1 || { grep -E "%Error" "$out/build.log" | head -20; exit 1; }
 start=$(date +%s)

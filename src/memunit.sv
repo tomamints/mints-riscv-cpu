@@ -1,3 +1,8 @@
+// Carry-chain PMP compares on timing-critical checkers (board profile); the
+// result is identical either way (tools/test-pmp-prefix.sh checks both).
+`ifndef SVCPU_PMP_CARRY_COMPARE
+`define SVCPU_PMP_CARRY_COMPARE 0
+`endif
 import eei::*;
 import corectrl::*;
 
@@ -390,7 +395,7 @@ module memunit (
 			((state == TranslateWait) ? req_needs_write_permission : current_needs_write_permission) ?
 				PMP_ACCESS_WRITE : PMP_ACCESS_READ;
 
-	pmp_checker data_pmp_checker (
+	pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) data_pmp_checker (
 		.priv_mode(priv_mode),
 		.access_start(data_pmp_addr),
 		.access_size(data_pmp_size),
