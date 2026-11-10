@@ -14,6 +14,13 @@
 //   +RAM_SHIM_RSP_MAX=<n>         extra response delay max (default 48)
 //   +RAM_SHIM_REFRESH_PERIOD=<n>  refresh-like stall every n cycles, 0 = off (default 343)
 //   +RAM_SHIM_REFRESH_LEN=<n>     stall length in cycles (default 10)
+// Optional trace (off by default; draws no random numbers):
+//   +RAM_SHIM_TRACE0_LO=<hex> +RAM_SHIM_TRACE0_HI=<hex>  (byte offsets, inclusive)
+//   +RAM_SHIM_TRACE1_LO=<hex> +RAM_SHIM_TRACE1_HI=<hex>
+// prints one line per event for requests whose 8-byte word overlaps a window:
+//   RAM_SHIM_TRACE cyc=<n> ev=ACC|ISS|DRSP|URSP wen=<b> addr=<offset> wdata=<h> wmask=<h> [rdata=<h>]
+// ACC = upstream accept, ISS = downstream issue (down fire), DRSP = downstream
+// response (write performed at RAM), URSP = upstream response.
 // A refresh stall blocks acceptance and freezes the whole response hold
 // (countdown and emission). A request already issued downstream is not
 // cancelled by a stall: this is a latency injector, not a cycle-accurate
@@ -48,6 +55,17 @@ module membus_latency_shim #(
     longint unsigned stat_requests, stat_writes, stat_max_latency, stat_refresh_stalls;
     longint unsigned latency_now;
 
+    // trace configuration and a free-running cycle counter (no RNG use)
+    bit trace_en0, trace_en1;
+    logic [63:0] trace0_lo, trace0_hi, trace1_lo, trace1_hi;
+    longint unsigned trace_cyc;
+    function automatic bit traced(input logic [ADDR_WIDTH-1:0] a);
+        logic [63:0] w;
+        w = 64'(a) & ~64'h7;
+        return (trace_en0 && w + 7 >= trace0_lo && w <= trace0_hi) ||
+               (trace_en1 && w + 7 >= trace1_lo && w <= trace1_hi);
+    endfunction
+
     initial begin
         cfg_seed = 1;
         cfg_ready_max = 3;
@@ -69,6 +87,14 @@ module membus_latency_shim #(
         if ($bits(up.addr) != ADDR_WIDTH || $bits(up.wdata) != DATA_WIDTH ||
             $bits(down.addr) != ADDR_WIDTH || $bits(down.wdata) != DATA_WIDTH)
             $fatal(1, "RAM_SHIM width mismatch");
+        trace_en0 = $value$plusargs("RAM_SHIM_TRACE0_LO=%h", trace0_lo) != 0;
+        trace_en0 = ($value$plusargs("RAM_SHIM_TRACE0_HI=%h", trace0_hi) != 0) && trace_en0;
+        trace_en1 = $value$plusargs("RAM_SHIM_TRACE1_LO=%h", trace1_lo) != 0;
+        trace_en1 = ($value$plusargs("RAM_SHIM_TRACE1_HI=%h", trace1_hi) != 0) && trace_en1;
+        if ((trace_en0 && trace0_lo > trace0_hi) || (trace_en1 && trace1_lo > trace1_hi))
+            $fatal(1, "RAM_SHIM trace window LO > HI");
+        if (trace_en0) $display("RAM_SHIM trace0 %h..%h", trace0_lo, trace0_hi);
+        if (trace_en1) $display("RAM_SHIM trace1 %h..%h", trace1_lo, trace1_hi);
         if (cfg_seed == 0) $fatal(1, "RAM_SHIM_SEED must be non-zero");
         if (cfg_rsp_min > cfg_rsp_max) $fatal(1, "RAM_SHIM_RSP_MIN > RAM_SHIM_RSP_MAX");
         if (cfg_refresh_period != 0 && cfg_refresh_len >= cfg_refresh_period)
@@ -180,6 +206,29 @@ module membus_latency_shim #(
                 default: state <= S_IDLE;
             endcase
             if (rng == 64'd0) $fatal(1, "RAM_SHIM rng reached zero");
+        end
+    end
+
+    // Trace: sampled with pre-edge values at the same edges the state machine uses.
+    always_ff @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            trace_cyc <= 0;
+        end else begin
+            trace_cyc <= trace_cyc + 1;
+            if (trace_en0 || trace_en1) begin
+                if (state == S_IDLE && up.valid && up.ready && traced(up.addr))
+                    $display("RAM_SHIM_TRACE cyc=%0d ev=ACC wen=%b addr=%h wdata=%h wmask=%h",
+                             trace_cyc, up.wen, up.addr, up.wdata, up.wmask);
+                if (state == S_ISSUE && down.ready && traced(addr_q))
+                    $display("RAM_SHIM_TRACE cyc=%0d ev=ISS wen=%b addr=%h wdata=%h wmask=%h",
+                             trace_cyc, wen_q, addr_q, wdata_q, wmask_q);
+                if (state == S_WAIT && down.rvalid && traced(addr_q))
+                    $display("RAM_SHIM_TRACE cyc=%0d ev=DRSP wen=%b addr=%h wdata=%h wmask=%h rdata=%h",
+                             trace_cyc, wen_q, addr_q, wdata_q, wmask_q, down.rdata);
+                if (rvalid_q && traced(addr_q))
+                    $display("RAM_SHIM_TRACE cyc=%0d ev=URSP wen=%b addr=%h wdata=%h wmask=%h rdata=%h",
+                             trace_cyc, wen_q, addr_q, wdata_q, wmask_q, rdata_q);
+            end
         end
     end
 

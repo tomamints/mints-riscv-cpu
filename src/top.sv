@@ -381,6 +381,16 @@ module core_top #(
         .down (shim_ram_membus)
     );
 `define SVCPU_RAM_CONV_MEMBUS shim_ram_membus
+    // Sim-only observer (no functional effect), enabled by +RAM_SHIM_TRACE_FENCE:
+    // prints the cycle at which the I-side fetch_invalidate (fence.i) is consumed,
+    // on the shim trace time base, plus the core cycle counter for cross-checking.
+    bit ram_shim_trace_fence;
+    initial ram_shim_trace_fence = $test$plusargs("RAM_SHIM_TRACE_FENCE");
+    always @(posedge clk) begin
+        if (ram_shim_trace_fence && rst && i_membus_core.fetch_invalidate)
+            $display("RAM_SHIM_FENCE cyc=%0d core_cycle=%0d pc=%016h",
+                     ram_latency_shim.trace_cyc, c.debug_cycle, c.mems_pc);
+    end
 `else
 `define SVCPU_RAM_CONV_MEMBUS arb_ram_membus
 `endif
