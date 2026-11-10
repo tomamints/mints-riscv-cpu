@@ -417,6 +417,7 @@ module icache #(
 		end
 	end
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display("[PERF-ICACHE] req=%0d cacheable=%0d hit=%0d fill_hit=%0d miss=%0d uncached=%0d hit_rate_x1000=%0d flush=%0d",
@@ -438,5 +439,6 @@ module icache #(
 				perf_demand_miss_stall_cycle);
 		end
 	end
+`endif
 
 endmodule : icache

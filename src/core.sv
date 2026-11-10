@@ -1547,6 +1547,7 @@ module core (
 			if (d_membus.valid && d_membus.ready) begin
 				perf_dbus_req_count <= perf_dbus_req_count + 1;
 			end
+`ifndef SYNTHESIS
 			if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
 				wbs_valid &&
 				(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1554,6 +1555,8 @@ module core (
 				(strsize_trace_count < UInt64'(200))) begin
 				strsize_trace_count <= strsize_trace_count + 1;
 			end
+`endif
+`ifndef SYNTHESIS
 			if ($test$plusargs("TRACE_STRSIZE_MULDIV") &&
 				(exs_valid || exs_muldiv_rvalid) &&
 				(exs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1561,6 +1564,7 @@ module core (
 				(strsize_muldiv_trace_count < UInt64'(80))) begin
 				strsize_muldiv_trace_count <= strsize_muldiv_trace_count + 1;
 			end
+`endif
 			if (minstret_wen) begin
 				minstret <= minstret_wdata;
 			end else if (minstret_auto_increment)begin
@@ -1569,6 +1573,7 @@ module core (
 		end
 	end
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display("[PERF-CONTROL] branch=%0d jal=%0d jalr=%0d trap=%0d return=%0d satp=%0d sfence=%0d other=%0d",
@@ -1631,6 +1636,7 @@ module core (
 				perf_dbus_req_count);
 		end
 	end
+`endif
 
 	always_ff @(posedge clk)begin
 		if(wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && !wbq_rdata.raise_trap)begin
@@ -1644,6 +1650,7 @@ module core (
 	end
 
 	always_ff @(posedge clk) begin
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_RETIRE") && architectural_retire) begin
 			$display(
 				"[RETIRE] cycle=%0d order=%0d pc=%016h inst=%08h priv=%0d rd_we=%0b rd=%0d rd_data=%016h mem_valid=%0b mem_write=%0b mem_addr=%016h mem_mask=%02h mem_data=%016h",
@@ -1662,6 +1669,8 @@ module core (
 				retire_mem_data
 			);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_HEARTBEAT") && wbs_valid && (minstret[19:0] == 20'h0)) begin
 			$display("[HEARTBEAT] minstret=%h pc=%h inst=%h mode=%0d satp=%h trap=%b",
 				minstret,
@@ -1671,6 +1680,8 @@ module core (
 				satp_fetch_value,
 				wbq_rdata.raise_trap);
 		end
+`endif
+`ifndef SYNTHESIS
 		if (($test$plusargs("TRACE_SYSCALL") || $test$plusargs("TRACE_ECALL")) &&
 			wbs_valid &&
 			wbs_inst_bits == 32'h00000073) begin
@@ -1694,6 +1705,8 @@ module core (
 				regfile[1],
 				satp_fetch_value);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_PIPE") && debug_cycle[19:0] == 20'h0) begin
 			$display("[PIPE] cycle=%h minstret=%h mode=%0d satp=%h id_v=%b id_pc=%h ex_v=%b ex_pc=%h ex_stall=%b mem_v=%b mem_pc=%h mem_stall=%b wb_v=%b wb_pc=%h i_rvalid=%b i_rready=%b d_v=%b d_rdy=%b d_rvalid=%b",
 				debug_cycle,
@@ -1716,6 +1729,8 @@ module core (
 				d_membus.ready,
 				d_membus.rvalid);
 		end
+`endif
+`ifndef SYNTHESIS
 		if (
 			$test$plusargs("TRACE_BRANCH_FRONTEND") &&
 			exs_valid &&
@@ -1735,6 +1750,8 @@ module core (
 				ex_early_branch_prediction_correct,
 				ex_early_branch_redirect);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_STRSIZE_LOOP") &&
 			wbs_valid &&
 			(wbs_pc >= Addr'(64'hffff_ffff_803d_e024)) &&
@@ -1755,6 +1772,8 @@ module core (
 				regfile[18],
 				wbq_rdata.raise_trap);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
 			wbs_valid &&
 			(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1779,6 +1798,8 @@ module core (
 				regfile[23],
 				wbq_rdata.raise_trap);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_STRSIZE_MULDIV") &&
 			(exs_valid || exs_muldiv_rvalid) &&
 			(exs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1806,6 +1827,8 @@ module core (
 				exs_op2,
 				exs_muldiv_result);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_PAYLOAD") && wbs_valid && wbs_pc >= Addr'('h8020_0000)) begin
 			$display("[PAYLOAD] pc=%h inst=%h rd=%0d wdata=%h trap=%b expt=%b cause=%0d value=%h",
 				wbs_pc,
@@ -1817,6 +1840,7 @@ module core (
 				mems_expt.cause,
 				mems_expt.value);
 		end
+`endif
 	end
 
 

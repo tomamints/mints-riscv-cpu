@@ -637,6 +637,7 @@ module address_translation #(
 	end
 `endif
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display(
@@ -699,6 +700,7 @@ module address_translation #(
 			);
 		end
 	end
+`endif
 
 	always_ff @(posedge clk or negedge rst) begin
 		if (!rst) begin

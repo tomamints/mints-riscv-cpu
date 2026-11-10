@@ -802,6 +802,7 @@ module core_top #(
         .aclint   (aclint_core_bus)
     );
 
+`ifndef SYNTHESIS
     final begin
         if ($test$plusargs("PERF_SUMMARY")) begin
             $display("[PERF-MEMARB] i_grant=%0d d_grant=%0d d_low_grant=%0d d_low_defer=%0d",
@@ -815,6 +816,7 @@ module core_top #(
                 perf_memarb_d_low_wait_cycle);
         end
     end
+`endif
 
 `ifdef SVCPU_WHISPER_LOCKSTEP
     assign lockstep_uart_tx_valid = uart_tx_char_valid;

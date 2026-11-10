@@ -199,9 +199,11 @@ module csrunit (
 	UInt64 trace_timer_start_minstret;
 
 	initial begin
+`ifndef SYNTHESIS
 		if (!$value$plusargs("TRACE_TIMER_MINSTRET=%h", trace_timer_start_minstret)) begin
 			trace_timer_start_minstret = '0;
 		end
+`endif
 	end
 
 	assign pmpcfg0_value = pmpcfg0;
@@ -589,6 +591,7 @@ module csrunit (
 			mcycle += 1;
 			mip_reg <= mip_reg | set_s_interrupt_pending;
 			if (valid) begin
+`ifndef SYNTHESIS
 				if ($test$plusargs("TRACE_TIMER_IRQ") &&
 					minstret >= trace_timer_start_minstret &&
 					trace_post_timer_count != 0 &&
@@ -609,7 +612,9 @@ module csrunit (
 					trace_post_timer_count <= trace_post_timer_count - 1'b1;
 					trace_post_timer_last_minstret <= minstret;
 				end
+`endif
 				if (raise_trap) begin
+`ifndef SYNTHESIS
 					if ($test$plusargs("TRACE_TRAP")) begin
 						$display("[TRAP] pc=%h inst=%h mode=%0d expt=%b intr=%b ret=%b cause=%h tval=%h vector=%h next_mode=%0d satp=%h stvec=%h mtvec=%h",
 							pc,
@@ -626,6 +631,8 @@ module csrunit (
 							stvec,
 							mtvec);
 					end
+`endif
+`ifndef SYNTHESIS
 					if ($test$plusargs("TRACE_TIMER_IRQ") &&
 						minstret >= trace_timer_start_minstret &&
 						raise_interrupt &&
@@ -643,6 +650,7 @@ module csrunit (
 							sip,
 							mstatus);
 					end
+`endif
 					if (raise_expt || raise_interrupt) begin
 						if (raise_interrupt &&
 							(trap_cause == SUPERVISOR_TIMER_INTERRUPT || trap_cause == MACHINE_TIMER_INTERRUPT)) begin
@@ -685,6 +693,7 @@ module csrunit (
 							mstatus[8] <= mode[0];
 						end
 					end else if (trap_return) begin
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_TIMER_IRQ") &&
 							minstret >= trace_timer_start_minstret &&
 							trace_timer_active) begin
@@ -702,6 +711,7 @@ module csrunit (
 								sip,
 								mstatus);
 						end
+`endif
 						if (is_mret) begin
 							//save mstatus.mie to mstatus.mipe
 							// and set mstatus.mpie = 1
@@ -726,6 +736,7 @@ module csrunit (
 					mode <= trap_mode_next;
 				end else begin
 					if (csr_write_en) begin
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_CSR") && (
 							csr_addr == MSTATUS ||
 							csr_addr == SSTATUS ||
@@ -747,6 +758,8 @@ module csrunit (
 								(csr_addr == SATP) ? validate_satp(satp, wdata) : wdata,
 								inst_bits);
 						end
+`endif
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_TIMER_IRQ") &&
 							minstret >= trace_timer_start_minstret &&
 							(csr_addr == SIP || csr_addr == MIP) &&
@@ -764,6 +777,7 @@ module csrunit (
 								sip,
 								aclint.setstip);
 						end
+`endif
 						case (csr_addr) //これらはそれぞれのCSRレジスタにwdataを入れている。
 							MSTATUS  : mstatus  <= validate_mstatus(mstatus, wdata);
 							MTVEC    : mtvec    <= wdata;

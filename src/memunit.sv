@@ -562,10 +562,12 @@ module memunit (
 			expt.valid = 1'b1;
 			expt.cause = fault_cause;
 			expt.value = fault_value;
+`ifndef SYNTHESIS
 			if ($test$plusargs("TRACE_SV39")) begin
 				$display("[SV39] FAULT cause=%0d detail=%0d value=%h",
 					fault_cause, fault_detail, fault_value);
 			end
+`endif
 		end
 	end
 
@@ -841,10 +843,12 @@ module memunit (
 						if (data_mem_rvalid) begin
 							if (req_crosses_word) begin
 								req_first_rdata <= membus.rdata;
+`ifndef SYNTHESIS
 								if ($test$plusargs("TRACE_MEMUNIT")) begin
 									$display("[MEMU] split first addr=%h data=%h offset=%0d size=%0d",
 										req_paddr, membus.rdata, req_offset, req_size);
 								end
+`endif
 								state <= SplitAccessWaitReady;
 							end else begin
 								state <= Init;
@@ -861,6 +865,7 @@ module memunit (
 					SplitAccessWaitValid: begin
 						if (data_mem_rvalid) begin
 							load_result <= extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3);
+`ifndef SYNTHESIS
 							if ($test$plusargs("TRACE_MEMUNIT")) begin
 								$display("[MEMU] split second addr=%h data=%h result=%h funct3=%b",
 									({req_paddr[XLEN-1:3], 3'b000} + Addr'(8)),
@@ -868,6 +873,7 @@ module memunit (
 									extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3),
 									req_funct3);
 							end
+`endif
 							state <= Init;
 						end
 					end
@@ -888,6 +894,7 @@ module memunit (
 		end
 	end
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display("[PERF-MEMU-STALL] translation=%0d access_ready=%0d response=%0d split_ready=%0d split_response=%0d discard=%0d fault=%0d",
@@ -937,4 +944,5 @@ module memunit (
 				perf_mem_split_response_bus_wait_cycle);
 		end
 	end
+`endif
 endmodule : memunit

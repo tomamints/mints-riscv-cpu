@@ -1249,6 +1249,7 @@ module dcache #(
 		end
 	end
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display("[PERF-DCACHE] req=%0d load=%0d store=%0d cacheable=%0d hit=%0d miss=%0d uncached=%0d bypass=%0d hit_rate_x1000=%0d flush=%0d",
@@ -1343,5 +1344,6 @@ module dcache #(
 				perf_fast_load_hit_count);
 		end
 	end
+`endif
 
 endmodule : dcache

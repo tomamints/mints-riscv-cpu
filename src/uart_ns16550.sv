@@ -131,6 +131,7 @@ module uart_ns16550 (
 			end
 
 			if (tx_empty_event) begin
+`ifndef SYNTHESIS
 				if ($test$plusargs("TRACE_TXUART") && (ier[1] || tx_irq_pending)) begin
 					$display("[UART TX EMPTY] ier=%02x txp=%0b txe=%0b irq=%0b",
 						ier,
@@ -138,6 +139,7 @@ module uart_ns16550 (
 						tx_empty_event,
 						irq);
 				end
+`endif
 				tx_empty_event <= 1'b0;
 				if (ier[1]) begin
 					tx_irq_pending <= 1'b1;
@@ -149,9 +151,11 @@ module uart_ns16550 (
 				longint input_value;
 				input_value = util::get_input();
 				if (input_value[63:44] == 20'h01010) begin
+`ifndef SYNTHESIS
 					if ($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_RXUART")) begin
 						$display("[UART RX] char=%02x count=%0d", input_value[7:0], rx_count);
 					end
+`endif
 					rx_push = 1'b1;
 					rx_push_data = input_value[7:0];
 				end
@@ -219,6 +223,7 @@ module uart_ns16550 (
 					end
 				end
 
+`ifndef SYNTHESIS
 				if ($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_RXUART") || $test$plusargs("TRACE_TXUART")) begin
 					if (membus.wen && byte_write_valid) begin
 						if (($test$plusargs("TRACE_UART") || $test$plusargs("TRACE_TXUART")) &&
@@ -280,6 +285,7 @@ module uart_ns16550 (
 						end
 					end
 				end
+`endif
 			end
 
 			if (rx_clear) begin

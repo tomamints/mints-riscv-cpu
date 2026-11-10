@@ -607,12 +607,20 @@ module inst_fetcher #(
 
     assign satp_sv39 = satp[63:60] == 4'd8;
     assign need_translate = satp_sv39 && (priv_mode != M);
+`ifndef SYNTHESIS
     assign trace_fetch_event =
         $test$plusargs("TRACE_FETCH_ALL") ||
         $test$plusargs("TRACE_FETCH_EVENT");
+`else
+    assign trace_fetch_event = 1'b0;   // trace-only: disabled in synthesis
+`endif
+`ifndef SYNTHESIS
     assign trace_fetch_fault =
         trace_fetch_event ||
         $test$plusargs("TRACE_FETCH_FAULT");
+`else
+    assign trace_fetch_fault = 1'b0;   // trace-only: disabled in synthesis
+`endif
 `ifndef SYNTHESIS
     assign trace_fetch_fault_match =
         !trace_fetch_fault_pc_valid ||
@@ -1160,6 +1168,7 @@ module inst_fetcher #(
     end
 `endif
 
+`ifndef SYNTHESIS
     final begin
         if ($test$plusargs("PERF_SUMMARY")) begin
             $display("[PERF-FETCH-STALL] fifo_full=%0d control_recovery=%0d translation_issue=%0d translation_req_wait=%0d translation_rsp=%0d icache_req=%0d icache_rsp=%0d fault=%0d no_request=%0d",
@@ -1184,5 +1193,6 @@ module inst_fetcher #(
                 perf_fetch_icache_rsp_fifo_wait_cycle);
         end
     end
+`endif
 
 endmodule
