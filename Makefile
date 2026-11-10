@@ -87,6 +87,19 @@ else ifneq ($(RAM_BACKEND),sim)
 $(error RAM_BACKEND must be sim or sdram_model)
 endif
 
+# Physical 8N1 UART backend for the common 20 MHz board clock. Default simulation
+# keeps its byte/DPI backend. External RX is held idle by the C++ harness.
+PHYSICAL_UART ?= 0
+ifeq ($(PHYSICAL_UART),1)
+UART_PHYSICAL_SRCS = rtl/peripheral/uart16550_regs.sv fpga/de0-cv/rtl/uart_baud_gen.sv \
+	fpga/de0-cv/rtl/uart_tx.sv fpga/de0-cv/rtl/uart_rx.sv fpga/de0-cv/rtl/uart_phy.sv \
+	rtl/peripheral/uart16550_serial.sv
+VERILATOR_DEFINES += -DSVCPU_PHYSICAL_UART -CFLAGS -DENABLE_PHYSICAL_UART $(UART_PHYSICAL_SRCS)
+RTL_SRCS += $(UART_PHYSICAL_SRCS)
+else ifneq ($(PHYSICAL_UART),0)
+$(error PHYSICAL_UART must be 0 or 1)
+endif
+
 # 実行バイナリ名
 SIM       = $(OBJ_DIR)/sim
 INPUT_SIM = $(INPUT_OBJ_DIR)/sim

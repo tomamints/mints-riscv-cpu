@@ -40,6 +40,12 @@ module core_top #(
     output logic test_success,
 `endif
     input  logic clk,
+`ifdef SVCPU_PHYSICAL_UART
+    input  logic uart_rx_i,
+    output logic uart_tx_o,
+    output logic uart_tx_overflow_o,
+    output logic uart_rx_overrun_o,
+`endif
     input  logic rst,
     input  Addr  MMAP_DBG_ADDR,
     output UIntX led
@@ -649,6 +655,15 @@ module core_top #(
         .ram(dma_ram_membus)
     );
 
+`ifdef SVCPU_PHYSICAL_UART
+    uart16550_serial #(.CLK_HZ(20_000_000), .REF_HZ(3_686_400)) uart0 (
+        .clk(clk), .rst(rst), .membus(uart_membus), .irq(uart_irq),
+        .rxd(uart_rx_i), .txd(uart_tx_o),
+        .diag_tx_overflow(uart_tx_overflow_o), .diag_rx_overrun(uart_rx_overrun_o)
+    );
+    assign uart_tx_char_valid = 1'b0;
+    assign uart_tx_char = '0;
+`else
     uart_ns16550 uart0 (
         .clk           (clk),
         .rst           (rst),
@@ -657,6 +672,7 @@ module core_top #(
         .tx_char_valid (uart_tx_char_valid),
         .tx_char       (uart_tx_char)
     );
+`endif
 
     plic plic0 (
         .clk        (clk),
