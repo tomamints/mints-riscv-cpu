@@ -6,6 +6,7 @@ if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
 fi
 docker run --rm --init --platform linux/amd64 -v "$PWD:/repo" -w /repo \
   -v "${QUARTUS_VOLUME:-mints-quartus-20.1}:/opt/intelFPGA_lite" \
+  -e SDRAM_CLK_HZ="${SDRAM_CLK_HZ:-50000000}" \
   -e QUARTUS_SH=/opt/intelFPGA_lite/20.1/quartus/bin/quartus_sh \
   -e LD_PRELOAD=/lib/x86_64-linux-gnu/libudev.so.1 \
   "${QUARTUS_IMAGE:-mints-quartus:20.1}" bash tools/build-de0cv-sdram-test.sh

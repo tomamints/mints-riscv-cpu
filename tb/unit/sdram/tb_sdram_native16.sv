@@ -1,11 +1,12 @@
 `timescale 1ns/1ps
 module tb_sdram_native16 #(
+    parameter int unsigned CLK_HZ=50_000_000,
     parameter bit INJECT_BAD_INIT=0,
     parameter bit INJECT_BAD_DATA=0,
     parameter bit INJECT_BAD_REFRESH=0
 );
     logic clk=0;
-    always #10 clk=~clk;
+    always #(500_000_000.0/CLK_HZ) clk=~clk;
     logic soft_reset=0;
     logic rst_n=0, req_valid=0, req_ready, req_write=0;
     logic [24:0] req_addr=0;
@@ -16,20 +17,23 @@ module tb_sdram_native16 #(
     logic [1:0] ba, dqm;
     logic cke, csn, rasn, casn, wen, oe;
     logic [15:0] dout, din=0;
-    sdram_native16 dut(.clk(clk),.rst_n(rst_n),.soft_reset(soft_reset),.req_valid(req_valid),
+    sdram_native16 #(.CLK_HZ(CLK_HZ)) dut(.clk(clk),.rst_n(rst_n),.soft_reset(soft_reset),.req_valid(req_valid),
         .req_ready(req_ready),.req_addr(req_addr),.req_write(req_write),
         .req_wdata(req_wdata),.req_be(req_be),.rsp_valid(rsp_valid),
         .rsp_data(rsp_data),.init_done(init_done),.dram_addr(a),.dram_ba(ba),
         .dram_cke(cke),.dram_cs_n(csn),.dram_ras_n(rasn),.dram_cas_n(casn),
         .dram_we_n(wen),.dram_dqm(dqm),.dq_in(din),.dq_out(dout),.dq_oe(oe));
 
-    // Pin-side checker: memory sampling edge is nominally 5 ns after clk.
+    // Pin-side checker: memory sampling edge is nominally a quarter period after clk.
     // Uses decoded pin commands, never DUT state or phase counters.
     logic [15:0] memory [int unsigned];
     logic [15:0] expected [int unsigned];
     bit opened[4];
     logic [12:0] rows[4];
     int act_at[4], pre_at[4], write_at[4];
+    // Independent per-profile target table, with the device JEDEC bound below.
+    localparam int REFRESH_TARGET = CLK_HZ==20_000_000 ? 140 : 350;
+    localparam int POWER_WAIT_CYCLES = CLK_HZ==20_000_000 ? 4000 : 10000;
     int cyc=0, refs=0, total_refs=0, last_ref=-100, mrs_at=-100;
     bit configured=0, precharged=0;
     int read_due=-1, release_due=-1;
@@ -49,7 +53,7 @@ module tb_sdram_native16 #(
     // Monitor ownership continuously, including the device tHZ tail.
     always @(oe or driving) if(rst_n && oe && driving) $fatal(1,"DQ ownership collision");
     wire memory_clock;
-    assign #5 memory_clock=clk;
+    assign #(250_000_000.0/CLK_HZ) memory_clock=clk;
     always @(posedge memory_clock) begin : model
         logic [3:0] cmd;
         int unsigned address;
@@ -72,11 +76,12 @@ module tb_sdram_native16 #(
             // Checker self-test: present an illegal command in the power-up wait.
             if(INJECT_BAD_INIT && cyc==20) cmd=4'b0000;
             if(INJECT_BAD_REFRESH && configured && cmd==4'b0001) cmd=4'b0111;
-            if (cmd!=4'b0111 && cyc<5000) $fatal(1,"power-up delay too short");
+            if (cmd!=4'b0111 && cyc<CLK_HZ/10000) $fatal(1,"power-up delay too short");
             if (cyc==read_due-1 && dqm!=0) $fatal(1,"read DQM pipeline masked");
-            if (configured && cyc-last_ref>350) $fatal(1,"refresh deadline missed");
+            if (configured && cyc-last_ref>REFRESH_TARGET) $fatal(1,"refresh deadline missed");
+            if(configured && cyc-last_ref>CLK_HZ/128000) $fatal(1,"JEDEC refresh interval exceeded");
             foreach(opened[i])
-                if(opened[i] && cyc-act_at[i]>5000) $fatal(1,"maximum active time exceeded");
+                if(opened[i] && cyc-act_at[i]>CLK_HZ/10000) $fatal(1,"maximum active time exceeded");
             if (cmd!=4'b0111 && cyc-last_ref<4) $fatal(1,"refresh recovery too short");
             case(cmd)
                 4'b0010: begin // PRECHARGE
@@ -178,7 +183,7 @@ module tb_sdram_native16 #(
         while(!init_done) begin step(); if(cyc>11000) $fatal(1,"init timeout"); end
         if(refs!=8) $fatal(1,"initial refresh count");
         // Hit the latest admission point after the last initialization REF.
-        while(cyc-last_ref<332) step();
+        while(cyc-last_ref<(CLK_HZ/1_000_000)*7-18) step();
         transaction(0,32'd0,0,0);
         transaction(0,32'd0,0,0); // overlaps the following refresh reservation
         for(int b=0;b<16;b++) begin
@@ -220,7 +225,7 @@ module tb_sdram_native16 #(
                 step(); waited++;
                 if(waited>11000) $fatal(1,"reinitialization timeout");
             end
-            if(waited<10000 || refs!=8) $fatal(1,"incomplete reinitialization");
+            if(waited<POWER_WAIT_CYCLES || refs!=8) $fatal(1,"incomplete reinitialization");
         end
         transaction(1,32'd0,16'h5a5a,2'b11);
         transaction(0,32'd0,0,0);

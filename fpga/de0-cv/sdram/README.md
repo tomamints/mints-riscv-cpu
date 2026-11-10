@@ -2,10 +2,13 @@
 
 `rtl/sdram_native16.sv` provides a single outstanding halfword transaction,
 byte write enables, explicit row closing and periodic refresh. It uses a fixed
-50 MHz controller clock, burst length 1 and CAS latency 3.
+`CLK_HZ=50000000` (default) or `CLK_HZ=20000000`, burst length 1 and CAS
+latency 3. Initialization waits 200 us; refresh admission reserves 16 cycles
+before a seven-microsecond target. Other clock profiles are rejected.
 
-The memory clock must sample the registered command outputs 5 ns after the controller rising
-edge (nominal PLL phase; pin timing must be analyzed). This module does not generate that
+The memory clock samples registered command outputs a nominal quarter period
+after the controller rising edge (5 ns at 50 MHz, 12.5 ns at 20 MHz).
+Pin timing must be analyzed. This module does not generate that
 clock, contain a PLL, provide board pin assignments or establish I/O timing.
 Use a separately constrained board wrapper before programming hardware.
 
@@ -68,8 +71,8 @@ never combinationally in the acceptance cycle.
 
 ## DE0-CV standalone hardware test
 
-The board wrapper uses a PLL to forward a 50 MHz memory clock shifted by
-5 ns. It checks all 256 byte masks at the last word, then writes and reads
+The board wrapper uses a PLL to forward the selected memory clock with a
+quarter-period shift. It checks all 256 byte masks at the last word, then writes and reads
 all 64 MiB using address-dependent data, its inverse, zeros and ones. Each
 write sweep is followed by a one-second refresh/retention interval.
 
@@ -79,6 +82,13 @@ bash tools/build-de0cv-jtag-status.sh
 bash tools/program-de0cv-sdram-test.sh
 python3 tools/run-de0cv-sdram-test.py
 ```
+
+Select the 20 MHz common-clock profile with
+`SDRAM_CLK_HZ=20000000 bash tools/build-de0cv-sdram-test-docker.sh`.
+The polling tool automatically allows 300 seconds for this slower full-memory
+test; `--timeout` overrides it. The programming command prints the built clock profile.
+Simulation runners accept the same `SDRAM_CLK_HZ` variable; their 20 MHz
+logs use a `-20000000` suffix to preserve the default profile's output.
 
 Requires the Quartus container/volume from `tools/setup-quartus.sh` and native
 programmer dependencies from `tools/setup-de0cv-programmer.sh`. Programming

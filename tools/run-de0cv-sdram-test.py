@@ -9,11 +9,24 @@ import time
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--timeout',type=float,default=180)
+    parser.add_argument('--timeout',type=float,
+                        help='seconds (default: 300 at 20MHz, otherwise 180)')
     parser.add_argument('--accept-existing', action='store_true',
                         help='allow a PASS already latched before polling starts')
     args=parser.parse_args()
     root=Path(__file__).resolve().parent.parent
+    profile_clock=50_000_000
+    config=root/'build/fpga/de0-cv-sdram-test/build-config.txt'
+    if config.exists():
+        for line in config.read_text().splitlines():
+            key,separator,value=line.partition('=')
+            if key=='SDRAM_CLK_HZ' and separator:
+                profile_clock=int(value)
+    if profile_clock not in (20_000_000,50_000_000):
+        parser.error('unsupported built SDRAM clock profile')
+    timeout=args.timeout if args.timeout is not None else (300 if profile_clock==20_000_000 else 180)
+    if timeout<=0:
+        parser.error('--timeout must be positive')
     reader=root/'local/fpga-tools/bin/de0cv-jtag-status'
     logdir=root/'build/logs'
     logdir.mkdir(parents=True,exist_ok=True)
@@ -27,7 +40,8 @@ def main():
             if proc.returncode:
                 raise RuntimeError(proc.stderr.strip() or proc.stdout.strip())
             return int(json.loads(proc.stdout.strip().splitlines()[-1])['status'],16)
-        deadline=time.monotonic()+args.timeout
+        emit(f'profile_clock={profile_clock} timeout={timeout}s')
+        deadline=time.monotonic()+timeout
         stable=0
         observed_running=False
         errors=0

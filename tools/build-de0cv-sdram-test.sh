@@ -2,6 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${QUARTUS_SH:=quartus_sh}"
+: "${SDRAM_CLK_HZ:=50000000}"
+case "$SDRAM_CLK_HZ" in
+  20000000|50000000) ;;
+  *) echo "Unsupported SDRAM clock profile: $SDRAM_CLK_HZ" >&2; exit 1;;
+esac
 qbin="$(dirname "$(command -v "$QUARTUS_SH")")"
 root="$PWD"
 out="$root/build/fpga/de0-cv-sdram-test"
@@ -15,6 +20,8 @@ sha256sum fpga/de0-cv/sdram/rtl/*.sv fpga/de0-cv/sdram/quartus/* \
   > "$out/source-sha256.txt"
 cp fpga/de0-cv/sdram/rtl/*.sv "$out/rtl/"
 cp fpga/de0-cv/sdram/quartus/* "$out/quartus/"
+printf "set_parameter -name CLK_HZ %s\n" "$SDRAM_CLK_HZ" >> "$out/quartus/de0_cv_sdram_test.qsf"
+printf "SDRAM_CLK_HZ=%s\n" "$SDRAM_CLK_HZ" > "$out/build-config.txt"
 cd "$out/quartus"
 "$QUARTUS_SH" --flow compile de0_cv_sdram_test
 if grep -nE 'Critical Warning|Ignored assignment' output_files/*.rpt; then

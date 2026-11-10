@@ -1,9 +1,10 @@
-module de0_cv_sdram_test(input wire CLOCK_50,KEY0_N,output wire [9:0] LEDR,
+module de0_cv_sdram_test #(parameter int unsigned CLK_HZ=50_000_000)
+    (input wire CLOCK_50,KEY0_N,output wire [9:0] LEDR,
     output wire [12:0] DRAM_ADDR,output wire [1:0] DRAM_BA,
     output wire DRAM_CLK,DRAM_CKE,DRAM_CS_N,DRAM_RAS_N,DRAM_CAS_N,DRAM_WE_N,
     output wire DRAM_LDQM,DRAM_UDQM,inout wire [15:0] DRAM_DQ);
     wire clk,locked;
-    sdram_board_pll clocking_block(.clock_50(CLOCK_50),.clk(clk),.dram_clk(DRAM_CLK),.locked(locked));
+    sdram_board_pll #(.CLK_HZ(CLK_HZ)) clocking_block(.clock_50(CLOCK_50),.clk(clk),.dram_clk(DRAM_CLK),.locked(locked));
     reg [7:0] power_pipe=0;
     always @(posedge clk or negedge locked)
         if(!locked) power_pipe<=0; else power_pipe<={power_pipe[6:0],1'b1};
@@ -18,7 +19,7 @@ module de0_cv_sdram_test(input wire CLOCK_50,KEY0_N,output wire [9:0] LEDR,
     wire [24:0] naddr;
     wire [15:0] nwdata,nrdata,dq_out;
     wire [1:0] nbe,dqm;
-    sdram_test_engine test(.clk(clk),.rst_n(power_n),.restart(soft_reset),
+    sdram_test_engine #(.HOLD_CYCLES(CLK_HZ)) test(.clk(clk),.rst_n(power_n),.restart(soft_reset),
         .req_valid(valid),.req_ready(ready),.req_addr(addr),.req_write(write),
         .req_wdata(wdata),.req_be(be),.rsp_valid(rvalid),.rsp_data(rdata),.rsp_error(error),
         .passed(pass),.failed(fail),.failed_addr(failaddr),.failed_expected(failexp),.failed_actual(failactual));
@@ -27,7 +28,7 @@ module de0_cv_sdram_test(input wire CLOCK_50,KEY0_N,output wire [9:0] LEDR,
         .req_wdata(wdata),.req_be(be),.rsp_valid(rvalid),.rsp_data(rdata),.rsp_error(error),
         .native_valid(nv),.native_ready(nready),.native_addr(naddr),.native_write(nwrite),
         .native_wdata(nwdata),.native_be(nbe),.native_rsp_valid(nrvalid),.native_rsp_data(nrdata));
-    sdram_native16 native_dut(.clk(clk),.rst_n(power_n),.soft_reset(soft_reset),
+    sdram_native16 #(.CLK_HZ(CLK_HZ)) native_dut(.clk(clk),.rst_n(power_n),.soft_reset(soft_reset),
         .req_valid(nv),.req_ready(nready),.req_addr(naddr),.req_write(nwrite),
         .req_wdata(nwdata),.req_be(nbe),.rsp_valid(nrvalid),.rsp_data(nrdata),.init_done(init_done),
         .dram_addr(DRAM_ADDR),.dram_ba(DRAM_BA),.dram_dqm(dqm),.dram_cke(DRAM_CKE),

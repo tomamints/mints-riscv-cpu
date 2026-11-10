@@ -1,12 +1,12 @@
 `timescale 1ns/1ps
-// Single-clock-domain SDR SDRAM controller, fixed 50 MHz, BL=1, CL=3.
+// Single-clock-domain SDR SDRAM controller, 20/50 MHz profiles, BL=1, CL=3.
 // Commands/data are registered on clk rising edges. The external memory clock
-// uses a nominal +5 ns phase shift. Physical phase and I/O timing require STA.
+// uses a nominal quarter-period phase shift. Physical I/O timing requires STA.
 // One native halfword request outstanding; every request has one response.
 // rst_n is cold power/clock reset, not a board pushbutton reset. A cold reset
 // requires memory power initialization; external device state is then unknown.
 // soft_reset is synchronous: cancel replies but keep command/refresh operation.
-module sdram_native16 (
+module sdram_native16 #(parameter int unsigned CLK_HZ=50_000_000) (
     input logic clk,
     input logic rst_n,
     input logic soft_reset,
@@ -49,11 +49,27 @@ module sdram_native16 (
     logic [1:0] saved_be;
     logic [15:0] read_data;
     logic cancelled;
+    localparam int unsigned POWER_CYCLES=CLK_HZ/5000; // 200 us
+    localparam int unsigned REFRESH_LIMIT=(CLK_HZ/1_000_000)*7; // <=7 us
+    localparam int unsigned REFRESH_ADMIT=REFRESH_LIMIT-16;
+    // synthesis translate_off
+    initial begin
+        if ((CLK_HZ!=20_000_000 && CLK_HZ!=50_000_000) ||
+            POWER_CYCLES>16384 || REFRESH_LIMIT>511 ||
+            REFRESH_ADMIT+10>REFRESH_LIMIT || REFRESH_LIMIT>CLK_HZ/128000)
+            $fatal(1,"sdram_native16: unsupported clock/timing profile");
+    end
+    // synthesis translate_on
+    generate if(CLK_HZ!=20_000_000 && CLK_HZ!=50_000_000) begin : g_bad_clock
+`ifndef VERILATOR
+        sdram_native16_unsupported_clock_profile reject_profile();
+`endif
+    end endgenerate
 
     assign {dram_cs_n,dram_ras_n,dram_cas_n,dram_we_n}=command;
     assign dram_cke=1'b1;
-    // Refresh admission reserves 16 clocks before the 350-clock target.
-    assign req_ready = rst_n && !soft_reset && init_done && state==IDLE && refresh_age<9'd334;
+    // Reserve 16 cycles before the seven-microsecond refresh target.
+    assign req_ready = rst_n && !soft_reset && init_done && state==IDLE && refresh_age<9'(REFRESH_ADMIT);
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -87,8 +103,7 @@ module sdram_native16 (
             if(soft_reset && state==ACCESS) cancelled<=1'b1;
             case (state)
                 POWER_WAIT: begin
-                    // 10,000 clocks = 200 us after reset/clock stability.
-                    if (power_count==14'd9999) begin
+                    if (power_count==14'(POWER_CYCLES-1)) begin
                         command<=PRE;
                         dram_addr<=13'h400; // A10: all banks
                         phase<=4'd0;
@@ -129,7 +144,7 @@ module sdram_native16 (
                     state<=IDLE;
                 end
                 IDLE: begin
-                    if (refresh_age>=9'd334) begin
+                    if (refresh_age>=9'(REFRESH_ADMIT)) begin
                         // Every native access closes its row before returning.
                         command<=REF;
                         refresh_age<='0;

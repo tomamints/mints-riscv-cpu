@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
-module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
-    logic clk=0; always #10 clk=~clk;
+module tb_sdram_bridge64 #(parameter bit INTEGRATED=0, parameter int unsigned CLK_HZ=50_000_000);
+    logic clk=0; always #(500_000_000.0/CLK_HZ) clk=~clk;
     logic rst_n=0, valid=0, ready, wr=0, rv, err;
     logic soft_reset=0;
     logic [63:0] addr=0, wd=0, rd;
@@ -77,13 +77,13 @@ module tb_sdram_bridge64 #(parameter bit INTEGRATED=0);
         logic [1:0] mb, mdqm;
         logic cke,csn,rasn,casn,wen,oe;
         logic [15:0] dout,din;
-        sdram_native16 native_dut(.clk(clk),.rst_n(rst_n),.soft_reset(soft_reset),.req_valid(nv),
+        sdram_native16 #(.CLK_HZ(CLK_HZ)) native_dut(.clk(clk),.rst_n(rst_n),.soft_reset(soft_reset),.req_valid(nv),
             .req_ready(nready),.req_addr(na),.req_write(nwr),.req_wdata(nwd),
             .req_be(nbe),.rsp_valid(nrv),.rsp_data(nrd),.init_done(),
             .dram_addr(ma),.dram_ba(mb),.dram_dqm(mdqm),.dram_cke(cke),
             .dram_cs_n(csn),.dram_ras_n(rasn),.dram_cas_n(casn),.dram_we_n(wen),
             .dq_in(din),.dq_out(dout),.dq_oe(oe));
-        sdram_pin_model16 model(.clk(clk),.rst_n(rst_n),.a(ma),.ba(mb),
+        sdram_pin_model16 #(.CLK_HZ(CLK_HZ)) model(.clk(clk),.rst_n(rst_n),.a(ma),.ba(mb),
             .dqm(mdqm),.cke(cke),.csn(csn),.rasn(rasn),.casn(casn),.wen(wen),
             .oe(oe),.dout(dout),.din(din));
         always @(posedge clk) if(rst_n && nv && nready) native_count++;

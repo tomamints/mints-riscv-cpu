@@ -4,8 +4,16 @@ derive_clock_uncertainty
 create_generated_clock -name SDRAM_CLK -source [get_pins {clocking_block|u_pll|auto_generated|generic_pll2~PLL_OUTPUT_COUNTER|divclk}] -divide_by 1 [get_ports {DRAM_CLK}]
 set dram_clock [get_clocks {SDRAM_CLK}]
 if {[get_collection_size $dram_clock] != 1} { error "Expected one forwarded SDRAM PLL clock" }
-if {abs([get_clock_info -period $dram_clock]-20.0)>0.001 || abs([lindex [get_clock_info -waveform $dram_clock] 0]-5.0)>0.001} {
-    error "SDRAM clock must be 50MHz, quarter-cycle shifted"
+set memory_period [get_clock_info -period $dram_clock]
+set controller_clock [get_clocks {*generic_pll1~PLL_OUTPUT_COUNTER|divclk}]
+if {[get_collection_size $controller_clock] != 1 ||
+    abs([get_clock_info -period $controller_clock]-$memory_period)>0.001 ||
+    abs([lindex [get_clock_info -waveform $controller_clock] 0])>0.001} {
+    error "Expected a matching zero-phase controller clock"
+}
+if {(abs($memory_period-20.0)>0.001 && abs($memory_period-50.0)>0.001) ||
+    abs([lindex [get_clock_info -waveform $dram_clock] 0]-$memory_period/4.0)>0.001} {
+    error "SDRAM clock must be 20/50MHz, quarter-cycle shifted"
 }
 # External timing envelope plus board-skew allowances. Output setup/hold
 # include 1ns clock/data skew. Read max includes 2ns aggregate flight allowance.

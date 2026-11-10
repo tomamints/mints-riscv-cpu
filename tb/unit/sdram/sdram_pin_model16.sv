@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 // Independent command-level SDRAM model; no references to controller internals.
-module sdram_pin_model16 (
+module sdram_pin_model16 #(parameter int unsigned CLK_HZ=50_000_000) (
     input logic clk, rst_n,
     input logic [12:0] a,
     input logic [1:0] ba, dqm,
@@ -13,6 +13,8 @@ module sdram_pin_model16 (
     bit opened[4];
     logic [12:0] rows[4];
     int act_at[4], pre_at[4], write_at[4];
+    // Independent per-profile target table, with the device JEDEC bound below.
+    localparam int REFRESH_TARGET = CLK_HZ==20_000_000 ? 140 : 350;
     int cyc=0, refs=0, total_refs=0, last_ref=-100, mrs_at=-100;
     bit configured=0, precharged=0;
     int read_due=-1, release_due=-1;
@@ -24,7 +26,7 @@ module sdram_pin_model16 (
     // Monitor ownership continuously, including the device tHZ tail.
     always @(oe or driving) if(rst_n && oe && driving) $fatal(1,"DQ ownership collision");
     wire memory_clock;
-    assign #5 memory_clock=clk;
+    assign #(250_000_000.0/CLK_HZ) memory_clock=clk;
     always @(posedge memory_clock) begin : model
         logic [3:0] cmd;
         int unsigned address;
@@ -46,11 +48,12 @@ module sdram_pin_model16 (
             cmd={csn,rasn,casn,wen};
             // Checker self-test: present an illegal command in the power-up wait.
             if(INJECT_BAD_INIT && cyc==20) cmd=4'b0000;
-            if (cmd!=4'b0111 && cyc<5000) $fatal(1,"power-up delay too short");
+            if (cmd!=4'b0111 && cyc<CLK_HZ/10000) $fatal(1,"power-up delay too short");
             if (cyc==read_due-1 && dqm!=0) $fatal(1,"read DQM pipeline masked");
-            if (configured && cyc-last_ref>350) $fatal(1,"refresh deadline missed");
+            if (configured && cyc-last_ref>REFRESH_TARGET) $fatal(1,"refresh deadline missed");
+            if(configured && cyc-last_ref>CLK_HZ/128000) $fatal(1,"JEDEC refresh interval exceeded");
             foreach(opened[i])
-                if(opened[i] && cyc-act_at[i]>5000) $fatal(1,"maximum active time exceeded");
+                if(opened[i] && cyc-act_at[i]>CLK_HZ/10000) $fatal(1,"maximum active time exceeded");
             if (cmd!=4'b0111 && cyc-last_ref<4) $fatal(1,"refresh recovery too short");
             case(cmd)
                 4'b0010: begin // PRECHARGE
