@@ -72,18 +72,22 @@ busybox() {
   "${cross}readelf" -h -A "$out/busybox"
 }
 
+# KERNEL_INIT_MODE selects the initramfs init (tools/build-busybox-initramfs.sh
+# INIT_SCRIPT_MODE); default autotest. "default" is the interactive BusyBox
+# shell on ttyS0 (board use).
 kernel() {
-  local out=/repo/build/linux-build-busybox-autotest
-  INIT_SCRIPT_MODE=autotest SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
+  local mode=${KERNEL_INIT_MODE:-autotest}
+  local out=/repo/build/linux-build-busybox-$mode
+  INIT_SCRIPT_MODE=$mode SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
   mkdir -p "$out" build/external/linux-out
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- allnoconfig
   (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_minbringup.fragment)
   /sources/linux-6.12/scripts/config --file "$out/.config" \
-    --set-str INITRAMFS_SOURCE /repo/build/busybox-initramfs-autotest/initramfs.linux.list
+    --set-str INITRAMFS_SOURCE /repo/build/busybox-initramfs-$mode/initramfs.linux.list
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- olddefconfig
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- -j"$JOBS" Image
-  cp "$out/arch/riscv/boot/Image" build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs
-  cp "$out/.config" build/external/linux-out/config-linux-6.12-riscv64-busybox-autotest-initramfs
+  cp "$out/arch/riscv/boot/Image" build/external/linux-out/Image-linux-6.12-riscv64-busybox-$mode-initramfs
+  cp "$out/.config" build/external/linux-out/config-linux-6.12-riscv64-busybox-$mode-initramfs
 }
 
 simulator() {
