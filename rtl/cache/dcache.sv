@@ -36,12 +36,18 @@ module dcache #(
 	localparam int unsigned WORDS_PER_LINE = LINE_BYTES / 8;
 	localparam int unsigned WORD_OFFSET_WIDTH = $clog2(WORDS_PER_LINE);
 	localparam int unsigned FILL_COUNT_WIDTH = $clog2(WORDS_PER_LINE + 1);
-	localparam int unsigned TAG_WIDTH = XLEN - LINE_OFFSET_WIDTH - INDEX_WIDTH;
 	localparam int unsigned STORE_BUFFER_INDEX_WIDTH =
 		STORE_BUFFER_DEPTH <= 1 ? 1 : $clog2(STORE_BUFFER_DEPTH);
 	localparam int unsigned STORE_BUFFER_COUNT_WIDTH = $clog2(STORE_BUFFER_DEPTH + 1);
 	// end of the normal (cacheable) RAM range: eei capacity profile (legacy 16 MiB)
 	localparam Addr MMAP_RAM_END = MMAP_RAM_NORMAL_END;
+	// Only lines inside [MMAP_RAM_BEGIN, MMAP_RAM_END) are ever allocated, and
+	// every tag compare is gated by the same range test. The range is a
+	// power-of-two span aligned to its size, so all address bits at and above
+	// RAM_SPAN_WIDTH are the constant RAM_TAG_HIGH there and need not be stored.
+	localparam int unsigned RAM_SPAN_WIDTH = $clog2(MMAP_RAM_END - MMAP_RAM_BEGIN);
+	localparam int unsigned TAG_WIDTH = RAM_SPAN_WIDTH - LINE_OFFSET_WIDTH - INDEX_WIDTH;
+	localparam logic [XLEN-RAM_SPAN_WIDTH-1:0] RAM_TAG_HIGH = MMAP_RAM_BEGIN[XLEN-1:RAM_SPAN_WIDTH];
 
 	typedef enum logic [2:0] {
 		Idle,
@@ -316,16 +322,16 @@ module dcache #(
 
 	assign cpu_line_addr = {cpu.addr[XLEN-1:LINE_OFFSET_WIDTH], {LINE_OFFSET_WIDTH{1'b0}}};
 	assign cpu_index = cpu.addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
-	assign cpu_tag = cpu.addr[XLEN-1 -: TAG_WIDTH];
+	assign cpu_tag = cpu.addr[RAM_SPAN_WIDTH-1 -: TAG_WIDTH];
 	assign cpu_word_offset = cpu.addr[3 +: WORD_OFFSET_WIDTH];
 	assign cpu_ram_access = is_ram(cpu.addr);
 	assign cpu_cacheable = cpu_ram_access && !cpu.is_amo;
 	assign cache_hit = cpu_cacheable && valid[cpu_index] && tags[cpu_index] == cpu_tag;
 	assign dirty_victim_hit = WRITE_BACK && valid[cpu_index] && dirty[cpu_index];
-	assign cpu_victim_line_addr = Addr'({tags[cpu_index], cpu_index, {LINE_OFFSET_WIDTH{1'b0}}});
+	assign cpu_victim_line_addr = Addr'({RAM_TAG_HIGH, tags[cpu_index], cpu_index, {LINE_OFFSET_WIDTH{1'b0}}});
 	assign store_buffer_tail_prev = store_buffer_tail - STORE_BUFFER_INDEX_WIDTH'(1);
 	assign fast_load_index = cpu.fast_load_addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
-	assign fast_load_tag = cpu.fast_load_addr[XLEN-1 -: TAG_WIDTH];
+	assign fast_load_tag = cpu.fast_load_addr[RAM_SPAN_WIDTH-1 -: TAG_WIDTH];
 	assign fast_load_word_offset = cpu.fast_load_addr[3 +: WORD_OFFSET_WIDTH];
 	assign fast_load_cacheable = is_ram(cpu.fast_load_addr);
 	assign fast_load_mask = access_byte_mask(cpu.fast_load_funct3, cpu.fast_load_addr[2:0]);
@@ -341,7 +347,7 @@ module dcache #(
 		tags[fast_load_index] == fast_load_tag &&
 		!fast_load_store_buffer_overlap;
 	assign fast_store_index = cpu.fast_store_addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
-	assign fast_store_tag = cpu.fast_store_addr[XLEN-1 -: TAG_WIDTH];
+	assign fast_store_tag = cpu.fast_store_addr[RAM_SPAN_WIDTH-1 -: TAG_WIDTH];
 	assign fast_store_cacheable = is_ram(cpu.fast_store_addr);
 	assign fast_store_hit =
 		fast_store_cacheable &&
@@ -701,6 +707,11 @@ module dcache #(
 		end
 		if (STORE_BUFFER_DEPTH < 2 || (STORE_BUFFER_DEPTH & (STORE_BUFFER_DEPTH - 1)) != 0) begin
 			$fatal(1, "DCACHE STORE_BUFFER_DEPTH must be a power of two and at least 2");
+		end
+		if ((MMAP_RAM_END - MMAP_RAM_BEGIN) != (Addr'(1) << RAM_SPAN_WIDTH) ||
+		    (MMAP_RAM_BEGIN & ((Addr'(1) << RAM_SPAN_WIDTH) - Addr'(1))) != '0 ||
+		    RAM_SPAN_WIDTH <= LINE_OFFSET_WIDTH + INDEX_WIDTH) begin
+			$fatal(1, "DCACHE cacheable RAM range must be a size-aligned power of two larger than the cache index span");
 		end
 		if (DATA_RAM_STYLE > 1) begin
 			$fatal(1, "DCACHE DATA_RAM_STYLE must be 0 or 1");
@@ -1179,7 +1190,7 @@ module dcache #(
 					end else if (flush_index == INDEX_WIDTH'(LINE_COUNT - 1)) begin
 						if (valid[flush_index] && dirty[flush_index]) begin
 							writeback_line_addr <=
-								Addr'({tags[flush_index], flush_index, {LINE_OFFSET_WIDTH{1'b0}}});
+								Addr'({RAM_TAG_HIGH, tags[flush_index], flush_index, {LINE_OFFSET_WIDTH{1'b0}}});
 							writeback_index <= flush_index;
 							writeback_word <= '0;
 							writeback_resume_bypass <= 1'b0;
@@ -1195,7 +1206,7 @@ module dcache #(
 						end
 					end else if (valid[flush_index] && dirty[flush_index]) begin
 						writeback_line_addr <=
-							Addr'({tags[flush_index], flush_index, {LINE_OFFSET_WIDTH{1'b0}}});
+							Addr'({RAM_TAG_HIGH, tags[flush_index], flush_index, {LINE_OFFSET_WIDTH{1'b0}}});
 						writeback_index <= flush_index;
 						writeback_word <= '0;
 						writeback_resume_bypass <= 1'b0;

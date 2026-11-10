@@ -30,9 +30,17 @@ module icache #(
 	localparam int unsigned WORDS_PER_LINE = LINE_BYTES / 8;
 	localparam int unsigned WORD_OFFSET_WIDTH = $clog2(WORDS_PER_LINE);
 	localparam int unsigned FILL_COUNT_WIDTH = $clog2(WORDS_PER_LINE + 1);
-	localparam int unsigned TAG_WIDTH = XLEN - LINE_OFFSET_WIDTH - INDEX_WIDTH;
 	// end of the normal (cacheable) RAM range: eei capacity profile (legacy 16 MiB)
 	localparam Addr MMAP_RAM_END = MMAP_RAM_NORMAL_END;
+	// Only lines in the cacheable RAM or ROM range are ever allocated, and every
+	// hit is gated by the same range test. Each range is a power-of-two span
+	// aligned to its size, so within it every address bit at and above
+	// SPAN_WIDTH (the larger span) is constant: a stored tag is the region bit
+	// plus the address bits between the index and SPAN_WIDTH.
+	localparam int unsigned RAM_SPAN_WIDTH = $clog2(MMAP_RAM_END - MMAP_RAM_BEGIN);
+	localparam int unsigned ROM_SPAN_WIDTH = $clog2(MMAP_ROM_END - MMAP_ROM_BEGIN + 1);
+	localparam int unsigned SPAN_WIDTH = RAM_SPAN_WIDTH > ROM_SPAN_WIDTH ? RAM_SPAN_WIDTH : ROM_SPAN_WIDTH;
+	localparam int unsigned TAG_WIDTH = 1 + SPAN_WIDTH - LINE_OFFSET_WIDTH - INDEX_WIDTH;
 
 	typedef enum logic [2:0] {
 		Idle,
@@ -94,7 +102,7 @@ module icache #(
 	assign req_line_addr = {req_addr[XLEN-1:LINE_OFFSET_WIDTH], {LINE_OFFSET_WIDTH{1'b0}}};
 	assign req_beat_addr = {req_addr[XLEN-1:3], 3'b000};
 	assign req_index = req_addr[LINE_OFFSET_WIDTH +: INDEX_WIDTH];
-	assign req_tag = req_addr[XLEN-1 -: TAG_WIDTH];
+	assign req_tag = {req_addr >= MMAP_RAM_BEGIN, req_addr[SPAN_WIDTH-1 -: TAG_WIDTH-1]};
 	assign req_word_offset = req_addr[3 +: WORD_OFFSET_WIDTH];
 	assign req_cacheable =
 		(req_addr >= MMAP_RAM_BEGIN && req_addr < MMAP_RAM_END) ||
@@ -169,6 +177,14 @@ module icache #(
 	initial begin
 		if (LINE_COUNT < 2 || (LINE_COUNT & (LINE_COUNT - 1)) != 0 || DATA_RAM_STYLE > 1) begin
 			$fatal(1, "ICACHE LINE_COUNT must be a power of two and at least 2");
+		end
+		if ((MMAP_RAM_END - MMAP_RAM_BEGIN) != (Addr'(1) << RAM_SPAN_WIDTH) ||
+		    (MMAP_RAM_BEGIN & ((Addr'(1) << RAM_SPAN_WIDTH) - Addr'(1))) != '0 ||
+		    (MMAP_ROM_END - MMAP_ROM_BEGIN + 1) != (Addr'(1) << ROM_SPAN_WIDTH) ||
+		    (MMAP_ROM_BEGIN & ((Addr'(1) << ROM_SPAN_WIDTH) - Addr'(1))) != '0 ||
+		    MMAP_ROM_END >= MMAP_RAM_BEGIN ||
+		    SPAN_WIDTH <= LINE_OFFSET_WIDTH + INDEX_WIDTH) begin
+			$fatal(1, "ICACHE cacheable RAM/ROM ranges must be size-aligned powers of two larger than the cache index span");
 		end
 	end
 
