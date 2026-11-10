@@ -17,14 +17,7 @@ module address_translation #(
 	input logic req_mxr,
 	input UIntX satp,
 	input UIntX pmpcfg0,
-	input UIntX pmpaddr0,
-	input UIntX pmpaddr1,
-	input UIntX pmpaddr2,
-	input UIntX pmpaddr3,
-	input UIntX pmpaddr4,
-	input UIntX pmpaddr5,
-	input UIntX pmpaddr6,
-	input UIntX pmpaddr7,
+	input PmpRegion [7:0] pmp_regions,
 
 	output logic rsp_valid,
 	input logic rsp_ready,
@@ -345,14 +338,7 @@ module address_translation #(
 		.access_size(UIntX'(8)),
 		.access_type(PMP_ACCESS_READ),
 		.pmpcfg0(pmpcfg0),
-		.pmpaddr0(pmpaddr0),
-		.pmpaddr1(pmpaddr1),
-		.pmpaddr2(pmpaddr2),
-		.pmpaddr3(pmpaddr3),
-		.pmpaddr4(pmpaddr4),
-		.pmpaddr5(pmpaddr5),
-		.pmpaddr6(pmpaddr6),
-		.pmpaddr7(pmpaddr7),
+		.pmp_regions(pmp_regions),
 		.allow(ptw_mem_pmp_allow)
 	);
 

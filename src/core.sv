@@ -79,14 +79,7 @@ module core (
 
 	output PrivMode pmp_priv_mode,
 	output UIntX pmpcfg0_fetch_value,
-	output UIntX pmpaddr0_fetch_value,
-	output UIntX pmpaddr1_fetch_value,
-	output UIntX pmpaddr2_fetch_value,
-	output UIntX pmpaddr3_fetch_value,
-	output UIntX pmpaddr4_fetch_value,
-	output UIntX pmpaddr5_fetch_value,
-	output UIntX pmpaddr6_fetch_value,
-	output UIntX pmpaddr7_fetch_value,
+	output PmpRegion [7:0] pmp_regions_fetch_value,
 	output UIntX satp_fetch_value,
 	output logic translation_flush_fetch_value,
 	output logic sstatus_sum_fetch_value,
@@ -508,6 +501,8 @@ module core (
 		UIntX pmpaddr5_value;
 		UIntX pmpaddr6_value;
 		UIntX pmpaddr7_value;
+		// PMP entries decoded once and shared by every pmp_checker
+		PmpRegion [7:0] pmp_regions;
 		UIntX satp_value;
 		logic sstatus_sum;
 		logic sstatus_mxr;
@@ -570,14 +565,19 @@ module core (
 		assign memaddr = exs_ctrl.is_amo ? exs_rs1_forwarded_data : exs_alu_result;
 		assign pmp_priv_mode = csru_priv_mode;
 		assign pmpcfg0_fetch_value = pmpcfg0_value;
-		assign pmpaddr0_fetch_value = pmpaddr0_value;
-		assign pmpaddr1_fetch_value = pmpaddr1_value;
-		assign pmpaddr2_fetch_value = pmpaddr2_value;
-		assign pmpaddr3_fetch_value = pmpaddr3_value;
-		assign pmpaddr4_fetch_value = pmpaddr4_value;
-		assign pmpaddr5_fetch_value = pmpaddr5_value;
-		assign pmpaddr6_fetch_value = pmpaddr6_value;
-		assign pmpaddr7_fetch_value = pmpaddr7_value;
+		assign pmp_regions_fetch_value = pmp_regions;
+		pmp_region_decode pmp_decode (
+			.pmpcfg0(pmpcfg0_value),
+			.pmpaddr0(pmpaddr0_value),
+			.pmpaddr1(pmpaddr1_value),
+			.pmpaddr2(pmpaddr2_value),
+			.pmpaddr3(pmpaddr3_value),
+			.pmpaddr4(pmpaddr4_value),
+			.pmpaddr5(pmpaddr5_value),
+			.pmpaddr6(pmpaddr6_value),
+			.pmpaddr7(pmpaddr7_value),
+			.regions(pmp_regions)
+		);
 		assign satp_fetch_value = satp_value;
 		assign sstatus_sum_fetch_value = sstatus_sum;
 		assign sstatus_mxr_fetch_value = sstatus_mxr;
@@ -869,14 +869,7 @@ module core (
 			.sstatus_mxr(sstatus_mxr),
 			.translation_flush(translation_flush_fetch_value),
 			.pmpcfg0(pmpcfg0_value),
-			.pmpaddr0(pmpaddr0_value),
-			.pmpaddr1(pmpaddr1_value),
-			.pmpaddr2(pmpaddr2_value),
-			.pmpaddr3(pmpaddr3_value),
-			.pmpaddr4(pmpaddr4_value),
-			.pmpaddr5(pmpaddr5_value),
-			.pmpaddr6(pmpaddr6_value),
-			.pmpaddr7(pmpaddr7_value),
+			.pmp_regions(pmp_regions),
 			.addr   (memu_addr),
 			.rs2    (memq_rdata.rs2_data),
 			.rdata  (memu_rdata),

@@ -14,7 +14,7 @@ docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-ver
 set -euo pipefail
 out=build/test/pmp-prefix
 verilator --binary --timing --assert -Wno-fatal --top-module tb_pmp_prefix \
-  --Mdir "$out/obj" -o sim src/eei.sv src/pmp_checker.sv "$out/pmp_checker_reference.sv" \
+  --Mdir "$out/obj" -o sim src/eei.sv src/pmp_region_decode.sv src/pmp_checker.sv "$out/pmp_checker_reference.sv" \
   tb/unit/sdram/tb_pmp_prefix.sv > "$out/build.log" 2>&1
 "$out/obj/sim" > "$out/run.log" 2>&1
 grep "^PMP_PREFIX_PASS" "$out/run.log"

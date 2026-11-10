@@ -222,14 +222,7 @@ module core_top #(
 
     PrivMode pmp_priv_mode;
     UIntX pmpcfg0_fetch_value;
-    UIntX pmpaddr0_fetch_value;
-    UIntX pmpaddr1_fetch_value;
-    UIntX pmpaddr2_fetch_value;
-    UIntX pmpaddr3_fetch_value;
-    UIntX pmpaddr4_fetch_value;
-    UIntX pmpaddr5_fetch_value;
-    UIntX pmpaddr6_fetch_value;
-    UIntX pmpaddr7_fetch_value;
+    PmpRegion [7:0] pmp_regions_fetch_value;
     UIntX satp_fetch_value;
     logic translation_flush_fetch_value;
     logic dcache_flush_busy;
@@ -698,14 +691,7 @@ module core_top #(
         .rst       (rst),
         .priv_mode (pmp_priv_mode),
         .pmpcfg0   (pmpcfg0_fetch_value),
-        .pmpaddr0  (pmpaddr0_fetch_value),
-        .pmpaddr1  (pmpaddr1_fetch_value),
-        .pmpaddr2  (pmpaddr2_fetch_value),
-        .pmpaddr3  (pmpaddr3_fetch_value),
-        .pmpaddr4  (pmpaddr4_fetch_value),
-        .pmpaddr5  (pmpaddr5_fetch_value),
-        .pmpaddr6  (pmpaddr6_fetch_value),
-        .pmpaddr7  (pmpaddr7_fetch_value),
+        .pmp_regions(pmp_regions_fetch_value),
         .satp      (satp_fetch_value),
         .sstatus_sum(sstatus_sum_fetch_value),
         .sstatus_mxr(sstatus_mxr_fetch_value),
@@ -782,14 +768,7 @@ module core_top #(
 
         .pmp_priv_mode(pmp_priv_mode),
         .pmpcfg0_fetch_value(pmpcfg0_fetch_value),
-        .pmpaddr0_fetch_value(pmpaddr0_fetch_value),
-        .pmpaddr1_fetch_value(pmpaddr1_fetch_value),
-        .pmpaddr2_fetch_value(pmpaddr2_fetch_value),
-        .pmpaddr3_fetch_value(pmpaddr3_fetch_value),
-        .pmpaddr4_fetch_value(pmpaddr4_fetch_value),
-        .pmpaddr5_fetch_value(pmpaddr5_fetch_value),
-        .pmpaddr6_fetch_value(pmpaddr6_fetch_value),
-        .pmpaddr7_fetch_value(pmpaddr7_fetch_value),
+        .pmp_regions_fetch_value(pmp_regions_fetch_value),
         .satp_fetch_value(satp_fetch_value),
         .translation_flush_fetch_value(translation_flush_fetch_value),
         .sstatus_sum_fetch_value(sstatus_sum_fetch_value),

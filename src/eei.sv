@@ -20,6 +20,17 @@ package eei;
 		PMP_ACCESS_EXEC  = 2'b10
 	} PmpAccessType;
 
+	// One PMP entry decoded to a byte range [start, end_addr) by
+	// pmp_region_decode (once per core, shared by every pmp_checker).
+	// end_addr is 65-bit so a region ending at 2^64 cannot wrap; `all` marks a
+	// NAPOT entry covering the whole address space; !valid = OFF or empty TOR.
+	typedef struct packed {
+		logic        valid;
+		logic        all;
+		logic [63:0] start;
+		logic [64:0] end_addr;
+	} PmpRegion;
+
 	typedef enum logic [4:0] {
 		SV39_FAULT_NONE              = 5'd0,
 		SV39_FAULT_ADDR_INVALID      = 5'd1,
