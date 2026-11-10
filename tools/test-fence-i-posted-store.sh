@@ -4,7 +4,11 @@
 # on/off; P32 SB4 WB0), runs the matrix and classifies each run.
 # This is a counterexample run: failures are reported, not hidden. The script
 # exits non-zero if any run fails, any build fails, or a classification is missing.
-# Logs: build/test/fence-i-posted-store/.
+# Logs: build/test/fence-i-posted-store/ (RAM_BACKEND=sim, default) or
+# build/test/fence-i-posted-store-sdram_model/ (RAM_BACKEND=sdram_model: the RAM
+# path is adapter -> bridge64 -> native16 -> cycle model; with the shim enabled
+# the shim sits upstream of the adapter and adds its delays on top of the real
+# SDRAM latency, and its trace/fence observer provide the causal evidence).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
@@ -14,12 +18,16 @@ fi
 if [[ ! -f build/riscv-tests/env/p/riscv_test.h || ! -f build/riscv-tests/isa/macros/scalar/test_macros.h ]]; then
   bash tools/setup-riscv-tests.sh
 fi
-docker run --rm --init -e MAKEFLAGS=-j2 -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-verilator:5.046}" \
+RAM_BACKEND=${RAM_BACKEND:-sim}
+case $RAM_BACKEND in sim|sdram_model) ;; *) echo "RAM_BACKEND must be sim or sdram_model" >&2; exit 2;; esac
+docker run --rm --init -e MAKEFLAGS=-j2 -e RAM_BACKEND="$RAM_BACKEND" -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-verilator:5.046}" \
   bash -c 'set -uo pipefail
-    out=build/test/fence-i-posted-store
+    sfx=""; [[ $RAM_BACKEND == sdram_model ]] && sfx="-sdram_model"
+    out=build/test/fence-i-posted-store$sfx
+    echo "RAM_BACKEND=$RAM_BACKEND"
     if [[ -e "$out" ]]; then
       mkdir -p build/test/archive
-      mv "$out" "build/test/archive/fence-i-posted-store-$(date -u +%Y%m%dT%H%M%SZ)"
+      mv "$out" "build/test/archive/fence-i-posted-store$sfx-$(date -u +%Y%m%dT%H%M%SZ)"
     fi
     mkdir -p "$out/elf" "$out/boot"
     status=0
@@ -64,9 +72,9 @@ sys.exit(0 if offs=={0,4,8,12,16,20,24,28} and lanes=={0,4} else 1)" "$elf.syms"
 
     # ---- simulators (isolated OBJ_DIRs; obj_dir_input untouched) ----
     build() { # name style shim
-      local obj=build/test/cpu-m2-$1/obj; mkdir -p $obj
+      local obj=build/test/cpu-m2$sfx-$1/obj; mkdir -p $obj
       make build OBJ_DIR=$obj DCACHE_LINE_COUNT=32 DCACHE_STORE_BUFFER_DEPTH=4 DCACHE_WRITE_BACK=0 \
-        DCACHE_DATA_RAM_STYLE=$2 RAM_LATENCY_SHIM=$3 > "$out/build_$1.log" 2>&1 \
+        DCACHE_DATA_RAM_STYLE=$2 RAM_LATENCY_SHIM=$3 RAM_BACKEND=$RAM_BACKEND > "$out/build_$1.log" 2>&1 \
         || { echo "FAIL build $1"; status=1; return; }
       sha256sum $obj/sim >> "$out/sims.sha256"
     }
@@ -74,7 +82,7 @@ sys.exit(0 if offs=={0,4,8,12,16,20,24,28} and lanes=={0,4} else 1)" "$elf.syms"
 
     # ---- matrix ----
     run() { # label sim variant args...
-      local label=$1 sim=build/test/cpu-m2-$2/obj/sim variant=$3; shift 3
+      local label=$1 sim=build/test/cpu-m2$sfx-$2/obj/sim variant=$3; shift 3
       local traced=0; [[ $label != *_off_* ]] && traced=1
       local elf="$out/elf/fence_i_posted_store_$variant" dir="$out/run_$label"
       [[ -x $sim ]] || { echo "SKIP $label (no sim)"; status=1; return; }

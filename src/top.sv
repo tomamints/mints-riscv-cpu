@@ -404,6 +404,91 @@ module core_top #(
 `define SVCPU_RAM_CONV_MEMBUS arb_ram_membus
 `endif
 
+`ifdef SVCPU_RAM_SDRAM_MODEL
+    // Simulation RAM backend through the FPGA SDRAM path (C3 M3b):
+    //   RAM Membus -> membus_sdram_adapter -> sdram_bridge64 -> sdram_native16
+    //   (CLK_HZ 20 MHz profile) -> sdram_cycle_model16 (clock-sampled model).
+    // A preloader owns the adapter until the RAM image is written; meanwhile the
+    // CPU RAM port gets no ready (the CPU waits at its first RAM access; no reset
+    // hold, no warm-reset pulse). Cold reset of the SDRAM path = rst.
+    Membus preload_membus();
+    Membus sdram_up_membus();
+    logic sdram_preload_done;
+    sdram_preloader #(
+        .FILEPATH_IS_ENV(RAM_FILEPATH_IS_ENV),
+        .FILEPATH       (RAM_FILEPATH)
+    ) sdram_preload (
+        .clk  (clk),
+        .rst  (rst),
+        .done (sdram_preload_done),
+        .bus  (preload_membus)
+    );
+    always_comb begin
+        if (sdram_preload_done) begin
+            sdram_up_membus.valid = `SVCPU_RAM_CONV_MEMBUS.valid;
+            sdram_up_membus.addr  = `SVCPU_RAM_CONV_MEMBUS.addr;
+            sdram_up_membus.wen   = `SVCPU_RAM_CONV_MEMBUS.wen;
+            sdram_up_membus.wdata = `SVCPU_RAM_CONV_MEMBUS.wdata;
+            sdram_up_membus.wmask = `SVCPU_RAM_CONV_MEMBUS.wmask;
+        end else begin
+            sdram_up_membus.valid = preload_membus.valid;
+            sdram_up_membus.addr  = preload_membus.addr;
+            sdram_up_membus.wen   = preload_membus.wen;
+            sdram_up_membus.wdata = preload_membus.wdata;
+            sdram_up_membus.wmask = preload_membus.wmask;
+        end
+        `SVCPU_RAM_CONV_MEMBUS.ready  = sdram_preload_done && sdram_up_membus.ready;
+        `SVCPU_RAM_CONV_MEMBUS.rvalid = sdram_preload_done && sdram_up_membus.rvalid;
+        `SVCPU_RAM_CONV_MEMBUS.rdata  = sdram_up_membus.rdata;
+        preload_membus.ready  = !sdram_preload_done && sdram_up_membus.ready;
+        preload_membus.rvalid = !sdram_preload_done && sdram_up_membus.rvalid;
+        preload_membus.rdata  = sdram_up_membus.rdata;
+    end
+
+    logic        sdram_req_valid, sdram_req_ready, sdram_req_write, sdram_rsp_valid, sdram_rsp_error;
+    logic [63:0] sdram_req_addr, sdram_req_wdata, sdram_rsp_data;
+    logic [7:0]  sdram_req_be;
+    logic        sdram_fault, sdram_fault_seen, sdram_fault_wen;
+    logic [1:0]  sdram_fault_kind;
+    logic [63:0] sdram_fault_offset, sdram_fault_abs;
+    membus_sdram_adapter sdram_adapter (
+        .clk(clk), .rst_n(rst), .soft_reset(1'b0), .up(sdram_up_membus),
+        .req_valid(sdram_req_valid), .req_ready(sdram_req_ready), .req_addr(sdram_req_addr),
+        .req_write(sdram_req_write), .req_wdata(sdram_req_wdata), .req_be(sdram_req_be),
+        .rsp_valid(sdram_rsp_valid), .rsp_data(sdram_rsp_data), .rsp_error(sdram_rsp_error),
+        .fault(sdram_fault), .fault_seen(sdram_fault_seen), .fault_kind(sdram_fault_kind),
+        .fault_offset(sdram_fault_offset), .fault_abs(sdram_fault_abs), .fault_wen(sdram_fault_wen)
+    );
+    logic        sdram_nv, sdram_nready, sdram_nwrite, sdram_nrvalid, sdram_oe;
+    logic [24:0] sdram_naddr;
+    logic [15:0] sdram_nwdata, sdram_nrdata, sdram_dq_out, sdram_dq_in;
+    logic [1:0]  sdram_nbe, sdram_ba, sdram_dqm;
+    logic [12:0] sdram_a;
+    logic        sdram_cke, sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n;
+    sdram_bridge64 sdram_bridge (
+        .clk(clk), .rst_n(rst), .soft_reset(1'b0),
+        .req_valid(sdram_req_valid), .req_ready(sdram_req_ready), .req_addr(sdram_req_addr),
+        .req_write(sdram_req_write), .req_wdata(sdram_req_wdata), .req_be(sdram_req_be),
+        .rsp_valid(sdram_rsp_valid), .rsp_data(sdram_rsp_data), .rsp_error(sdram_rsp_error),
+        .native_valid(sdram_nv), .native_ready(sdram_nready), .native_addr(sdram_naddr),
+        .native_write(sdram_nwrite), .native_wdata(sdram_nwdata), .native_be(sdram_nbe),
+        .native_rsp_valid(sdram_nrvalid), .native_rsp_data(sdram_nrdata)
+    );
+    sdram_native16 #(.CLK_HZ(20_000_000)) sdram_ctrl (
+        .clk(clk), .rst_n(rst), .soft_reset(1'b0),
+        .req_valid(sdram_nv), .req_ready(sdram_nready), .req_addr(sdram_naddr),
+        .req_write(sdram_nwrite), .req_wdata(sdram_nwdata), .req_be(sdram_nbe),
+        .rsp_valid(sdram_nrvalid), .rsp_data(sdram_nrdata), .init_done(),
+        .dram_addr(sdram_a), .dram_ba(sdram_ba), .dram_dqm(sdram_dqm), .dram_cke(sdram_cke),
+        .dram_cs_n(sdram_cs_n), .dram_ras_n(sdram_ras_n), .dram_cas_n(sdram_cas_n),
+        .dram_we_n(sdram_we_n), .dq_in(sdram_dq_in), .dq_out(sdram_dq_out), .dq_oe(sdram_oe)
+    );
+    sdram_cycle_model16 #(.CLK_HZ(20_000_000), .UNWRITTEN(16'h0000)) sdram_model (
+        .clk(clk), .rst_n(rst), .a(sdram_a), .ba(sdram_ba), .dqm(sdram_dqm), .cke(sdram_cke),
+        .csn(sdram_cs_n), .rasn(sdram_ras_n), .casn(sdram_cas_n), .wen(sdram_we_n),
+        .oe(sdram_oe), .dout(sdram_dq_out), .din(sdram_dq_in)
+    );
+`else
     // arbiter後のMembus → RAM(=membus_if) 変換
     always_comb begin
         ram_membus.valid = `SVCPU_RAM_CONV_MEMBUS.valid;
@@ -417,6 +502,7 @@ module core_top #(
         `SVCPU_RAM_CONV_MEMBUS.rvalid = ram_membus.rvalid;
         `SVCPU_RAM_CONV_MEMBUS.rdata  = ram_membus.rdata;
     end
+`endif
 `undef SVCPU_RAM_CONV_MEMBUS
 
 
@@ -435,6 +521,7 @@ module core_top #(
 
 
     // RAM/ROM 実体
+`ifndef SVCPU_RAM_SDRAM_MODEL
     memory #(
         .DATA_WIDTH     (RAM_DATA_WIDTH),
         .ADDR_WIDTH     (RAM_ADDR_WIDTH),
@@ -445,6 +532,7 @@ module core_top #(
         .rst    (rst),
         .membus (ram_membus)
     );
+`endif
 
     memory #(
         .DATA_WIDTH     (ROM_DATA_WIDTH),

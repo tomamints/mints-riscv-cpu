@@ -70,6 +70,19 @@ TB        = tb/tb_verilator.cpp
 # ソースリスト
 FILELIST  = core.f
 RTL_SRCS  = $(shell sed '/^\#/d;/^$$/d' $(FILELIST))
+# Simulation RAM backend: `sim` (default, src/memory.sv) or `sdram_model`
+# (adapter -> bridge64 -> native16 @20 MHz -> clock-sampled SDRAM model with a
+# through-adapter preloader). The sdram_model file list includes core.f.
+RAM_BACKEND ?= sim
+SDRAM_BACKEND_SRCS = rtl/bus/membus_sdram_adapter.sv fpga/de0-cv/sdram/rtl/sdram_bridge64.sv \
+	fpga/de0-cv/sdram/rtl/sdram_native16.sv tb/model/sdram_cycle_model16.sv tb/model/sdram_preloader.sv
+ifeq ($(RAM_BACKEND),sdram_model)
+VERILATOR_DEFINES += -DSVCPU_RAM_SDRAM_MODEL
+FILELIST = tb/model/sdram_backend.f
+RTL_SRCS = $(shell sed '/^\#/d;/^$$/d' core.f) $(SDRAM_BACKEND_SRCS)
+else ifneq ($(RAM_BACKEND),sim)
+$(error RAM_BACKEND must be sim or sdram_model)
+endif
 
 # 実行バイナリ名
 SIM       = $(OBJ_DIR)/sim
