@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 // tb_uart16550_phy: bit-level integration test of rtl/peripheral/uart16550_regs.sv
-// connected directly to fpga/de0-cv/rtl/uart_phy.sv (8N1 PHY).
+// and uart_phy through the uart16550_serial physical backend.
 //
 // Independence: register accesses go through a Membus BFM; the serial side is
 // checked by an external real-time TX decoder and driven by an external
@@ -61,36 +61,15 @@ module tb_uart16550_phy #(
     Membus bus();
 
     logic        irq;
-    logic [15:0] divisor;
-    logic        tx_valid;
-    logic [7:0]  tx_data;
-    logic        tx_ready;
-    logic        tx_busy;
-    logic        rx_valid;
-    logic [7:0]  rx_data;
-    logic        rx_fe;
-    logic        rx_bi;
-    logic        rx_busy;
     logic        diag_tx_overflow;
     logic        diag_rx_overrun;
     logic        txd;
     logic        host_line = 1'b1;   // serial line into the PHY RX
 
-    uart16550_regs u_regs (
-        .clk(clk), .rst(rst), .membus(bus), .irq(irq), .divisor(divisor),
-        .tx_valid(tx_valid), .tx_data(tx_data), .tx_ready(tx_ready), .tx_busy(tx_busy),
-        .rx_push(rx_valid), .rx_data(rx_data), .rx_fe(rx_fe), .rx_bi(rx_bi),
-        .rx_space(),                     // advisory only: the PHY cannot be stopped
+    uart16550_serial #(.CLK_HZ(CLK_HZ), .REF_HZ(REF_HZ)) dut (
+        .clk(clk), .rst(rst), .membus(bus), .irq(irq),
+        .txd(txd), .rxd(host_line),
         .diag_tx_overflow(diag_tx_overflow), .diag_rx_overrun(diag_rx_overrun)
-    );
-
-    uart_phy #(.CLK_HZ(CLK_HZ), .REF_HZ(REF_HZ)) u_phy (
-        .clk(clk), .rst_n(rst), .divisor(divisor),
-        .tx_valid(tx_valid), .tx_data(tx_data), .tx_ready(tx_ready), .tx_busy(tx_busy),
-        .txd(txd),
-        .rxd(host_line),
-        .rx_valid(rx_valid), .rx_data(rx_data), .rx_frame_err(rx_fe), .rx_break(rx_bi),
-        .rx_busy(rx_busy)
     );
 
     // ------------------------------------------------------------------

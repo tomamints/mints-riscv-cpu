@@ -6,9 +6,9 @@
  *   - memory: 64 MiB SDRAM at 0x80000000 (RTL decode bounded to the same size);
  *   - timebase-frequency and cpu clock-frequency: 20 MHz common CPU/SDRAM clock
  *     (ACLINT mtime increments once per CPU clock);
- *   - UART clock-frequency: must equal the input clock of the real 16550 baud
- *     generator, a C4 decision that is still open. The legacy value is kept
- *     here as a placeholder; a board Linux release is blocked until it is set.
+ *   - UART clock-frequency: 3.6864 MHz reference enable generated fractionally
+ *     from 20 MHz by uart16550_serial. This is the baud reference, not the CPU
+ *     clock; divisor 2 selects 115200 baud. SoC integration must use that backend.
  */
 / {
 	#address-cells = <2>;
@@ -63,7 +63,7 @@
 			reg = <0x0 0x10000000 0x0 0x100>;
 			interrupt-parent = <&plic>;
 			interrupts = <10>;
-			clock-frequency = <0x00384000>;   /* C4 placeholder, see header */
+			clock-frequency = <3686400>;
 			current-speed = <115200>;
 			reg-shift = <0>;
 			reg-io-width = <1>;
