@@ -370,19 +370,35 @@ module core_top #(
         end
     end
 
+    // Optional simulation-only RAM latency injection (C3 M1, default off).
+    // Sits on the 64-bit byte-offset Membus, upstream of addr_to_ramaddr.
+`ifdef SVCPU_RAM_LATENCY_SHIM
+    Membus shim_ram_membus();
+    membus_latency_shim ram_latency_shim (
+        .clk  (clk),
+        .rst  (rst),
+        .up   (arb_ram_membus),
+        .down (shim_ram_membus)
+    );
+`define SVCPU_RAM_CONV_MEMBUS shim_ram_membus
+`else
+`define SVCPU_RAM_CONV_MEMBUS arb_ram_membus
+`endif
+
     // arbiter後のMembus → RAM(=membus_if) 変換
     always_comb begin
-        ram_membus.valid = arb_ram_membus.valid;
-        arb_ram_membus.ready = ram_membus.ready;
+        ram_membus.valid = `SVCPU_RAM_CONV_MEMBUS.valid;
+        `SVCPU_RAM_CONV_MEMBUS.ready = ram_membus.ready;
 
-        ram_membus.addr  = addr_to_ramaddr(arb_ram_membus.addr);
-        ram_membus.wen   = arb_ram_membus.wen;
-        ram_membus.wdata = arb_ram_membus.wdata;
-        ram_membus.wmask = arb_ram_membus.wmask;
+        ram_membus.addr  = addr_to_ramaddr(`SVCPU_RAM_CONV_MEMBUS.addr);
+        ram_membus.wen   = `SVCPU_RAM_CONV_MEMBUS.wen;
+        ram_membus.wdata = `SVCPU_RAM_CONV_MEMBUS.wdata;
+        ram_membus.wmask = `SVCPU_RAM_CONV_MEMBUS.wmask;
 
-        arb_ram_membus.rvalid = ram_membus.rvalid;
-        arb_ram_membus.rdata  = ram_membus.rdata;
+        `SVCPU_RAM_CONV_MEMBUS.rvalid = ram_membus.rvalid;
+        `SVCPU_RAM_CONV_MEMBUS.rdata  = ram_membus.rdata;
     end
+`undef SVCPU_RAM_CONV_MEMBUS
 
 
 

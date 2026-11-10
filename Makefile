@@ -18,7 +18,13 @@ DCACHE_LINE_COUNT ?= 128
 DCACHE_STORE_BUFFER_DEPTH ?= 4
 DCACHE_WRITE_BACK ?= 0
 DCACHE_DATA_RAM_STYLE ?= 0
+RAM_LATENCY_SHIM ?= 0
 VERILATOR_DEFINES = -DSVCPU_DCACHE_LINE_COUNT=$(DCACHE_LINE_COUNT) -DSVCPU_DCACHE_STORE_BUFFER_DEPTH=$(DCACHE_STORE_BUFFER_DEPTH) -DSVCPU_DCACHE_WRITE_BACK=$(DCACHE_WRITE_BACK) -DSVCPU_DCACHE_DATA_RAM_STYLE=$(DCACHE_DATA_RAM_STYLE)
+# Simulation-only RAM latency shim (C3 M1). The source is added only when enabled,
+# so the default file list and build are unchanged.
+ifeq ($(RAM_LATENCY_SHIM),1)
+VERILATOR_DEFINES += -DSVCPU_RAM_LATENCY_SHIM tb/model/membus_latency_shim.sv
+endif
 
 # Restrict environments may lack a working xargs, provide our shim.
 export PATH := $(abspath tools):$(PATH)
