@@ -26,9 +26,18 @@ import util::*;
 
 module core_top #(
     parameter bit    RAM_FILEPATH_IS_ENV = 1,
+`ifdef SYNTHESIS
+    // untyped: Quartus 20.1 rejects string-typed parameters in $readmemh
+    parameter        RAM_FILEPATH        = "RAM_FILE_PATH",
+`else
     parameter string RAM_FILEPATH        = "RAM_FILE_PATH",
+`endif
     parameter bit    ROM_FILEPATH_IS_ENV = 1,
+`ifdef SYNTHESIS
+    parameter        ROM_FILEPATH        = "ROM_FILE_PATH",
+`else
     parameter string ROM_FILEPATH        = "ROM_FILE_PATH",
+`endif
     parameter int unsigned DCACHE_LINE_COUNT = `SVCPU_DCACHE_LINE_COUNT,
     parameter int unsigned DCACHE_STORE_BUFFER_DEPTH = `SVCPU_DCACHE_STORE_BUFFER_DEPTH,
     parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK,
@@ -49,6 +58,18 @@ module core_top #(
     input  logic rst,
     input  Addr  MMAP_DBG_ADDR,
     output UIntX led
+`ifdef SVCPU_RAM_EXTERNAL
+    ,
+    // RAM Membus (byte offset from MMAP_RAM_BEGIN) to a board memory path
+    output logic        ram_valid_o,
+    input  logic        ram_ready_i,
+    output Addr         ram_addr_o,
+    output logic        ram_wen_o,
+    output UInt64       ram_wdata_o,
+    output logic [7:0]  ram_wmask_o,
+    input  logic        ram_rvalid_i,
+    input  UInt64       ram_rdata_i
+`endif
 
 `ifdef SVCPU_WHISPER_LOCKSTEP
     ,
@@ -148,9 +169,11 @@ module core_top #(
     // An invalid size instantiates a module that does not exist, so elaboration
     // fails in both simulation and synthesis. Absent in the legacy profile.
 `ifdef SVCPU_RAM_SIZE_BYTES
+    generate
     if (!RAM_SIZE_VALID) begin : g_invalid_ram_size
         svcpu_error_invalid_ram_size_profile invalid_ram_size_profile ();
     end
+    endgenerate
 `endif
 
     // アドレスをデータ単位に変換
@@ -206,19 +229,16 @@ module core_top #(
         .ADDR_WIDTH(XLEN)
     ) i_membus();
 
-    core_inst_if #(
-    ) i_membus_core();
+    core_inst_if i_membus_core();
 
     Membus #(
         .DATA_WIDTH(MEMBUS_DATA_WIDTH),
         .ADDR_WIDTH(XLEN)
     ) d_membus();
 
-    core_data_if #(
-    ) d_membus_core();
+    core_data_if d_membus_core();
 
-    core_data_if #(
-    ) dcache_membus_core();
+    core_data_if dcache_membus_core();
 
     PrivMode pmp_priv_mode;
     UIntX pmpcfg0_fetch_value;
@@ -506,6 +526,17 @@ module core_top #(
         .csn(sdram_cs_n), .rasn(sdram_ras_n), .casn(sdram_cas_n), .wen(sdram_we_n),
         .oe(sdram_oe), .dout(sdram_dq_out), .din(sdram_dq_in)
     );
+`elsif SVCPU_RAM_EXTERNAL
+    // Board profile: the RAM Membus leaves core_top (board wrapper owns the
+    // SDRAM path, the boot loader and the CPU reset hold).
+    assign ram_valid_o = `SVCPU_RAM_CONV_MEMBUS.valid;
+    assign ram_addr_o  = `SVCPU_RAM_CONV_MEMBUS.addr;
+    assign ram_wen_o   = `SVCPU_RAM_CONV_MEMBUS.wen;
+    assign ram_wdata_o = `SVCPU_RAM_CONV_MEMBUS.wdata;
+    assign ram_wmask_o = `SVCPU_RAM_CONV_MEMBUS.wmask;
+    assign `SVCPU_RAM_CONV_MEMBUS.ready  = ram_ready_i;
+    assign `SVCPU_RAM_CONV_MEMBUS.rvalid = ram_rvalid_i;
+    assign `SVCPU_RAM_CONV_MEMBUS.rdata  = ram_rdata_i;
 `else
     // arbiter後のMembus → RAM(=membus_if) 変換
     always_comb begin
@@ -540,6 +571,7 @@ module core_top #(
 
     // RAM/ROM 実体
 `ifndef SVCPU_RAM_SDRAM_MODEL
+`ifndef SVCPU_RAM_EXTERNAL
     memory #(
         .DATA_WIDTH     (RAM_DATA_WIDTH),
         .ADDR_WIDTH     (RAM_ADDR_WIDTH),
@@ -550,6 +582,7 @@ module core_top #(
         .rst    (rst),
         .membus (ram_membus)
     );
+`endif
 `endif
 
     memory #(
