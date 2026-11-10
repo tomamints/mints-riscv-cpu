@@ -12,7 +12,10 @@ reads of the patch word after the slot marker, and OVERTAKE = a read accepted
 after the invalidate and before the write was performed.
 
 Verdict (first line) and exit status:
-  PASS            exit 0  all 16 patches retired NEW exactly once, tohost=1
+  PASS            exit 0  all 16 patches retired NEW exactly once, tohost=1;
+                          with trace: one fence event per slot, no post-fence
+                          read before the write is performed, and a refetch
+                          of the patch word after it
   COUNTEREXAMPLE  exit 0  tohost reports slot k, patch_k retired STALE
   INVALID         exit 2  missing RETIRE/symbols/fence events, timeout,
                           inconsistent outcome, or unclassifiable log
@@ -127,6 +130,14 @@ def main():
             reads = [t[0] for t in trace if t[1] == "ACC" and not t[2] and (t[3] & ~7) == word and t[0] > start]
             post = [c for c in reads if c >= fence_cyc]
             overtake = [c for c in post if performed is None or c < performed]
+            if failing is None:
+                # PASS requires the causal proof, not only the test result:
+                # no post-invalidate read of the patch word before the write was
+                # performed, and the refetch that supplied NEW came after it.
+                if overtake:
+                    invalid(f"slot {k}: tohost=1 but post-fence read(s) {overtake} precede write performed {performed}", out)
+                if performed is None or not [c for c in post if c > performed]:
+                    invalid(f"slot {k}: tohost=1 but no refetch of the patch word after the write was performed ({performed})", out)
             line += (f" marker_acc={start} fence_inval={fence_cyc} write_acc={w[0]} write_performed={performed}"
                      f" reads_after_marker={reads} post_fence_reads={post} OVERTAKE={'yes' if overtake else 'no'}")
         out.append(line)

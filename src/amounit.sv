@@ -17,7 +17,10 @@ module amounit (
     output logic           debug_master_valid,
     output logic           debug_master_ready,
     output logic           debug_master_rvalid,
-    output logic           debug_slave_saved_valid
+    output logic           debug_slave_saved_valid,
+    // No transaction below the D-cache: no request held and the last master
+    // transaction has received its response (used for fence.i completion).
+    output logic           idle
 );
 
 // ======================================================
@@ -73,6 +76,7 @@ assign debug_master_valid = master.valid;
 assign debug_master_ready = master.ready;
 assign debug_master_rvalid = master.rvalid;
 assign debug_slave_saved_valid = slave_saved.valid;
+assign idle = (state == Init);
 
 
 function automatic void reset_master();

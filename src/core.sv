@@ -92,6 +92,8 @@ module core (
 	output logic sstatus_sum_fetch_value,
 	output logic sstatus_mxr_fetch_value,
 	input  logic dcache_flush_busy,
+	input  logic dmem_quiescent,
+	output logic fence_i_drain,
 	input  logic external_meip,
 	input  logic external_seip,
 	aclint_if.slave aclint
@@ -682,6 +684,8 @@ module core (
 	logic mems_satp_access;
 	logic mems_sfence_vma;
 	logic mems_fence_i;
+	logic mems_fence_i_wait;   // fence.i in MEM, older stores not yet performed
+	logic mems_fence_i_fire;   // fence.i completes this cycle (exactly once)
 	logic mems_translation_hazard;
 	logic mems_translation_flush_wait;
 	assign mems_satp_access =
@@ -765,7 +769,7 @@ module core (
 		 (mems_ctrl.is_jump &&
 		  (mems_inst_bits[6:0] != OP_JAL) &&
 		  (mems_inst_bits[6:0] != OP_JALR)) ||
-		 mems_fence_i ||
+		 mems_fence_i_fire ||
 		 (mems_translation_hazard && !dcache_flush_busy));
 	assign control_hazard =
 		mem_control_hazard ||
@@ -779,16 +783,13 @@ module core (
 		!dcache_flush_busy &&
 		!csru_raise_trap &&
 		!mems_expt.valid;
-	assign i_membus.fetch_invalidate =
-		mems_valid &&
-		mems_is_new &&
-		mems_fence_i &&
-		!csru_raise_trap &&
-		!mems_expt.valid;
+	// Fires once: mems_fence_i_fire is true only in the cycle fence.i leaves MEM
+	// (it implies the MEM -> WB transfer below), so no is_new gating is needed.
+	assign i_membus.fetch_invalidate = mems_fence_i_fire;
 	assign control_hazard_pc_next =
 		mem_control_hazard
 			? ((csru_raise_trap) ? csru_trap_vector :
-			   (mems_translation_hazard || mems_fence_i) ? mems_pc + Addr'(4) :
+			   (mems_translation_hazard || mems_fence_i_fire) ? mems_pc + Addr'(4) :
 			   memq_rdata.jump_addr)
 			: (ex_early_jal_redirect ? ex_early_jal_pc_next :
 			   ex_early_jalr_redirect ? ex_early_jalr_pc_next :
@@ -919,10 +920,29 @@ module core (
 		);
 
 
+	// fence.i waits in MEM until every older store is performed (WB0), then
+	// redirects and invalidates the I-cache in the single cycle it leaves MEM.
+	// A trap or exception on the fence.i itself is not delayed.
+	assign mems_fence_i_wait =
+		mems_valid &&
+		mems_fence_i &&
+		!dmem_quiescent &&
+		!csru_raise_trap &&
+		!mems_expt.valid;
+	assign mems_fence_i_fire =
+		mems_valid &&
+		mems_fence_i &&
+		dmem_quiescent &&
+		wbq_wready &&
+		!memu_stall &&
+		!csru_raise_trap &&
+		!mems_expt.valid;
+	assign fence_i_drain = mems_fence_i_wait;
+
 	always_comb begin
 		//MEM -> WB
-		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait;
-		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait;
+		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait && !mems_fence_i_wait;
+		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait && !mems_fence_i_wait;
 		wbq_wdata.addr = memq_rdata.addr;
 		wbq_wdata.bits = memq_rdata.bits;
 		wbq_wdata.ctrl = memq_rdata.ctrl;
