@@ -116,4 +116,5 @@ r=$out/quartus/output_files
 awk '/; Analysis & Synthesis Resource Utilization by Entity/{f=1;next} f&&/Analysis & Synthesis RAM Summary/{exit} f&&/^; +\|/' \
   "$r/de0cv_soc.map.rpt" 2>/dev/null > "$out/by_entity.txt" || true
 cat "$out/summary.txt"
+if [[ $rc == 0 && $stage == asm ]]; then bash tools/signoff-de0cv-soc.sh || rc=$?; fi
 exit $rc

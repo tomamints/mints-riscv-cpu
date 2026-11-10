@@ -29,7 +29,9 @@ LEDR: 0 heartbeat, 1 PLL lock, 2 RAM cleared, 3 CPU running, 4 SDRAM init done,
 ## Commands
 
 ```sh
-bash tools/build-de0cv-soc.sh                 # Quartus map/fit/STA (STAGE=asm for a SOF)
+STAGE=asm bash tools/build-de0cv-soc.sh       # Quartus map/fit/STA/assembler + signoff
+bash tools/signoff-de0cv-soc.sh               # (re)run signoff: STA all corners, pins, RBF
+bash tools/program-de0cv-soc.sh               # SRAM configuration only (never flash)
 bash tools/build-de0cv-jtag-load.sh           # native host loader (local/fpga-tools/bin)
 bash tools/test-jtag-block-mailbox.sh         # mailbox + loader unit test
 bash tools/test-de0cv-soc-sim.sh              # board-path simulation (JTAG load, run, UART)
@@ -49,3 +51,20 @@ Open the UART terminal (FTDI TTL-232R-3V3) before releasing, e.g.
 
 The loader refuses to run after a release, stops at the first error or
 readback mismatch, and never releases without a complete verified readback.
+
+## Linux (interactive BusyBox shell on ttyS0)
+
+```sh
+docker run --rm --init -v "$PWD:/repo" -v mints-linux-sources:/sources -e KERNEL_INIT_MODE=default \
+  -w /repo mints-linux-verilator:5.046 bash tools/rebuild-linux-container.sh kernel
+docker run --rm -v "$PWD:/repo" -w /repo mints-linux-verilator:5.046 make opensbi-ram-image \
+  PLATFORM_PROFILE=de0cv64 \
+  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
+  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-default-initramfs
+bash tools/program-de0cv-soc.sh
+local/fpga-tools/bin/de0cv-jtag-load load    build/platform/de0cv64/opensbi_ram.hex
+local/fpga-tools/bin/de0cv-jtag-load release build/platform/de0cv64/opensbi_ram.hex
+```
+
+Timing signoff (20 MHz): setup slack +4.7 ns at the slow 85 C corner; every
+corner's setup/hold/recovery/removal checks pass.
