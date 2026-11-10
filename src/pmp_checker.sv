@@ -53,22 +53,22 @@ module pmp_checker (
         output logic overlaps,
         output logic contains
     );
-        logic found_zero;
-        int zero_bit_index;
+        logic low_bits_one;
+        Addr region_mask;
         Addr region_start;
         Addr region_size;
         Addr offset;
 
         overlaps = 1'b0;
         contains = 1'b0;
-        found_zero = 1'b0;
-        zero_bit_index = 0;
-        for (int bit_index = 0; bit_index < XLEN; bit_index++) begin
-            if (!pmpaddr[bit_index] && !found_zero) begin
-                found_zero = 1'b1;
-                zero_bit_index = bit_index;
-                break;
-            end
+        // k trailing ones encode 2**(k+3) bytes. Build size-1 directly
+        // with a prefix AND, avoiding a priority encoder followed by a
+        // variable 64-bit shift. Bits above the encoded range are zero.
+        region_mask = Addr'(7);
+        low_bits_one = 1'b1;
+        for (int bit_index = 3; bit_index < XLEN; bit_index++) begin
+            low_bits_one = low_bits_one && pmpaddr[bit_index-3];
+            region_mask[bit_index] = low_bits_one;
         end
 
         if (access_size == 0) begin
@@ -77,12 +77,12 @@ module pmp_checker (
         end else if ((pmpaddr & PMPADDR_WMASK) == PMPADDR_WMASK) begin
             overlaps = 1'b1;
             contains = 1'b1;
-        end else if (!found_zero || zero_bit_index + 3 >= XLEN) begin
+        end else if (&region_mask) begin
             overlaps = 1'b1;
             contains = 1'b1;
         end else begin
-            region_size = Addr'(1) << (zero_bit_index + 3);
-            region_start = (pmpaddr << 2) & ~(region_size - 1);
+            region_size = region_mask + Addr'(1);
+            region_start = (pmpaddr << 2) & ~region_mask;
 
             if (access_start >= region_start) begin
                 offset = access_start - region_start;
