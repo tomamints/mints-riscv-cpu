@@ -2,6 +2,9 @@
 `ifndef SVCPU_TLB_ENTRIES
 `define SVCPU_TLB_ENTRIES 8
 `endif
+`ifndef SVCPU_PMP_CARRY_COMPARE
+`define SVCPU_PMP_CARRY_COMPARE 0
+`endif
 import eei::*;
 
 module address_translation #(
@@ -336,7 +339,7 @@ module address_translation #(
 		.refill_d(refill_leaf_pte[7])
 	);
 
-	pmp_checker ptw_pmp_checker (
+	pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) ptw_pmp_checker (
 		.priv_mode(S),
 		.access_start(ptw_mem_addr),
 		.access_size(UIntX'(8)),

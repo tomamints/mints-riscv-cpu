@@ -10,9 +10,11 @@ import eei::*;
 // and non-empty region. A whole-space NAPOT entry keeps the original rule (it
 // matches and contains any non-zero-sized access). Priority: lowest matching
 // entry decides. Equivalence with the original checker: tools/test-pmp-prefix.sh.
-// CARRY_COMPARE=1 computes each 65-bit compare as the borrow of a subtraction,
-// which maps onto carry chains (shorter delay, more area): use it only on
-// timing-critical instances. The result is identical for both settings.
+// CARRY_COMPARE=1 shares two signed differences per region instead of four
+// independent wide comparisons. With d=B-A, A<B means d>0 and A+size<=B
+// means d>=size. The size compares become small when the caller's access size
+// is bounded (as for instruction/data/page-table accesses). Full 64-bit sizes
+// and addresses, including accesses crossing 2**64, keep the same result.
 module pmp_checker #(
     parameter bit CARRY_COMPARE = 1'b0
 ) (
@@ -26,13 +28,7 @@ module pmp_checker #(
 );
     // a < b on 65-bit unsigned values
     function automatic logic lt65(input logic [XLEN:0] a, input logic [XLEN:0] b);
-        logic [XLEN+1:0] d;
-        if (CARRY_COMPARE) begin
-            d = {1'b0, a} - {1'b0, b};
-            return d[XLEN+1];
-        end else begin
-            return a < b;
-        end
+        return a < b;
     endfunction
 
     always_comb begin
@@ -59,10 +55,22 @@ module pmp_checker #(
                     PMP_ACCESS_EXEC:  permission_ok = pmpcfg0[pmp_index*8 + 2];
                     default:          permission_ok = 1'b0;
                 endcase
-                entry_overlaps = size_nonzero && r.valid &&
-                    (r.all || (lt65({1'b0, access_start}, r.end_addr) && lt65({1'b0, r.start}, access_end)));
-                entry_contains = size_nonzero && r.valid &&
-                    (r.all || (!lt65({1'b0, access_start}, {1'b0, r.start}) && !lt65(r.end_addr, access_end)));
+                if (CARRY_COMPARE) begin
+                    logic [XLEN+1:0] lo_delta, hi_delta;
+                    lo_delta = {2'b0, r.start} - {2'b0, access_start};
+                    hi_delta = {1'b0, r.end_addr} - {2'b0, access_start};
+                    entry_overlaps = size_nonzero && r.valid &&
+                        (r.all || ((!hi_delta[XLEN+1] && |hi_delta[XLEN:0]) &&
+                         (lo_delta[XLEN+1] || lo_delta[XLEN:0] < {1'b0, access_size})));
+                    entry_contains = size_nonzero && r.valid &&
+                        (r.all || ((lo_delta[XLEN+1] || !(|lo_delta[XLEN:0])) &&
+                         !hi_delta[XLEN+1] && hi_delta[XLEN:0] >= {1'b0, access_size}));
+                end else begin
+                    entry_overlaps = size_nonzero && r.valid &&
+                        (r.all || (lt65({1'b0, access_start}, r.end_addr) && lt65({1'b0, r.start}, access_end)));
+                    entry_contains = size_nonzero && r.valid &&
+                        (r.all || (!lt65({1'b0, access_start}, {1'b0, r.start}) && !lt65(r.end_addr, access_end)));
+                end
                 if (!matched && entry_overlaps) begin
                     matched = 1'b1;
                     allow = entry_contains && permission_ok;

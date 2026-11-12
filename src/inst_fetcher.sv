@@ -685,7 +685,7 @@ module inst_fetcher #(
         .mem_rdata(mem_if.rdata)
     );
 
-    pmp_checker pmp_fetch_checker (
+    pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) pmp_fetch_checker (
         .priv_mode(priv_mode),
         .access_start(need_translate ? fetch_req_paddr : fetch_pc),
         .access_size(UIntX'(8)),
