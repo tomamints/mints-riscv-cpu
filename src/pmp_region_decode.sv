@@ -48,14 +48,17 @@ module pmp_region_decode (
             unique case (pmpcfg0[i*8 + 3 +: 2])
                 2'b01: begin    // TOR
                     regions[i].start = (i == 0) ? Addr'(0) : (addr[i - 1] << 2);
-                    regions[i].end_addr = {1'b0, addr[i] << 2};
-                    regions[i].valid = {1'b0, regions[i].start} < regions[i].end_addr;
+                    regions[i].upper = addr[i] << 2;
+                    regions[i].valid = regions[i].start < regions[i].upper;
                 end
                 2'b11: begin    // NAPOT
                     regions[i].valid = 1'b1;
                     regions[i].all = ((addr[i] & PMPADDR_WMASK) == PMPADDR_WMASK) || (&mask);
                     regions[i].start = (addr[i] << 2) & ~mask;
-                    regions[i].end_addr = {1'b0, regions[i].start | mask} + 1'b1;
+                    // Inclusive NAPOT upper bound avoids a shared XLEN-bit
+                    // incrementer for every entry; checker adjusts its threshold.
+                    regions[i].upper = (addr[i] << 2) | mask;
+                    regions[i].upper_inclusive = 1'b1;
                 end
                 default: ;
             endcase

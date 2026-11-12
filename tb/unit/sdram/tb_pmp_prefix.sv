@@ -7,7 +7,7 @@ module tb_pmp_prefix #(
     PmpAccessType kind;
     logic[63:0] start,size,cfg,pa[8];
     logic actual,expected;
-    // Current design: shared region decode + compare-only checker.
+    // Shared bounds use exclusive TOR / inclusive NAPOT upper endpoints.
     PmpRegion [7:0] regions;
     pmp_region_decode decode(.pmpcfg0(cfg),.pmpaddr0(pa[0]),.pmpaddr1(pa[1]),.pmpaddr2(pa[2]),
         .pmpaddr3(pa[3]),.pmpaddr4(pa[4]),.pmpaddr5(pa[5]),.pmpaddr6(pa[6]),.pmpaddr7(pa[7]),
@@ -27,6 +27,7 @@ module tb_pmp_prefix #(
         if(actual!==expected)$fatal(1,"PMP mismatch start=%h size=%h cfg=%h mode=%0d kind=%0d",start,size,cfg,mode,kind);
         checks++;
     endtask
+    // Sizes 15/16/17 straddle the narrow/full-width decrement boundary.
     initial begin
         mode=S;kind=PMP_ACCESS_READ;cfg=0;start=0;size=0;
         for(int j=0;j<8;j++)pa[j]=0;
@@ -45,10 +46,11 @@ module tb_pmp_prefix #(
                     0:start=base-1;1:start=base;2:start=base+1;
                     3:start=last-1;4:start=last;5:start=last+1;
                 endcase
-                for(int s=0;s<8;s++)begin
+                for(int s=0;s<11;s++)begin
                     case(s)
                         0:size=0;1:size=1;2:size=2;3:size=4;4:size=8;
                         5:size=64'h8000000000000000;6:size='1;7:size=random64();
+                        8:size=15;9:size=16;10:size=17;
                     endcase
                     check();
                 end
@@ -78,10 +80,11 @@ module tb_pmp_prefix #(
                     0:start=rs-1;1:start=rs;2:start=rs+1;
                     3:start=re-1;4:start=re;5:start=re+1;
                 endcase
-                for(int s=0;s<8;s++)begin
+                for(int s=0;s<11;s++)begin
                     case(s)
                         0:size=0;1:size=1;2:size=2;3:size=4;4:size=8;
                         5:size=re-start;6:size='1;7:size=random64();
+                        8:size=15;9:size=16;10:size=17;
                     endcase
                     check();
                 end

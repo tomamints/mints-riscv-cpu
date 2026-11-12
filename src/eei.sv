@@ -20,15 +20,16 @@ package eei;
 		PMP_ACCESS_EXEC  = 2'b10
 	} PmpAccessType;
 
-	// One PMP entry decoded to a byte range [start, end_addr) by
+	// One PMP entry decoded to lower/upper byte bounds by
 	// pmp_region_decode (once per core, shared by every pmp_checker).
-	// end_addr is 65-bit so a region ending at 2^64 cannot wrap; `all` marks a
+	// NAPOT uses an inclusive upper bound, TOR an exclusive one. `all` marks a
 	// NAPOT entry covering the whole address space; !valid = OFF or empty TOR.
 	typedef struct packed {
 		logic        valid;
 		logic        all;
 		logic [63:0] start;
-		logic [64:0] end_addr;
+		logic [63:0] upper;
+		logic        upper_inclusive;
 	} PmpRegion;
 
 	typedef enum logic [4:0] {
