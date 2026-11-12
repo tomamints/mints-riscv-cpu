@@ -6,12 +6,19 @@
 #   STAGE=map  : Analysis & Synthesis only
 #   STAGE=fit  : + Fitter + timing (default)
 #   STAGE=asm  : + Assembler (SOF for SRAM programming)
+#   FITTER_ROUTABILITY=ALWAYS: enable aggressive routing optimizations;
+#     default AUTOMATICALLY preserves the baseline Fitter settings.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 fi
 stage=${STAGE:-fit}
+routability=${FITTER_ROUTABILITY:-AUTOMATICALLY}
+case "$routability" in
+  AUTOMATICALLY|ALWAYS) ;;
+  *) echo 'FITTER_ROUTABILITY must be AUTOMATICALLY or ALWAYS' >&2; exit 2 ;;
+esac
 cache_lines=${SOC_CACHE_LINES:-32}
 [[ $cache_lines =~ ^[0-9]+$ ]] && (( cache_lines >= 2 && (cache_lines & (cache_lines - 1)) == 0 )) || {
   echo 'SOC_CACHE_LINES must be a power of two >= 2' >&2; exit 2;
@@ -23,6 +30,7 @@ if [[ -e "$out" ]]; then
   mv "$out" "build/fpga/archive/de0cv-soc-$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 mkdir -p "$out/rtl" "$out/quartus"
+printf 'FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION=%s\n' "$routability" > "$out/fitter-options.txt"
 
 # Boot ROM for the 64 MiB profile (a0 = hart 0, a1 = DTB, jump to RAM base).
 docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-verilator:5.046}" \
@@ -68,6 +76,9 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
   echo 'set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files'
   echo 'set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"'
   echo 'set_global_assignment -name SDC_FILE de0cv_soc.sdc'
+  if [[ $routability == ALWAYS ]]; then
+    echo 'set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS'
+  fi
   # PERF=1: aggressive timing-driven (does NOT fit: 109 % ALM); default 0: synthesis/fit for the 20 MHz CPU clock.
   if [[ ${PERF:-0} == 1 ]]; then
     echo 'set_global_assignment -name OPTIMIZATION_MODE "AGGRESSIVE PERFORMANCE"'
@@ -115,6 +126,7 @@ docker run --rm --init --name de0cv-soc-build --platform linux/amd64 \
 r=$out/quartus/output_files
 {
   echo "stage=$stage rc=$rc"; cat "$out/profile.txt"
+  cat "$out/fitter-options.txt"
   grep -E "Estimate of Logic utilization|Dedicated logic registers|Total block memory bits" "$r/de0cv_soc.map.rpt" 2>/dev/null | sed 's/^; */map: /' || true
   grep -E "Fitter Status|Logic utilization|Total registers|Total block memory bits|Total RAM Blocks|Total pins|Total PLLs" "$r/de0cv_soc.fit.summary" 2>/dev/null | sed 's/^/fit: /' || true
   grep -E "^; (Slow|Fast).*; [-0-9.]+ +;" "$r/de0cv_soc.sta.rpt" 2>/dev/null | head -20 | sed 's/^/sta: /' || true
