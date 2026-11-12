@@ -43,29 +43,29 @@ module csrunit (
 );
 
 //WMASK determines which bit can change or not. WARL can write anything but read legal.
-	localparam UIntX MSTATUS_WMASK = UIntX'('h0000_0000_007e_19aa) ;
-	localparam UIntX MTVEC_WMASK  = 'hffff_ffff_ffff_fffd; //MTVECは[1:0]はMODE設定
-	localparam UIntX MEDELEG_WMASK  = 'hffff_ffff_ffff_f7ff;
-	localparam UIntX MIDELEG_WMASK  = UIntX'('h0000_0000_0000_0222);
-	localparam UIntX MCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
-	localparam UIntX MSCRATCH_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MEPC_WMASK   = 'hffff_ffff_ffff_fffe;
-	localparam UIntX MCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0022);
-	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_0aaa);
-	localparam UIntX MCYCLE_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MINSTRET_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_000c_0122);
-	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0022);
-	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);
-	localparam UIntX SCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
-	localparam UIntX STVEC_WMASK  = 'hffff_ffff_ffff_fffd;
-	localparam UIntX SSCRATCH_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX SEPC_WMASK   = 'hffff_ffff_ffff_fffe;
-	localparam UIntX SCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX STVAL_WMASK  = 'hffff_ffff_ffff_ffff;
-	localparam UIntX SATP_WMASK   = 'hffff_ffff_ffff_ffff;
+	localparam UIntX MSTATUS_WMASK = UIntX'(64'h0000_0000_007e_19aa) ;
+	localparam UIntX MTVEC_WMASK  = 64'hffff_ffff_ffff_fffd; //MTVECは[1:0]はMODE設定
+	localparam UIntX MEDELEG_WMASK  = 64'hffff_ffff_ffff_f7ff;
+	localparam UIntX MIDELEG_WMASK  = UIntX'(64'h0000_0000_0000_0222);
+	localparam UIntX MCOUNTEREN_WMASK  = UIntX'(64'h0000_0000_0000_0007);
+	localparam UIntX MSCRATCH_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MEPC_WMASK   = 64'hffff_ffff_ffff_fffe;
+	localparam UIntX MCAUSE_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MTVAL_WMASK  = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MIP_WMASK  = UIntX'(64'h0000_0000_0000_0022);
+	localparam UIntX MIE_WMASK  = UIntX'(64'h0000_0000_0000_0aaa);
+	localparam UIntX MCYCLE_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MINSTRET_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX SSTATUS_WMASK  = UIntX'(64'h0000_0000_000c_0122);
+	localparam UIntX SIP_WMASK      = UIntX'(64'h0000_0000_0000_0022);
+	localparam UIntX SIE_WMASK      = UIntX'(64'h0000_0000_0000_0222);
+	localparam UIntX SCOUNTEREN_WMASK  = UIntX'(64'h0000_0000_0000_0007);
+	localparam UIntX STVEC_WMASK  = 64'hffff_ffff_ffff_fffd;
+	localparam UIntX SSCRATCH_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX SEPC_WMASK   = 64'hffff_ffff_ffff_fffe;
+	localparam UIntX SCAUSE_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX STVAL_WMASK  = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX SATP_WMASK   = 64'hffff_ffff_ffff_ffff;
 	localparam logic [3:0] SATP_MODE_BARE = 4'd0;
 	localparam logic [3:0] SATP_MODE_SV39 = 4'd8;
 
@@ -83,7 +83,7 @@ module csrunit (
 
 
 	//read masks
-	localparam UIntX SSTATUS_RMASK  = UIntX'('h8000_0003_018f_e762);
+	localparam UIntX SSTATUS_RMASK  = UIntX'(64'h8000_0003_018f_e762);
 
 
 	//CSRR(W|S|C)かどうか
@@ -219,7 +219,7 @@ module csrunit (
 	assign sstatus_sum = mstatus[18];
 	assign sstatus_mxr = mstatus[19];
 
-	assign mip = (mip_reg & ~(UIntX'('h0000_0000_0000_0a88))) | {
+	assign mip = (mip_reg & ~(UIntX'(64'h0000_0000_0000_0a88))) | {
 		{(XLEN - 12){1'b0}},
 		external_meip, // MEIP
 		1'b0, // 0

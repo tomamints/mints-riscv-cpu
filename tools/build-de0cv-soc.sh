@@ -96,6 +96,9 @@ echo 'PROJECT_REVISION = "de0cv_soc"' > "$out/quartus/de0cv_soc.qpf"
 
 q=/opt/intelFPGA_lite/20.1/quartus/bin
 steps="$q/quartus_map de0cv_soc > map.log 2>&1"
+# Quartus 20.1 may truncate an unsized hexadecimal literal to 32 bits even
+# inside a UIntX cast. Such a warning changes CSR masks and must block a build.
+steps+=" && if grep -n 'Warning (10229)' map.log; then echo 'FAIL: truncated HDL literal'; exit 1; fi"
 [[ $stage != map ]] && steps+=" && $q/quartus_fit de0cv_soc > fit.log 2>&1 && $q/quartus_sta de0cv_soc > sta.log 2>&1"
 [[ $stage == asm ]] && steps+=" && $q/quartus_asm de0cv_soc > asm.log 2>&1"
 rc=0

@@ -12,8 +12,8 @@ out=build/fpga/de0cv-soc
 q=$out/quartus
 r=$q/output_files
 [[ -s $r/de0cv_soc.sof ]] || { echo "missing $r/de0cv_soc.sof (build with STAGE=asm)" >&2; exit 1; }
-if grep -nE 'Critical Warning|Ignored assignment' "$r"/*.rpt; then
-  echo 'SIGNOFF FAIL: critical warnings or ignored assignments' >&2; exit 1
+if grep -nE 'Critical Warning|Ignored assignment|Warning \(10229\)' "$r"/*.rpt "$q/map.log"; then
+  echo 'SIGNOFF FAIL: critical warnings, ignored assignments or truncated literals' >&2; exit 1
 fi
 cp fpga/de0-cv/soc/check_constraints.tcl "$q/"
 qb=/opt/intelFPGA_lite/20.1/quartus/bin
