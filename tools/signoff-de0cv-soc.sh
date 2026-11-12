@@ -15,6 +15,9 @@ r=$q/output_files
 if grep -nE 'Critical Warning|Ignored assignment|Warning \(10229\)' "$r"/*.rpt "$q/map.log"; then
   echo 'SIGNOFF FAIL: critical warnings, ignored assignments or truncated literals' >&2; exit 1
 fi
+python3 tools/check-quartus-assignments.py "$r/de0cv_soc.map.rpt" "$r/de0cv_soc.fit.rpt" || {
+  echo 'SIGNOFF FAIL: ignored assignments report panel' >&2; exit 1;
+}
 cp fpga/de0-cv/soc/check_constraints.tcl "$q/"
 qb=/opt/intelFPGA_lite/20.1/quartus/bin
 docker run --rm --init --platform linux/amd64 \

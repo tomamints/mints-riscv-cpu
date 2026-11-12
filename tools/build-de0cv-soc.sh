@@ -86,8 +86,8 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
   echo 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD'
   echo 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD'
   echo 'set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to UART_RXD'
-  echo 'set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to rxd_meta'
-  echo 'set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to rxd_sync'
+  echo 'set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to "de0cv_soc_core:soc|rxd_meta"'
+  echo 'set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to "de0cv_soc_core:soc|rxd_sync"'
 } > "$out/quartus/de0cv_soc.qsf"
 echo 'PROJECT_REVISION = "de0cv_soc"' > "$out/quartus/de0cv_soc.qpf"
 {
@@ -119,7 +119,7 @@ r=$out/quartus/output_files
   grep -E "Fitter Status|Logic utilization|Total registers|Total block memory bits|Total RAM Blocks|Total pins|Total PLLs" "$r/de0cv_soc.fit.summary" 2>/dev/null | sed 's/^/fit: /' || true
   grep -E "^; (Slow|Fast).*; [-0-9.]+ +;" "$r/de0cv_soc.sta.rpt" 2>/dev/null | head -20 | sed 's/^/sta: /' || true
   grep -hE "^Error" "$out"/quartus/*.log 2>/dev/null | head -20 || true
-  ignored=$({ grep -cE "Critical Warning \(136021\)|Ignored assignment" "$r/de0cv_soc.map.rpt" "$r/de0cv_soc.fit.rpt" 2>/dev/null || true; } | awk -F: '{s+=$2} END{print s+0}')
+  ignored=$(python3 tools/check-quartus-assignments.py --allow-missing --count "$r/de0cv_soc.map.rpt" "$r/de0cv_soc.fit.rpt")
   echo "ignored_assignments=$ignored"
 } > "$out/summary.txt"
 awk '/; Analysis & Synthesis Resource Utilization by Entity/{f=1;next} f&&/Analysis & Synthesis RAM Summary/{exit} f&&/^; +\|/' \
