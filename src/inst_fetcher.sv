@@ -9,6 +9,9 @@ import corectrl::*;
 `ifndef SVCPU_BP_PHT_ENTRIES
 `define SVCPU_BP_PHT_ENTRIES 128
 `endif
+`ifndef SVCPU_BP_ENABLE
+`define SVCPU_BP_ENABLE 1
+`endif
 `ifndef SVCPU_BP_BTB_ENTRIES
 `define SVCPU_BP_BTB_ENTRIES 32
 `endif
@@ -21,7 +24,8 @@ module inst_fetcher #(
     parameter int unsigned ICACHE_DATA_RAM_STYLE = 0,
     parameter int unsigned BP_PHT_ENTRIES = `SVCPU_BP_PHT_ENTRIES,
     parameter int unsigned BP_BTB_ENTRIES = `SVCPU_BP_BTB_ENTRIES,
-    parameter int unsigned BP_RAS_ENTRIES = `SVCPU_BP_RAS_ENTRIES
+    parameter int unsigned BP_RAS_ENTRIES = `SVCPU_BP_RAS_ENTRIES,
+    parameter bit BP_ENABLE = `SVCPU_BP_ENABLE
 ) (
     input  logic             clk,
     input  logic             rst,
@@ -225,6 +229,8 @@ module inst_fetcher #(
 
     assign issue_pmp_allow = need_translate ? 1'b1 : issue_pmp_allow_raw;
 
+    generate
+    if (BP_ENABLE) begin : g_predictor
     branch_predictor #(
         .PHT_ENTRIES(BP_PHT_ENTRIES), .BTB_ENTRIES(BP_BTB_ENTRIES), .RAS_ENTRIES(BP_RAS_ENTRIES)
     ) static_branch_predictor (
@@ -256,6 +262,17 @@ module inst_fetcher #(
         .update_target(core_if.bp_update_target),
         .update_return_addr(core_if.bp_update_return_addr)
     );
+    end else begin : g_no_predictor
+        assign branch_prediction_valid = 1'b0;
+        assign branch_predicted_taken = 1'b0;
+        assign branch_predicted_next_pc = branch_predictor_pc + (branch_predictor_is_rvc ? Addr'(2) : Addr'(4));
+        assign branch_predicted_from_btb = 1'b0;
+        assign branch_predicted_from_ras = 1'b0;
+        assign fetch_prediction_valid = 1'b0;
+        assign fetch_predicted_branch_pc = '0;
+        assign fetch_predicted_next_pc = '0;
+    end
+    endgenerate
 
     assign branch_predictor_inst_valid =
         fetch_fifo_storage_rvalid &&

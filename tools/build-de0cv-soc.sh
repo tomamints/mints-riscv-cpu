@@ -12,6 +12,10 @@ if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 fi
 stage=${STAGE:-fit}
+cache_lines=${SOC_CACHE_LINES:-32}
+[[ $cache_lines =~ ^[0-9]+$ ]] && (( cache_lines >= 2 && (cache_lines & (cache_lines - 1)) == 0 )) || {
+  echo 'SOC_CACHE_LINES must be a power of two >= 2' >&2; exit 2;
+}
 [[ $stage == map || $stage == fit || $stage == asm ]] || { echo "STAGE must be map, fit or asm"; exit 2; }
 out=build/fpga/de0cv-soc
 if [[ -e "$out" ]]; then
@@ -48,7 +52,9 @@ shasum -a 256 "$out/quartus/bootrom_linux.hex" >> "$out/sources.sha256"
 
 profile=(
   "SYNTHESIS=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
+  "SVCPU_SOC_CACHE_LINES=$cache_lines"
   "SVCPU_BP_PHT_ENTRIES=32" "SVCPU_BP_BTB_ENTRIES=${BP_BTB_ENTRIES:-4}" "SVCPU_BP_RAS_ENTRIES=4"
+  "SVCPU_BP_ENABLE=${BP_ENABLE:-1}"
   "SVCPU_TLB_ENTRIES=${TLB_ENTRIES:-4}"
   "SVCPU_PMP_CARRY_COMPARE=${PMP_CARRY_COMPARE:-1}"
 )

@@ -1,4 +1,7 @@
 import eei::*;
+`ifndef SVCPU_SOC_CACHE_LINES
+`define SVCPU_SOC_CACHE_LINES 32
+`endif
 
 // Board SoC logic without the device primitives (PLL, virtual JTAG), so a
 // simulation can drive the 20 MHz clock, the cold reset and the JTAG node.
@@ -65,8 +68,8 @@ module de0cv_soc_core #(
     core_top #(
         .RAM_FILEPATH_IS_ENV(1'b0), .RAM_FILEPATH(""),
         .ROM_FILEPATH_IS_ENV(1'b0), .ROM_FILEPATH(BOOTROM_HEX),
-        .DCACHE_LINE_COUNT(32), .DCACHE_STORE_BUFFER_DEPTH(4), .DCACHE_WRITE_BACK(1'b0),
-        .DCACHE_DATA_RAM_STYLE(1), .ICACHE_LINE_COUNT(32), .ICACHE_DATA_RAM_STYLE(1)
+        .DCACHE_LINE_COUNT(`SVCPU_SOC_CACHE_LINES), .DCACHE_STORE_BUFFER_DEPTH(4), .DCACHE_WRITE_BACK(1'b0),
+        .DCACHE_DATA_RAM_STYLE(1), .ICACHE_LINE_COUNT(`SVCPU_SOC_CACHE_LINES), .ICACHE_DATA_RAM_STYLE(1)
     ) cpu (
         .clk(clk), .rst(cpu_rst_n),
         .uart_rx_i(rxd_sync), .uart_tx_o(UART_TXD),
