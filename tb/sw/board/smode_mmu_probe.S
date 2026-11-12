@@ -16,8 +16,9 @@ _start:
     la t0, mtrap
     csrw mtvec, t0
     li t0, -1
-    csrw pmpaddr0, t0
-    li t0, 0x1f
+    # Use entry 7 so S-mode execution also requires the upper PMPCFG0 byte.
+    csrw pmpaddr7, t0
+    li t0, 0x1f00000000000000
     csrw pmpcfg0, t0
     li t0, 7
     csrw mcounteren, t0
