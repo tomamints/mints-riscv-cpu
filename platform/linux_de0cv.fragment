@@ -8,3 +8,7 @@ CONFIG_HZ_PERIODIC=y
 # CONFIG_NO_HZ is not set
 # CONFIG_HIGH_RES_TIMERS is not set
 CONFIG_PREEMPT_NONE=y
+
+# Polling board GPIO through a bounded UIO mapping, without /dev/mem.
+CONFIG_UIO=y
+CONFIG_UIO_PDRV_GENIRQ=y

@@ -29,6 +29,8 @@ module de0cv_soc_top #(
 ) (
     input  wire        CLOCK_50,
     output wire [9:0]  LEDR,
+    input wire [9:0] SW,
+    input wire [3:0] KEY_N,
     input  wire        UART_RXD,
     output wire        UART_TXD,
     output wire [12:0] DRAM_ADDR,
@@ -64,7 +66,7 @@ module de0cv_soc_top #(
     de0cv_soc_core #(.BOOTROM_HEX(BOOTROM_HEX), .MAILBOX_WORDS(MAILBOX_WORDS)) soc (
         .clk(clk), .power_n(power_n), .locked(locked),
         .tck(tck), .tdi(tdi), .cdr(cdr), .sdr(sdr), .udr(udr), .vir(vir), .tdo(tdo),
-        .LEDR(LEDR), .UART_RXD(UART_RXD), .UART_TXD(UART_TXD),
+        .LEDR(LEDR), .SW(SW), .KEY_N(KEY_N), .UART_RXD(UART_RXD), .UART_TXD(UART_TXD),
         .DRAM_ADDR(DRAM_ADDR), .DRAM_BA(DRAM_BA), .DRAM_CKE(DRAM_CKE), .DRAM_CS_N(DRAM_CS_N),
         .DRAM_RAS_N(DRAM_RAS_N), .DRAM_CAS_N(DRAM_CAS_N), .DRAM_WE_N(DRAM_WE_N),
         .DRAM_LDQM(DRAM_LDQM), .DRAM_UDQM(DRAM_UDQM), .DRAM_DQ(DRAM_DQ)

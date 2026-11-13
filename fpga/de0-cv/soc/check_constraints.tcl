@@ -20,6 +20,7 @@ expect_count {SDRAM command/data outputs} $outputs 38
 expect_count {forwarded SDRAM clock} [get_clocks {*generic_pll2~PLL_OUTPUT_COUNTER|divclk}] 1
 expect_count {external SDRAM clock} [get_clocks {SDRAM_CLK}] 1
 expect_count {CPU clock} [get_clocks {*generic_pll1~PLL_OUTPUT_COUNTER|divclk}] 1
+expect_count {board inputs} [get_ports {SW[*] KEY_N[*]}] 14
 expect_count {UART pins} [get_ports {UART_TXD UART_RXD}] 2
 foreach_in_collection oc [get_available_operating_conditions] {
     set_operating_conditions $oc

@@ -17,6 +17,8 @@ module de0cv_soc_core #(
     input  wire [1:0]  vir,
     output wire        tdo,
     output wire [9:0]  LEDR,
+    input wire [9:0] SW,
+    input wire [3:0] KEY_N,
     input  wire        UART_RXD,
     output wire        UART_TXD,
     output wire [12:0] DRAM_ADDR,
@@ -62,6 +64,8 @@ module de0cv_soc_core #(
     Addr         cpu_ram_addr;
     UInt64       cpu_ram_wdata;
     logic [7:0]  cpu_ram_wmask;
+    logic [9:0] gpio_leds;
+    logic gpio_led_enable;
     logic        uart_tx_overflow, uart_rx_overrun;
     logic        rxd_meta = 1'b1, rxd_sync = 1'b1;
     always_ff @(posedge clk) begin rxd_meta <= UART_RXD; rxd_sync <= rxd_meta; end
@@ -73,6 +77,8 @@ module de0cv_soc_core #(
         .DCACHE_DATA_RAM_STYLE(1), .ICACHE_LINE_COUNT(`SVCPU_SOC_CACHE_LINES), .ICACHE_DATA_RAM_STYLE(1)
     ) cpu (
         .clk(clk), .rst(cpu_rst_n),
+        .board_switches_i(SW), .board_keys_n_i(KEY_N),
+        .board_leds_o(gpio_leds), .board_led_enable_o(gpio_led_enable),
         .uart_rx_i(rxd_sync), .uart_tx_o(UART_TXD),
         .uart_tx_overflow_o(uart_tx_overflow), .uart_rx_overrun_o(uart_rx_overrun),
         .MMAP_DBG_ADDR(64'h4000_0000), .led(core_led),
@@ -144,6 +150,8 @@ module de0cv_soc_core #(
             if (uart_tx_overflow) uart_ovf_seen <= 1'b1;
             if (uart_rx_overrun) uart_orun_seen <= 1'b1;
         end
-    assign LEDR = {core_led[0], uart_orun_seen, uart_ovf_seen, loader_fault, mem_fault,
+    wire [9:0] diagnostic_leds = {core_led[0], uart_orun_seen, uart_ovf_seen, loader_fault, mem_fault,
                    init_done, cpu_run, ram_cleared, locked, heartbeat[23]};
+    // Sticky fault indicators remain visible even during application ownership.
+    assign LEDR = gpio_led_enable ? (gpio_leds | (diagnostic_leds & 10'h1e0)) : diagnostic_leds;
 endmodule

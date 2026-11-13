@@ -155,6 +155,20 @@ void main(void) {
     UART[1] = 0;    /* no UART interrupts */
     puts_("\nMiNTs DE0-CV bare-metal self test\n");
     int errors = sdram_test();
+#ifdef BOARD_GPIO_TEST
+    volatile unsigned long long *gpio = (volatile unsigned long long *)0x40000000UL;
+    volatile unsigned short *control = (volatile unsigned short *)0x40000000UL;
+    unsigned long long inputs = *gpio & ~0x7ffULL;
+    int gpio_errors = (inputs >> 48) != 0x4d47ULL;
+    const unsigned short patterns[] = {0x555, 0x6aa, 0x400, 0x7ff};
+    for (unsigned i = 0; i < 4; ++i) {
+        *control = patterns[i];
+        if ((*gpio & 0x7ffULL) != patterns[i] || (*gpio & ~0x7ffULL) != inputs) ++gpio_errors;
+    }
+    *control = 0;
+    puts_(gpio_errors ? "GPIO FAIL\n" : "GPIO PASS\n");
+    errors += gpio_errors;
+#endif
     errors += timer_test();
     puts_(errors ? "SELFTEST FAIL\n" : "SELFTEST PASS\n");
     puts_("echo mode (letters case-swapped)\n");

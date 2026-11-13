@@ -18,7 +18,7 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 ignore_loglevel";
+		bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 ignore_loglevel uio_pdrv_genirq.of_id=mints,de0cv-gpio";
 	};
 
 	aliases {
@@ -60,6 +60,13 @@
 		#size-cells = <2>;
 		compatible = "simple-bus";
 		ranges;
+
+		gpio@40000000 {
+			compatible = "mints,de0cv-gpio";
+			reg = <0x0 0x40000000 0x0 0x8>;
+			linux,uio-name = "mints-gpio";
+			status = "okay";
+		};
 
 		uart0: serial@10000000 {
 			compatible = "ns16550a";

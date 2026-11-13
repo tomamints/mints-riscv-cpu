@@ -16,7 +16,7 @@ mkdir -p "$out"
 make -s dtb PLATFORM_PROFILE=de0cv64 > "$out/dtb.log" 2>&1
 cc="riscv64-unknown-elf-gcc -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany -O2 -nostdlib -nostartfiles -ffreestanding -fno-builtin -T tb/sw/common/link.ld tb/sw/common/entry.S tb/sw/board/board_selftest.c"
 $cc -o "$out/board_selftest.elf"
-$cc -DSELFTEST_SIM_QUICK -o "$out/board_selftest_sim.elf"
+$cc -DSELFTEST_SIM_QUICK -DBOARD_GPIO_TEST -o "$out/board_selftest_sim.elf"
 for v in board_selftest board_selftest_sim; do
   riscv64-unknown-elf-objcopy -O binary "$out/$v.elf" "$out/$v.bin"
 done

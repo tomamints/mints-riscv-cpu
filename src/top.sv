@@ -55,6 +55,12 @@ module core_top #(
     output logic uart_tx_overflow_o,
     output logic uart_rx_overrun_o,
 `endif
+`ifdef SVCPU_BOARD_GPIO
+    input logic [9:0] board_switches_i,
+    input logic [3:0] board_keys_n_i,
+    output logic [9:0] board_leds_o,
+    output logic board_led_enable_o,
+`endif
     input  logic rst,
     input  Addr  MMAP_DBG_ADDR,
     output UIntX led
@@ -302,6 +308,12 @@ module core_top #(
         plic_source_irq[PLIC_UART_IRQ] = uart_irq;
     end
 
+`ifdef SVCPU_BOARD_GPIO
+    board_gpio_mmio gpio (
+        .clk(clk), .rst_n(rst), .switches(board_switches_i), .keys_n(board_keys_n_i),
+        .leds(board_leds_o), .led_enable(board_led_enable_o), .bus(dbg_membus)
+    );
+`else
     always_ff @(posedge clk) begin
         // -----------------------------------------------------------
         // Debug membus は常に ready
@@ -338,6 +350,8 @@ module core_top #(
             end
         end
     end
+
+`endif
 
     always_ff @(posedge clk or negedge rst) begin
         if (!rst) begin

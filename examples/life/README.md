@@ -6,6 +6,7 @@ It runs the same deterministic 32 × 16 toroidal world in two modes:
 ```sh
 life --demo          # 40 generations, terminal animation
 life --demo 10       # shorter demo
+life --board 40     # GPIO-enabled board: switch/button control and generation LEDs
 life --bench         # 100 generations, no display inside the measured loop
 life --bench 1000    # longer run
 life --self-test     # block and wraparound blinker checks
@@ -18,6 +19,10 @@ the program without changing terminal input settings.
 
 The 32 × 16 size is deliberately small enough for readable UART output.
 Both modes start from the same fixed seed.
+
+For board mode, SW0 pauses/resumes and KEY0 resets the world. See
+[GPIO controls and prerequisites](../boardctl/README.md); the ordinary `--demo`
+and `--bench` modes do not require GPIO.
 
 ## Benchmark meaning
 

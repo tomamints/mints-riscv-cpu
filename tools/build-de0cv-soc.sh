@@ -43,6 +43,7 @@ docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-ver
 cp build/platform/de0cv64/bootrom_linux.hex "$out/quartus/bootrom_linux.hex"
 
 files=$( { sed '/^#/d;/^$/d' core.f; cat <<'EOF'
+rtl/peripheral/board_gpio_mmio.sv
 rtl/peripheral/uart16550_regs.sv
 fpga/de0-cv/rtl/uart_baud_gen.sv
 fpga/de0-cv/rtl/uart_tx.sv
@@ -64,7 +65,7 @@ for f in $files; do cp "$f" "$out/rtl/"; done
 shasum -a 256 "$out/quartus/bootrom_linux.hex" >> "$out/sources.sha256"
 
 profile=(
-  "SYNTHESIS=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
+  "SYNTHESIS=1" "SVCPU_BOARD_GPIO=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
   "SVCPU_SOC_CACHE_LINES=$cache_lines"
   "SVCPU_BP_PHT_ENTRIES=32" "SVCPU_BP_BTB_ENTRIES=${BP_BTB_ENTRIES:-4}" "SVCPU_BP_RAS_ENTRIES=4"
   "SVCPU_BP_ENABLE=${BP_ENABLE:-0}"
@@ -98,6 +99,10 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
   for f in $files; do echo "set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/$(basename "$f")"; done
   # SDRAM, clock and LED pins/IO/board models of the verified SDRAM test.
   grep -E '^set_(location|instance)_assignment' "$sdram_qsf" | grep -vE 'KEY0_N|key_meta|key_sync'
+  while read -r name pin direction; do
+    printf 'set_location_assignment PIN_%s -to %s\n' "$pin" "$name"
+    printf 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to %s\n' "$name"
+  done < fpga/de0-cv/soc/gpio-pins.txt
   echo 'set_location_assignment PIN_K22 -to UART_TXD'
   echo 'set_location_assignment PIN_M21 -to UART_RXD'
   echo 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD'
@@ -109,6 +114,7 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
 echo 'PROJECT_REVISION = "de0cv_soc"' > "$out/quartus/de0cv_soc.qpf"
 {
   grep -vE 'KEY0_N|set_clock_groups|^# JTAG status|^# crosses back' fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.sdc
+  echo 'set_false_path -from [get_ports {SW[*] KEY_N[*]}]'
   echo 'set_false_path -from [get_ports {UART_RXD}]'
   echo 'set_false_path -to [get_ports {UART_TXD}]'
   echo '# JTAG mailbox: req/ack toggles cross through two-flop synchronizers;'

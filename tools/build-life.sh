@@ -6,3 +6,6 @@ cd "$(dirname "$0")/.."
 mkdir -p build/apps
 "$LIFE_CC" -std=c11 -O2 -Wall -Wextra -Werror -static -march=rv64imac -mabi=lp64 \
   examples/life/life.c -o build/apps/life
+
+"$LIFE_CC" -std=c11 -O2 -Wall -Wextra -Werror -static -march=rv64imac -mabi=lp64 \
+  examples/boardctl/boardctl.c -o build/apps/boardctl

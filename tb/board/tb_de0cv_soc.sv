@@ -33,7 +33,7 @@ module tb_de0cv_soc #(
     de0cv_soc_core #(.BOOTROM_HEX(BOOTROM_HEX), .MAILBOX_WORDS(WORDS)) dut (
         .clk(clk), .power_n(power_n), .locked(1'b1),
         .tck(tck), .tdi(tdi), .cdr(cdr), .sdr(sdr), .udr(udr), .vir(vir), .tdo(tdo),
-        .LEDR(ledr), .UART_RXD(1'b1), .UART_TXD(txd),
+        .LEDR(ledr), .SW(10'b0), .KEY_N(4'hf), .UART_RXD(1'b1), .UART_TXD(txd),
         .DRAM_ADDR(a), .DRAM_BA(ba), .DRAM_CKE(cke), .DRAM_CS_N(csn), .DRAM_RAS_N(rasn),
         .DRAM_CAS_N(casn), .DRAM_WE_N(wen), .DRAM_LDQM(ldqm), .DRAM_UDQM(udqm), .DRAM_DQ(dq)
     );

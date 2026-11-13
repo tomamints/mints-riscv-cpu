@@ -2,13 +2,14 @@
 # Independent fitted-pin check of the DE0-CV SoC against the board pin table
 # (SDRAM, clock, LEDs as the SDRAM test; UART on JP1-8/JP1-10).
 set -euo pipefail
+script_root="$(cd "$(dirname "$0")/.." && pwd)"
 pinfile="$1"
 fitfile="${pinfile%.pin}.fit.rpt"
 count=0
 while read -r name location direction; do
   actual=$(awk -F: -v n="$name" '{p=$1; gsub(/^ +| +$/,"",p)} p==n {for(i=2;i<=4;i++) {gsub(/^ +| +$/,"",$i)}; print $2 ":" $3 ":" $4; exit}' "$pinfile")
   standard="3.3-V LVCMOS"
-  [[ "$name" == DRAM_* || "$name" == UART_* ]] && standard="3.3-V LVTTL"
+  [[ "$name" == DRAM_* || "$name" == UART_* || "$name" == SW* || "$name" == KEY_N* ]] && standard="3.3-V LVTTL"
   expected="$location:$direction:$standard"
   [[ "$actual" == "$expected" ]] || {
     echo "PIN FAIL $name expected $expected, found $actual" >&2; exit 1;
@@ -23,7 +24,8 @@ while read -r name location direction; do
     fi
   fi
   count=$((count+1))
-done <<'PINS'
+done < <(
+cat <<'PINS'
 CLOCK_50 M9 input
 UART_TXD K22 output
 UART_RXD M21 input
@@ -77,4 +79,6 @@ DRAM_WE_N AB5 output
 DRAM_LDQM U12 output
 DRAM_UDQM N8 output
 PINS
+cat "$script_root/fpga/de0-cv/soc/gpio-pins.txt"
+)
 echo "PIN PASS: $count board pins, location/direction/I/O standard"

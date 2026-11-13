@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 fi
+[[ -n ${IMAGE:-} ]] || bash tools/build-board-selftest.sh
 image=${IMAGE:-build/board/selftest/board_selftest_sim.hex}
 [[ -f $image ]] || bash tools/build-board-selftest.sh
 docker run --rm --init -e IMAGE="$image" -e SOC_DEBUG="${SOC_DEBUG:-1}" \
@@ -31,12 +32,12 @@ for line in open(src):
 out.sort()
 open(dst, "w").write("".join(f"{a:x} {v}\n" for a, v in out))
 PY
-files="$(sed "/^#/d;/^$/d" core.f | tr "\n" " ") rtl/peripheral/uart16550_regs.sv fpga/de0-cv/rtl/uart_baud_gen.sv fpga/de0-cv/rtl/uart_tx.sv fpga/de0-cv/rtl/uart_rx.sv fpga/de0-cv/rtl/uart_phy.sv rtl/peripheral/uart16550_serial.sv rtl/bus/membus_sdram_adapter.sv fpga/de0-cv/sdram/rtl/sdram_bridge64.sv fpga/de0-cv/sdram/rtl/sdram_native16.sv fpga/de0-cv/rtl/boot_memory_loader.sv fpga/de0-cv/rtl/jtag_block_mailbox.sv fpga/de0-cv/soc/rtl/de0cv_soc_core.sv tb/model/sdram_cycle_model16.sv tb/board/tb_de0cv_soc.sv"
+files="$(sed "/^#/d;/^$/d" core.f | tr "\n" " ") rtl/peripheral/board_gpio_mmio.sv rtl/peripheral/uart16550_regs.sv fpga/de0-cv/rtl/uart_baud_gen.sv fpga/de0-cv/rtl/uart_tx.sv fpga/de0-cv/rtl/uart_rx.sv fpga/de0-cv/rtl/uart_phy.sv rtl/peripheral/uart16550_serial.sv rtl/bus/membus_sdram_adapter.sv fpga/de0-cv/sdram/rtl/sdram_bridge64.sv fpga/de0-cv/sdram/rtl/sdram_native16.sv fpga/de0-cv/rtl/boot_memory_loader.sv fpga/de0-cv/rtl/jtag_block_mailbox.sv fpga/de0-cv/soc/rtl/de0cv_soc_core.sv tb/model/sdram_cycle_model16.sv tb/board/tb_de0cv_soc.sv"
 sha256sum $files "$IMAGE" > "$out/sources.sha256"
 debug_define=()
 [[ $SOC_DEBUG == 0 ]] || debug_define+=(-DSVCPU_FPGA_DEBUG=1)
 verilator --binary --timing -O3 -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD --top-module tb_de0cv_soc \
-  -DSYNTHESIS=1 -DSVCPU_RAM_EXTERNAL -DSVCPU_PHYSICAL_UART -DSVCPU_RAM_SIZE_BYTES=67108864 \
+  -DSYNTHESIS=1 -DSVCPU_BOARD_GPIO=1 -DSVCPU_RAM_EXTERNAL -DSVCPU_PHYSICAL_UART -DSVCPU_RAM_SIZE_BYTES=67108864 \
   -DSVCPU_BP_PHT_ENTRIES=32 -DSVCPU_BP_BTB_ENTRIES=4 -DSVCPU_BP_RAS_ENTRIES=4 \
   -DSVCPU_SOC_CACHE_LINES="$SOC_CACHE_LINES" -DSVCPU_TLB_ENTRIES="$TLB_ENTRIES" -DSVCPU_BP_ENABLE="$BP_ENABLE" \
   -DSVCPU_PMP_CARRY_COMPARE=1 "${debug_define[@]}" \
