@@ -8,8 +8,8 @@ JTAG block loader (`fpga/de0-cv/rtl/jtag_block_mailbox.sv` +
 `boot_memory_loader.sv`). CPU, caches and SDRAM share one 20 MHz clock.
 
 Board profile: I-cache/D-cache 32 lines (M10K data), D-cache write-through
-with a 4-entry store buffer, predictor PHT 32 / BTB 4 / RAS 4, TLB 4 entries
-per side.
+with a 4-entry store buffer, branch predictor disabled (PHT 32 / BTB 4 / RAS 4 when enabled),
+TLB 2 entries per side, and read-only JTAG CPU snapshots enabled.
 
 ## Boot sequence
 
@@ -55,16 +55,20 @@ readback mismatch, and never releases without a complete verified readback.
 ## Linux (interactive BusyBox shell on ttyS0)
 
 ```sh
-docker run --rm --init -v "$PWD:/repo" -v mints-linux-sources:/sources -e KERNEL_INIT_MODE=default \
-  -w /repo mints-linux-verilator:5.046 bash tools/rebuild-linux-container.sh kernel
-docker run --rm -v "$PWD:/repo" -w /repo mints-linux-verilator:5.046 make opensbi-ram-image \
-  PLATFORM_PROFILE=de0cv64 \
-  OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
-  LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-default-initramfs
+# From scratch (sources, toolchain, firmware, BusyBox, kernel and RAM image):
+PLATFORM_PROFILE=de0cv64 bash tools/rebuild-linux.sh all
+# With dependencies already built, only rebuild the kernel and RAM image:
+# PLATFORM_PROFILE=de0cv64 bash tools/rebuild-linux.sh kernel
+# PLATFORM_PROFILE=de0cv64 bash tools/rebuild-linux.sh image
 bash tools/program-de0cv-soc.sh
-local/fpga-tools/bin/de0cv-jtag-load load    build/platform/de0cv64/opensbi_ram.hex
-local/fpga-tools/bin/de0cv-jtag-load release build/platform/de0cv64/opensbi_ram.hex
+local/fpga-tools/bin/de0cv-jtag-load load-run build/platform/de0cv64/opensbi_ram.hex
 ```
 
-Timing signoff (20 MHz): setup slack +4.7 ns at the slow 85 C corner; every
+The board kernel uses `platform/linux_de0cv.fragment`: 100 Hz periodic
+scheduler ticks with the normal `riscv_clocksource` hardware time source.
+CPU and hardware timebase remain 20 MHz. There is no `clocksource=jiffies`
+boot override. Kernel build directories and images have a `-de0cv64` suffix
+to keep them separate from the simulator profile.
+
+Timing signoff (20 MHz): setup slack +3.681 ns at the slow 85 C corner; every
 corner's setup/hold/recovery/removal checks pass.

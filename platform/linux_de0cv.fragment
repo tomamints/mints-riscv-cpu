@@ -1,0 +1,10 @@
+# DE0-CV 20 MHz board: retain the hardware riscv_clocksource while leaving
+# enough CPU time between periodic scheduler ticks for userspace and UART.
+CONFIG_HZ_100=y
+# CONFIG_HZ_250 is not set
+CONFIG_HZ=100
+CONFIG_HZ_PERIODIC=y
+# CONFIG_NO_HZ_IDLE is not set
+# CONFIG_NO_HZ is not set
+# CONFIG_HIGH_RES_TIMERS is not set
+CONFIG_PREEMPT_NONE=y

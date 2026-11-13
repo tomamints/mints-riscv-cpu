@@ -3,6 +3,8 @@
 # MiNTs CPU (board profile) + SDRAM path + JTAG loader + physical UART.
 # Pins/IO/board models come from the verified SDRAM and UART echo projects.
 # Output: build/fpga/de0cv-soc/ (previous output archived). Never programs.
+# Default board profile: 1 KiB I/D caches, 2-entry TLB, predictor off,
+# read-only JTAG CPU snapshots on; paired with linux_de0cv.fragment (100 Hz).
 #   STAGE=map  : Analysis & Synthesis only
 #   STAGE=fit  : + Fitter + timing (default)
 #   STAGE=asm  : + Assembler (SOF for SRAM programming)
@@ -26,7 +28,7 @@ cache_lines=${SOC_CACHE_LINES:-32}
 [[ $stage == map || $stage == fit || $stage == asm ]] || { echo "STAGE must be map, fit or asm"; exit 2; }
 out=${SOC_BUILD_DIR:-build/fpga/de0cv-soc}
 [[ $out == build/fpga/* && $out != *..* ]] || { echo 'SOC_BUILD_DIR must be under build/fpga'; exit 2; }
-debug=${SOC_DEBUG:-0}
+debug=${SOC_DEBUG:-1}
 [[ $debug == 0 || $debug == 1 ]] || { echo 'SOC_DEBUG must be 0 or 1'; exit 2; }
 if [[ -e "$out" ]]; then
   mkdir -p build/fpga/archive
@@ -65,8 +67,8 @@ profile=(
   "SYNTHESIS=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
   "SVCPU_SOC_CACHE_LINES=$cache_lines"
   "SVCPU_BP_PHT_ENTRIES=32" "SVCPU_BP_BTB_ENTRIES=${BP_BTB_ENTRIES:-4}" "SVCPU_BP_RAS_ENTRIES=4"
-  "SVCPU_BP_ENABLE=${BP_ENABLE:-1}"
-  "SVCPU_TLB_ENTRIES=${TLB_ENTRIES:-4}"
+  "SVCPU_BP_ENABLE=${BP_ENABLE:-0}"
+  "SVCPU_TLB_ENTRIES=${TLB_ENTRIES:-2}"
   "SVCPU_PMP_CARRY_COMPARE=${PMP_CARRY_COMPARE:-1}"
 )
 [[ $debug == 0 ]] || profile+=("SVCPU_FPGA_DEBUG=1")

@@ -6,6 +6,13 @@ cd /repo
 mkdir -p build/logs build/external build/toolchain-src
 
 stage="${1:-all}"
+profile=${PLATFORM_PROFILE:-legacy}
+case "$profile" in
+  legacy) suffix=; mode=${KERNEL_INIT_MODE:-autotest} ;;
+  de0cv64) suffix=-de0cv64; mode=${KERNEL_INIT_MODE:-default} ;;
+  *) echo "Unknown PLATFORM_PROFILE: $profile" >&2; exit 2 ;;
+esac
+kernel_image=build/external/linux-out/Image-linux-6.12-riscv64-busybox-$mode-initramfs$suffix
 sources() {
   if [[ ! -f /sources/linux-6.12/Makefile ]]; then
     curl -fL --retry 3 https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.xz -o /sources/linux-6.12.tar.xz
@@ -54,7 +61,7 @@ CONFIG
 
 firmware() {
   make -C build/external/opensbi PLATFORM=generic CROSS_COMPILE=riscv64-unknown-elf- -j"$JOBS"
-  make dtb linux-bootrom-build
+  make dtb linux-bootrom-build PLATFORM_PROFILE="$profile"
 }
 
 busybox() {
@@ -73,21 +80,23 @@ busybox() {
 }
 
 # KERNEL_INIT_MODE selects the initramfs init (tools/build-busybox-initramfs.sh
-# INIT_SCRIPT_MODE); default autotest. "default" is the interactive BusyBox
-# shell on ttyS0 (board use).
+# INIT_SCRIPT_MODE); legacy defaults to autotest, de0cv64 to the interactive
+# "default" BusyBox shell on ttyS0. Board outputs are isolated from legacy.
 kernel() {
-  local mode=${KERNEL_INIT_MODE:-autotest}
-  local out=/repo/build/linux-build-busybox-$mode
+  local out=/repo/build/linux-build-busybox-$mode$suffix
   INIT_SCRIPT_MODE=$mode SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
   mkdir -p "$out" build/external/linux-out
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- allnoconfig
   (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_minbringup.fragment)
+  if [[ $profile == de0cv64 ]]; then
+    (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_de0cv.fragment)
+  fi
   /sources/linux-6.12/scripts/config --file "$out/.config" \
     --set-str INITRAMFS_SOURCE /repo/build/busybox-initramfs-$mode/initramfs.linux.list
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- olddefconfig
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- -j"$JOBS" Image
-  cp "$out/arch/riscv/boot/Image" build/external/linux-out/Image-linux-6.12-riscv64-busybox-$mode-initramfs
-  cp "$out/.config" build/external/linux-out/config-linux-6.12-riscv64-busybox-$mode-initramfs
+  cp "$out/arch/riscv/boot/Image" "$kernel_image"
+  cp "$out/.config" build/external/linux-out/config-linux-6.12-riscv64-busybox-$mode-initramfs$suffix
 }
 
 simulator() {
@@ -98,15 +107,23 @@ run_stage() {
   echo "MiNTs Linux rebuild: $1 (log: build/logs/$1.log)"
   "$1" 2>&1 | tee "build/logs/$1.log"
 }
-if [[ "$stage" == all ]]; then
-  for item in sources toolchain firmware busybox kernel simulator; do run_stage "$item"; done
-  make opensbi-ram-image \
+image() {
+  make opensbi-ram-image PLATFORM_PROFILE="$profile" \
     OPENSBI_BIN=build/external/opensbi/build/platform/generic/firmware/fw_jump.bin \
-    LINUX_IMAGE_BIN=build/external/linux-out/Image-linux-6.12-riscv64-busybox-autotest-initramfs
-  echo 'Build complete. Run Linux yourself with: bash tools/run-linux.sh'
+    LINUX_IMAGE_BIN="$kernel_image"
+}
+if [[ "$stage" == all ]]; then
+  for item in sources toolchain firmware busybox kernel; do run_stage "$item"; done
+  if [[ $profile == legacy ]]; then run_stage simulator; fi
+  run_stage image
+  if [[ $profile == legacy ]]; then
+    echo 'Build complete. Run Linux yourself with: bash tools/run-linux.sh'
+  else
+    echo 'Board image: build/platform/de0cv64/opensbi_ram.hex'
+  fi
 else
   case "$stage" in
-    sources|toolchain|firmware|busybox|kernel|simulator) run_stage "$stage" ;;
+    sources|toolchain|firmware|busybox|kernel|simulator|image) run_stage "$stage" ;;
     *) echo "Unknown stage: $stage" >&2; exit 2 ;;
   esac
 fi

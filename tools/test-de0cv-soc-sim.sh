@@ -11,8 +11,8 @@ if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
 fi
 image=${IMAGE:-build/board/selftest/board_selftest_sim.hex}
 [[ -f $image ]] || bash tools/build-board-selftest.sh
-docker run --rm --init -e IMAGE="$image" -e SOC_DEBUG="${SOC_DEBUG:-0}" \
-  -e SOC_CACHE_LINES="${SOC_CACHE_LINES:-32}" -e TLB_ENTRIES="${TLB_ENTRIES:-4}" -e BP_ENABLE="${BP_ENABLE:-1}" \
+docker run --rm --init -e IMAGE="$image" -e SOC_DEBUG="${SOC_DEBUG:-1}" \
+  -e SOC_CACHE_LINES="${SOC_CACHE_LINES:-32}" -e TLB_ENTRIES="${TLB_ENTRIES:-2}" -e BP_ENABLE="${BP_ENABLE:-0}" \
   -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-verilator:5.046}" bash -c '
 set -euo pipefail
 out=build/test/de0cv-soc-sim
