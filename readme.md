@@ -1,9 +1,10 @@
 # MiNTs-CPU
 
-Last updated: 2026-08-20
-
 **MiNTs-CPU** is a SystemVerilog RV64IMAC in-order RISC-V CPU/SoC capable of
-booting OpenSBI, Linux 6.12, and a BusyBox initramfs in Verilator.
+booting OpenSBI, Linux 6.12, and a BusyBox initramfs in Verilator and on a
+DE0-CV FPGA. The validated FPGA profile runs at 20 MHz with 64 MiB SDRAM
+and an interactive UART shell. See the [DE0-CV Linux guide](fpga/de0-cv/soc/README.md)
+for wiring, M1 Mac builds, boot commands, and validation limits.
 
 The project started from the `cpu.kanataso.net` teaching CPU material, but the
 current tree has moved well beyond bring-up: it now uses Tenstorrent Whisper
@@ -11,6 +12,7 @@ lockstep validation and performance counters to guide microarchitectural
 optimization.
 
 - Reference: https://cpu.kanataso.net/
+- DE0-CV FPGA: [Linux / BusyBox guide](fpga/de0-cv/soc/README.md)
 - Current status: [Docs/CURRENT_STATUS.md](Docs/CURRENT_STATUS.md)
 - Linux setup: [Docs/LINUX_SETUP.md](Docs/LINUX_SETUP.md)
 - Linux baseline: [Docs/LINUX_BASELINE.md](Docs/LINUX_BASELINE.md)
@@ -22,6 +24,9 @@ optimization.
 - Third-party notices: [NOTICE](NOTICE)
 
 ## Highlights
+
+Cache sizes and performance figures below describe the simulator configuration.
+The FPGA uses a separate, smaller [board profile](fpga/de0-cv/soc/README.md#動作確認済みの構成).
 
 - RV64IMAC in-order core with M/S/U privilege support
 - Sv39 MMU with shared PTW, ITLB, and DTLB
@@ -39,7 +44,7 @@ optimization.
 
 ![Linux BusyBox demo](Docs/images/linux_busybox_demo.gif)
 
-The current validated target is:
+The simulator validation target is:
 
 ```text
 MiNTs-CPU

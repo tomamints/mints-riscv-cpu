@@ -1,5 +1,8 @@
 # Linux Setup
 
+> DE0-CV実機でのLinux起動は[実機用ガイド](../fpga/de0-cv/soc/README.md)を参照してください。
+> この文書の従来手順・構成値は主にシミュレータ向けです。
+
 Last updated: 2026-08-14
 
 This document describes the current Linux/OpenSBI/BusyBox setup for

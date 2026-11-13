@@ -4,6 +4,7 @@ Terasic DE0-CV（Cyclone V `5CEBA4F23C7N`）向けの回路とツール。
 
 | 内容 | 使用方法 |
 |---|---|
+| **CPU＋Linux＋BusyBox（実機）** | [構成・配線・ビルド・起動・確認方法](soc/README.md) |
 | LED点滅 | [blink/README.md](blink/README.md) |
 | UARTエコー | [uart_echo/README.md](uart_echo/README.md) |
 | 同期RAMの合成プローブ | `mem_probe/`、`tools/build-mem-probe-docker.sh` |
