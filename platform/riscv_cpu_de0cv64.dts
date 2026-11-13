@@ -36,7 +36,10 @@
 			status = "okay";
 			compatible = "riscv";
 			clock-frequency = <20000000>;
-			riscv,isa = "rv64imac_zicsr";
+			/* Linux 6.12 may disable the deprecated ISA-string fallback. */
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "c", "zicntr", "zicsr", "zifencei";
+			riscv,isa = "rv64imac_zicntr_zicsr_zifencei";
 			mmu-type = "riscv,sv39";
 
 			cpu0_intc: interrupt-controller {
