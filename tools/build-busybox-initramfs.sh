@@ -622,8 +622,12 @@ file /init $OUT_DIR/init 0755 0 0
 LIST
 
 # Optional static applications supplied by the standard rebuild.
-for app in life boardctl; do
-  if [[ $app == life ]]; then binary=${LIFE_BIN:-}; else binary=${BOARDCTL_BIN:-}; fi
+for app in life boardctl vgactl; do
+  case $app in
+    life) binary=${LIFE_BIN:-};;
+    boardctl) binary=${BOARDCTL_BIN:-};;
+    vgactl) binary=${VGACTL_BIN:-};;
+  esac
   [[ -n $binary ]] || continue
   [[ $binary == "$repo_root/"* && -x $binary && $binary != *[[:space:]]* ]] || {
     echo "Invalid $app executable path (must be inside repo without whitespace)" >&2; exit 1;
@@ -638,7 +642,7 @@ sed \
   -e "s| $BUSYBOX_BIN | $repo_busybox |" \
   -e "s| $OUT_DIR/init | $repo_init |" \
   "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.linux.list"
-for binary in "${LIFE_BIN:-}" "${BOARDCTL_BIN:-}"; do
+for binary in "${LIFE_BIN:-}" "${BOARDCTL_BIN:-}" "${VGACTL_BIN:-}"; do
   [[ -n $binary ]] || continue
   sed -i.bak "s| $binary | /repo/${binary#"$repo_root"/} |" "$OUT_DIR/initramfs.linux.list"
   rm "$OUT_DIR/initramfs.linux.list.bak"

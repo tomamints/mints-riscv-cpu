@@ -168,6 +168,19 @@ void main(void) {
     *control = 0;
     puts_(gpio_errors ? "GPIO FAIL\n" : "GPIO PASS\n");
     errors += gpio_errors;
+#ifdef BOARD_VGA_TEST
+    volatile unsigned long long *video_cmd=(volatile unsigned long long *)0x40000008UL;
+    volatile unsigned long long *video_status=(volatile unsigned long long *)0x40000010UL;
+    unsigned before=(unsigned)*video_status;
+    int video_errors=(*video_status>>48)!=0x5654ULL;
+    for(unsigned i=0;i<2400;i++)*video_cmd=(unsigned long long)i|(0x23ULL<<16);
+    *video_cmd=0x8000000000000000ULL;
+    unsigned polls=0;
+    while((unsigned)*video_status==before && polls++<100000){}
+    if((unsigned)*video_status!=before+1)++video_errors;
+    puts_(video_errors?"VGA FAIL\n":"VGA PASS\n");
+    errors+=video_errors;
+#endif
 #endif
     errors += timer_test();
     puts_(errors ? "SELFTEST FAIL\n" : "SELFTEST PASS\n");

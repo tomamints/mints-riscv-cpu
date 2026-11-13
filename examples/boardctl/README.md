@@ -52,8 +52,10 @@ Clients open `/dev/uio0` by default. Set `MINTS_GPIO_DEVICE` to select another
 UIO device if numbering changes. A hardware ID check rejects an incompatible
 register before writing it.
 
-Only the first aligned eight-byte register is implemented. UIO maps a 4 KiB
-page for alignment; other offsets in that mapping are not GPIO registers and
+On a GPIO-only image, only the first aligned eight-byte register is implemented.
+The VGA extension advertises itself in bit 47 and implements additional registers
+within the first 32 bytes; see [the video register map](../../fpga/de0-cv/vga/README.md). UIO maps a 4 KiB
+page for alignment; other offsets outside the implemented window are not registers and
 must not be accessed. The register replaces the simulator debug window only
 when `SVCPU_BOARD_GPIO=1`. Generic simulation retains its printf/exit interface;
 the separate read-only JTAG CPU snapshot is unchanged.
@@ -66,7 +68,8 @@ the separate read-only JTAG CPU snapshot is unchanged.
 | 25:16 | SW9..SW0, synchronized | Ignored |
 | 31:26 | Zero | Ignored |
 | 35:32 | KEY3..KEY0, active high when pressed | Ignored |
-| 47:36 | Zero | Ignored |
+| 46:36 | Zero | Ignored |
+| 47 | VGA extension available (GPIO-only image: zero) | Ignored |
 | 63:48 | Hardware ID `0x4d47` | Ignored |
 
 Writes honor byte enables for bytes 0/1 only. The supplied clients use a 16-bit

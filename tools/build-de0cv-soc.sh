@@ -41,8 +41,10 @@ printf 'FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION=%s\n' "$routability" > "$out/
 docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-verilator:5.046}" \
   make -s linux-bootrom-build PLATFORM_PROFILE=de0cv64 > "$out/bootrom-build.log" 2>&1
 cp build/platform/de0cv64/bootrom_linux.hex "$out/quartus/bootrom_linux.hex"
+cp fpga/de0-cv/vga/font8x8.hex "$out/quartus/font8x8.hex"
 
 files=$( { sed '/^#/d;/^$/d' core.f; cat <<'EOF'
+fpga/de0-cv/vga/rtl/vga_text.sv
 rtl/peripheral/board_gpio_mmio.sv
 rtl/peripheral/uart16550_regs.sv
 fpga/de0-cv/rtl/uart_baud_gen.sv
@@ -62,10 +64,10 @@ EOF
 } )
 for f in $files; do cp "$f" "$out/rtl/"; done
 (cd "$out/rtl" && shasum -a 256 *.sv) > "$out/sources.sha256"
-shasum -a 256 "$out/quartus/bootrom_linux.hex" >> "$out/sources.sha256"
+shasum -a 256 "$out/quartus/bootrom_linux.hex" "$out/quartus/font8x8.hex" >> "$out/sources.sha256"
 
 profile=(
-  "SYNTHESIS=1" "SVCPU_BOARD_GPIO=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
+  "SYNTHESIS=1" "SVCPU_BOARD_GPIO=1" "SVCPU_BOARD_VGA=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
   "SVCPU_SOC_CACHE_LINES=$cache_lines"
   "SVCPU_BP_PHT_ENTRIES=32" "SVCPU_BP_BTB_ENTRIES=${BP_BTB_ENTRIES:-4}" "SVCPU_BP_RAS_ENTRIES=4"
   "SVCPU_BP_ENABLE=${BP_ENABLE:-0}"
@@ -103,6 +105,11 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
     printf 'set_location_assignment PIN_%s -to %s\n' "$pin" "$name"
     printf 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to %s\n' "$name"
   done < fpga/de0-cv/soc/gpio-pins.txt
+  while read -r name pin direction; do
+    printf 'set_location_assignment PIN_%s -to %s\n' "$pin" "$name"
+    printf 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to %s\n' "$name"
+    printf 'set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to %s\n' "$name"
+  done < fpga/de0-cv/soc/vga-pins.txt
   echo 'set_location_assignment PIN_K22 -to UART_TXD'
   echo 'set_location_assignment PIN_M21 -to UART_RXD'
   echo 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD'
@@ -114,7 +121,12 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
 echo 'PROJECT_REVISION = "de0cv_soc"' > "$out/quartus/de0cv_soc.qpf"
 {
   grep -vE 'KEY0_N|set_clock_groups|^# JTAG status|^# crosses back' fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.sdc
+  echo '# Conservative source-clock output budget for the resistor-DAC display interface.'
+  echo '# These are board/display assumptions, not a monitor capture-clock model.'
+  echo 'set_output_delay -clock CLOCK_50 -max 5.0 [get_ports {VGA_R[*] VGA_G[*] VGA_B[*] VGA_HS VGA_VS}]'
+  echo 'set_output_delay -clock CLOCK_50 -min 0.0 [get_ports {VGA_R[*] VGA_G[*] VGA_B[*] VGA_HS VGA_VS}]'
   echo 'set_false_path -from [get_ports {SW[*] KEY_N[*]}]'
+
   echo 'set_false_path -from [get_ports {UART_RXD}]'
   echo 'set_false_path -to [get_ports {UART_TXD}]'
   echo '# JTAG mailbox: req/ack toggles cross through two-flop synchronizers;'

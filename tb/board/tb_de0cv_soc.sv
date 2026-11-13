@@ -17,6 +17,8 @@ module tb_de0cv_soc #(
     localparam string PASS_TEXT = "SELFTEST PASS";
     localparam string FAIL_TEXT = "FAIL";
 
+    logic video_clk=0;
+    always #10 video_clk=~video_clk;
     logic clk = 0, tck = 0, power_n = 0;
     always #(CLK_HALF) clk = ~clk;
     logic tdi = 0, cdr = 0, sdr = 0, udr = 0;
@@ -30,7 +32,8 @@ module tb_de0cv_soc #(
     wire [15:0] dq;
     logic [15:0] model_dq;
 
-    de0cv_soc_core #(.BOOTROM_HEX(BOOTROM_HEX), .MAILBOX_WORDS(WORDS)) dut (
+    de0cv_soc_core #(.BOOTROM_HEX(BOOTROM_HEX), .FONT_HEX("fpga/de0-cv/vga/font8x8.hex"), .MAILBOX_WORDS(WORDS)) dut (
+        .video_clk(video_clk),.VGA_R(),.VGA_G(),.VGA_B(),.VGA_HS(),.VGA_VS(),
         .clk(clk), .power_n(power_n), .locked(1'b1),
         .tck(tck), .tdi(tdi), .cdr(cdr), .sdr(sdr), .udr(udr), .vir(vir), .tdo(tdo),
         .LEDR(ledr), .SW(10'b0), .KEY_N(4'hf), .UART_RXD(1'b1), .UART_TXD(txd),

@@ -8,6 +8,7 @@ module tb_board_gpio;
     logic enable;
     Membus bus();
     board_gpio_mmio dut(.clk(clk), .rst_n(rst_n), .switches(sw), .keys_n(keys_n),
+        .video_ready(1'b1),.video_status(64'b0),.video_valid(),.video_data(),
         .leds(leds), .led_enable(enable), .bus(bus));
     task automatic tick;
         @(posedge clk); #1;

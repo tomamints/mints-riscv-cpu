@@ -28,6 +28,8 @@ module de0cv_soc_top #(
     parameter int unsigned MAILBOX_WORDS = 1024
 ) (
     input  wire        CLOCK_50,
+    output wire [3:0] VGA_R,VGA_G,VGA_B,
+    output wire VGA_HS,VGA_VS,
     output wire [9:0]  LEDR,
     input wire [9:0] SW,
     input wire [3:0] KEY_N,
@@ -64,6 +66,7 @@ module de0cv_soc_top #(
     );
 
     de0cv_soc_core #(.BOOTROM_HEX(BOOTROM_HEX), .MAILBOX_WORDS(MAILBOX_WORDS)) soc (
+        .video_clk(CLOCK_50),.VGA_R(VGA_R),.VGA_G(VGA_G),.VGA_B(VGA_B),.VGA_HS(VGA_HS),.VGA_VS(VGA_VS),
         .clk(clk), .power_n(power_n), .locked(locked),
         .tck(tck), .tdi(tdi), .cdr(cdr), .sdr(sdr), .udr(udr), .vir(vir), .tdo(tdo),
         .LEDR(LEDR), .SW(SW), .KEY_N(KEY_N), .UART_RXD(UART_RXD), .UART_TXD(UART_TXD),

@@ -9,3 +9,6 @@ mkdir -p build/apps
 
 "$LIFE_CC" -std=c11 -O2 -Wall -Wextra -Werror -static -march=rv64imac -mabi=lp64 \
   examples/boardctl/boardctl.c -o build/apps/boardctl
+
+"$LIFE_CC" -std=c11 -O2 -Wall -Wextra -Werror -static -march=rv64imac -mabi=lp64 \
+  examples/vgactl/vgactl.c -o build/apps/vgactl

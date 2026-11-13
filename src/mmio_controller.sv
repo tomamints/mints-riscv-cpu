@@ -67,7 +67,11 @@ module mmio_controller (
     endfunction
 
     function Device get_device (input Addr addr);
+`ifdef SVCPU_BOARD_VGA
+        if (DBG_ADDR <= addr && addr <= DBG_ADDR + 64'd31) return DEBUG;
+`else
         if (DBG_ADDR <= addr && addr <= DBG_ADDR + 64'd7) return DEBUG;
+`endif
         if ((MMAP_ROM_BEGIN    <= addr) && (addr <= MMAP_ROM_END))   return ROM;
         if ((MMAP_ACLINT_BEGIN <= addr) && (addr <= MMAP_ACLINT_END))return ACLINT;
         if ((MMAP_PLIC_BEGIN   <= addr) && (addr <= MMAP_PLIC_END))  return PLIC;

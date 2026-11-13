@@ -1,0 +1,14 @@
+VGA_R[0] A9 output
+VGA_R[1] B10 output
+VGA_R[2] C9 output
+VGA_R[3] A5 output
+VGA_G[0] L7 output
+VGA_G[1] K7 output
+VGA_G[2] J7 output
+VGA_G[3] J8 output
+VGA_B[0] B6 output
+VGA_B[1] B7 output
+VGA_B[2] A8 output
+VGA_B[3] A7 output
+VGA_HS H8 output
+VGA_VS G8 output

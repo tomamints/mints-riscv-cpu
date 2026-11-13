@@ -7,8 +7,12 @@ import eei::*;
 // simulation can drive the 20 MHz clock, the cold reset and the JTAG node.
 module de0cv_soc_core #(
     parameter BOOTROM_HEX = "bootrom_linux.hex",   // untyped for Quartus $readmemh
+    parameter FONT_HEX = "font8x8.hex",
     parameter int unsigned MAILBOX_WORDS = 1024
 ) (
+    input wire video_clk,
+    output wire [3:0] VGA_R,VGA_G,VGA_B,
+    output wire VGA_HS,VGA_VS,
     input  wire        clk,
     input  wire        power_n,
     input  wire        locked,
@@ -58,6 +62,12 @@ module de0cv_soc_core #(
         .memory_bus(loader_bus)
     );
 
+    logic video_valid,video_ready;
+    logic [63:0] video_data,video_status;
+    vga_text #(.FONT_HEX(FONT_HEX)) video(.cpu_clk(clk),.video_clk(video_clk),.rst_n(power_n),
+        .cmd_valid(video_valid),.cmd_ready(video_ready),.cmd_data(video_data),.status(video_status),
+        .red(VGA_R),.green(VGA_G),.blue(VGA_B),.hsync(VGA_HS),.vsync(VGA_VS));
+
     // ---------------- CPU ----------------
     wire cpu_rst_n = power_n && cpu_run;
     logic        cpu_ram_valid, cpu_ram_wen;
@@ -77,6 +87,7 @@ module de0cv_soc_core #(
         .DCACHE_DATA_RAM_STYLE(1), .ICACHE_LINE_COUNT(`SVCPU_SOC_CACHE_LINES), .ICACHE_DATA_RAM_STYLE(1)
     ) cpu (
         .clk(clk), .rst(cpu_rst_n),
+        .video_valid_o(video_valid),.video_data_o(video_data),.video_ready_i(video_ready),.video_status_i(video_status),
         .board_switches_i(SW), .board_keys_n_i(KEY_N),
         .board_leds_o(gpio_leds), .board_led_enable_o(gpio_led_enable),
         .uart_rx_i(rxd_sync), .uart_tx_o(UART_TXD),

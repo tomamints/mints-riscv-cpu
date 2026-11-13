@@ -8,7 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <signal.h>
-#include "../common/board_gpio.h"
+#include "../common/vga_text.h"
 
 /* Conway B3/S23, 32 x 16 torus. Padded borders avoid division per cell. */
 enum { W = 32, H = 16, STRIDE = W + 2, SIZE = (W + 2) * (H + 2) };
@@ -80,23 +80,40 @@ static void display(unsigned long gen, int ansi) {
     }
     fflush(stdout);
 }
+static int video_display(struct board_gpio *gpio,unsigned long generation,int paused) {
+    char screen[VGA_CELLS],label[80];memset(screen,' ',sizeof screen);
+    vga_line(screen,1,27,"MINTS CPU / LINUX LIFE");
+    snprintf(label,sizeof label,"GENERATION %lu    %s",generation,paused?"PAUSED":"RUNNING");
+    vga_line(screen,3,24,label);
+    for(unsigned x=23;x<=56;++x)screen[4*80+x]=screen[21*80+x]='-';
+    for(unsigned y=1;y<=H;++y) {
+        unsigned row=y+4;screen[row*80+23]=screen[row*80+56]='|';
+        for(unsigned x=1;x<=W;++x)screen[row*80+23+x]=current[y*STRIDE+x]?'#':' ';
+    }
+    vga_line(screen,24,16,"SW0=1 PAUSE / SW0=0 RUN / KEY0 RESET");
+    vga_line(screen,26,19,"UART REMAINS AVAILABLE / CTRL-C TO EXIT");
+    return vga_show(gpio,screen);
+}
 static volatile sig_atomic_t stop;
 static void stop_board(int signal_number) { (void)signal_number; stop=1; }
-static int board_demo(unsigned long count) {
+static int board_demo(unsigned long count,int video) {
     struct board_gpio gpio;
     if (gpio_open(&gpio)) return 1;
+    if(video && vga_check(&gpio)) { gpio_close(&gpio,1);return 1; }
+    int rc=0;
     struct sigaction action;
     memset(&action,0,sizeof action); action.sa_handler=stop_board;
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGINT,&action,NULL) || sigaction(SIGTERM,&action,NULL)) {
         perror("sigaction"); gpio_close(&gpio,1); return 1;
     }
-    int ansi=isatty(STDOUT_FILENO), old_paused=-1;
+    int ansi=!video && isatty(STDOUT_FILENO), old_paused=-1;
     unsigned long generation=0, completed=0;
     unsigned ticks=0, stable=0;
     unsigned previous=(unsigned)((gpio_read(&gpio)>>32)&1), candidate=previous, reset_key=previous;
     if (ansi) fputs("\033[2J",stdout);
-    display(0,ansi);
+    if(video) { if(video_display(&gpio,0,0)) { gpio_close(&gpio,1);return 1; } }
+    else display(0,ansi);
     puts("SW0=1: pause | KEY0: reset world | LEDs: generation | Ctrl-C: exit"); fflush(stdout);
     while (!stop && completed<count) {
         uint64_t value=gpio_read(&gpio);
@@ -105,16 +122,21 @@ static int board_demo(unsigned long count) {
         else if (stable<2) ++stable;
         if (stable==2) reset_key=candidate;
         if (reset_key && !previous) {
-            seed_grid(); generation=0; ticks=0; display(0,ansi);
+            seed_grid(); generation=0; ticks=0;
+            if(video) { if(video_display(&gpio,0,(value&(UINT64_C(1)<<16))!=0)) {rc=1;break;} }
+            else display(0,ansi);
         }
         previous=reset_key;
         int paused=(value & (UINT64_C(1)<<16))!=0;
         if (paused!=old_paused) {
+            if(video && video_display(&gpio,generation,paused)) {rc=1;break;}
             if (ansi) printf("\033[%d;1H\033[2K",H+3);
             printf("%s\n",paused?"PAUSED":"RUNNING"); fflush(stdout); old_paused=paused;
         }
         if (!paused && ++ticks>=10) {
-            ticks=0; step(); ++generation; ++completed; display(generation,ansi);
+            ticks=0; step(); ++generation; ++completed;
+            if(video) { if(video_display(&gpio,generation,paused)) {rc=1;break;} }
+            else display(generation,ansi);
         }
         gpio_control(&gpio,(uint16_t)(0x400|(generation&0x3ff)));
         struct timespec delay={0,20000000};
@@ -123,17 +145,18 @@ static int board_demo(unsigned long count) {
     gpio_close(&gpio,1);
     if (ansi) printf("\033[%d;1H\033[2K",H+4);
     printf("Checksum: %016" PRIx64 "\n",checksum());
-    return 0;
+    return rc;
 }
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--self-test")) return self_test();
     int demo = argc >= 2 && !strcmp(argv[1], "--demo");
+    int video=argc>=2 && !strcmp(argv[1],"--vga");
     int board = argc >= 2 && !strcmp(argv[1], "--board");
-    if (argc < 2 || argc > 3 || (!demo && !board && strcmp(argv[1], "--bench"))) {
-        fprintf(stderr, "Usage: life --demo [generations] | --board [generations] | --bench [generations] | --self-test\n");
+    if (argc < 2 || argc > 3 || (!demo && !board && !video && strcmp(argv[1], "--bench"))) {
+        fprintf(stderr, "Usage: life --demo [generations] | --board [generations] | --vga [generations] | --bench [generations] | --self-test\n");
         return 2;
     }
-    unsigned long count = (demo || board) ? 40 : 100;
+    unsigned long count = (demo || board || video) ? 40 : 100;
     if (argc == 3) {
         char *end; errno = 0; count = strtoul(argv[2], &end, 10);
         if (errno || !*argv[2] || *end || argv[2][0] == '-' || !count || count > 1000000) {
@@ -141,7 +164,7 @@ int main(int argc, char **argv) {
         }
     }
     seed_grid();
-    if (board) return board_demo(count);
+    if (board || video) return board_demo(count,video);
     if (demo) {
         int ansi = isatty(STDOUT_FILENO);
         if (ansi) fputs("\033[2J", stdout);
