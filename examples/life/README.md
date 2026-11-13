@@ -83,8 +83,13 @@ periodic ticks), self-tests passed and checksums matched the native/Python
 reference for one and 100 benchmark generations and four demo generations.
 The shell remained responsive after the application exited.
 
-One 100-generation run measured 0.748945750 seconds for 51,200 cell updates
-(68,362 updates/s), with checksum `9b6d74a5221ad510`. This is a single application
+One 100-generation run measured 0.769545300 seconds for 51,200 cell updates
+(66,532 updates/s), with checksum `9b6d74a5221ad510`. This is a single application
 measurement using the build script's `-O2` settings, not a statistical performance
 study or a comparison against another CPU. A clean rebuild can change the
 binary and elapsed time; the deterministic checksum should remain the same.
+
+The GPIO-enabled board also completed `life --board 4` with checksum
+`401a90e3423e2d3c`, restoring diagnostic LED ownership afterwards. Input readings
+were SW=0 and no keys pressed. Actual switch/button transitions were not manually
+performed in that run; the native client tests exercise those control paths.

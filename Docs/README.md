@@ -14,6 +14,7 @@ separate; use the appropriate profile when building.
 | What was actually tested | [Test status](TEST_STATUS.md) |
 | Meaning of the Linux boot milestones | [Linux validation scope](LINUX_MILESTONES.md) |
 | Simulation correctness / performance workloads | [Linux baseline](LINUX_BASELINE.md) |
+| Linux UIO / switch-button input / LED control | [Board GPIO API and apps](../examples/boardctl/README.md) |
 | Standalone C application and elapsed-time workload | [MiNTs Life](../examples/life/README.md) |
 | Simulation performance counter definitions | [Performance counters](PERFORMANCE_COUNTERS.md) |
 | Frontend prediction and historical measurements | [Frontend branch BTB](FRONTEND_BRANCH_BTB.md) |

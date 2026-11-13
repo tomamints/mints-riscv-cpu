@@ -94,3 +94,11 @@ pause/resume/reset and signal cleanup. The RTL unit test checks all byte masks,
 read-only fields, synchronization latency and reset/response behavior. The
 board-path simulation exercises CPU MMIO access alongside the JTAG/SDRAM path.
 These tests are separate from fitted timing and physical switch/LED validation.
+
+## Physical validation scope
+
+The GPIO-enabled DE0-CV image passes all-corner 20 MHz timing and 66-pin checks.
+Linux identified the UIO device and actual register self-tests, LED-control
+readback, a four-generation Life board-mode checksum and ownership restoration
+passed. The switch/key readings were zero during that run. Manual input
+transitions and optical LED observation are not part of these automatic results.

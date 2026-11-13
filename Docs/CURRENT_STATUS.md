@@ -39,17 +39,30 @@ board cache data arrays use synchronous M10K RAM. The board also enables
 read-only JTAG CPU snapshots. Its 100 Hz kernel setting changes interrupt
 frequency, not CPU frequency or the `riscv_clocksource` timebase.
 
+## Board GPIO
+
+The board-only `SVCPU_BOARD_GPIO=1` build exposes a small MMIO peripheral at
+`0x40000000` through Linux UIO. Switch/key inputs use two-stage synchronization;
+applications can temporarily replace the diagnostic LED display. Fault bits
+remain visible. The simulator's debug/exit window is retained in generic builds.
+
+Physical tests passed GPIO register read/write self-test, LED ownership switching,
+Life GPIO-mode generation/checksum and restoration on exit. Initial switch/key
+readings were zero. Manual input transitions and optical LED observation were
+not performed; native tests cover pause/resume, button reset and signal cleanup.
+See [GPIO API](../examples/boardctl/README.md).
+
 ## Physical implementation
 
 | Metric | Validated DE0-CV build |
 |---|---:|
 | Device | Cyclone V 5CEBA4F23C7N |
-| ALMs | 17,081 / 18,480 (92%) |
-| Registers | 13,707 |
+| ALMs | 17,049 / 18,480 (92%) |
+| Registers | 13,742 |
 | RAM blocks | 55 / 308 |
-| Pins checked | 52 |
+| Pins checked | 66 |
 | CPU / SDRAM controller / timer clock | 20 MHz |
-| Worst setup slack | +3.681 ns |
+| Worst setup slack | +3.750 ns |
 | Timing checks | Setup/hold/recovery/removal pass at all four corners |
 
 This is a passing 20 MHz implementation, not an Fmax measurement. Rebuilt

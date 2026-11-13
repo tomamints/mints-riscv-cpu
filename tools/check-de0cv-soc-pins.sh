@@ -3,6 +3,7 @@
 # (SDRAM, clock, LEDs as the SDRAM test; UART on JP1-8/JP1-10).
 set -euo pipefail
 script_root="$(cd "$(dirname "$0")/.." && pwd)"
+[[ -s "$script_root/fpga/de0-cv/soc/gpio-pins.txt" ]] || { echo "PIN FAIL: GPIO pin manifest missing" >&2; exit 1; }
 pinfile="$1"
 fitfile="${pinfile%.pin}.fit.rpt"
 count=0
@@ -81,4 +82,5 @@ DRAM_UDQM N8 output
 PINS
 cat "$script_root/fpga/de0-cv/soc/gpio-pins.txt"
 )
+[[ $count == 66 ]] || { echo "PIN FAIL: expected 66 checked pins, found $count" >&2; exit 1; }
 echo "PIN PASS: $count board pins, location/direction/I/O standard"

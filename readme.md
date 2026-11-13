@@ -35,9 +35,9 @@ an idle interval. The kernel uses the normal `riscv_clocksource`, with 100 Hz
 periodic scheduler ticks. The CPU and hardware timer remain at 20 MHz;
 there is no `clocksource=jiffies` override.
 
-The FPGA implementation uses **17,081 / 18,480 ALMs (92%)** and passes
+The FPGA implementation uses **17,049 / 18,480 ALMs (92%)** and passes
 setup, hold, recovery and removal checks at all four timing corners at
-20 MHz. Worst setup slack is **+3.681 ns**. This establishes the tested
+20 MHz. Worst setup slack is **+3.750 ns**. This establishes the tested
 20 MHz operating point, not a measured maximum frequency.
 
 Verilator also boots Linux through `BUSYBOX-TEST-PASS`. Separate historical
@@ -124,6 +124,27 @@ Life world over UART. Benchmark mode runs
 without display in the timed loop and reports elapsed time plus a deterministic
 checksum. It is a specific application workload, not a CoreMark score or CPI
 measurement.
+
+## Linux-to-board GPIO
+
+The board exposes its ten switches, four user buttons and application LED
+controls through a small MMIO register and Linux UIO. From the Linux shell:
+
+```sh
+boardctl status
+boardctl leds 0x155
+boardctl diagnostics
+life --board 40
+```
+
+Life's board mode uses SW0 to pause/resume, KEY0 to reset the world, and LEDs
+to display the generation. The normal diagnostic display is restored on exit;
+sticky fault indicators remain visible in application mode.
+
+Physical checks verified register readback, a four-generation GPIO-mode run,
+its checksum and restoration of LED ownership. Pause/reset input transitions
+were exercised in the native model; manual switch transitions and optical LED
+observation are separate checks. See [GPIO interface and controls](examples/boardctl/README.md).
 
 ## Architecture and sources
 

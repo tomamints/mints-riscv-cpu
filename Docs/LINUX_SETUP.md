@@ -18,6 +18,11 @@ riscv64 floating-point ABI userspace is not suitable for this CPU.
 | Kernel fragments | `linux_minbringup.fragment` | Minimum fragment plus `linux_de0cv.fragment` |
 | Generated platform directory | `build/platform/` | `build/platform/de0cv64/` |
 
+The board profile also enables `CONFIG_UIO` and `CONFIG_UIO_PDRV_GENIRQ`. Its
+DTS binds `mints,de0cv-gpio` to the built-in UIO driver using the board boot
+argument, producing `/dev/uio0` for `boardctl` and `life --board`. The eight-byte
+register requires the GPIO-enabled FPGA image. See [GPIO setup](../examples/boardctl/README.md).
+
 The board kernel uses 100 Hz periodic scheduler ticks, with NO_HZ_IDLE and
 HIGH_RES_TIMERS disabled, while retaining `riscv_clocksource`. The hardware
 counter and CPU both run at 20 MHz. The board DTS includes explicit ISA base
@@ -54,7 +59,7 @@ PLATFORM_PROFILE=de0cv64 bash tools/rebuild-linux.sh all
 ```
 
 This produces the interactive board RAM image, including the static
-[MiNTs Life C application](../examples/life/README.md) as `/bin/life`. It does not build Quartus
+[MiNTs Life C application](../examples/life/README.md) as `/bin/life`, plus the GPIO client `/bin/boardctl`. It does not build Quartus
 hardware or program the FPGA. Follow the [board guide](../fpga/de0-cv/soc/README.md)
 for prerequisites, wiring, synthesis, timing signoff, SRAM programming and UART.
 

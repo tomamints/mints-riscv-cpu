@@ -12,6 +12,7 @@ It lists established behavior and boundaries rather than development plans.
 | FPGA timing closure | All four corners pass for the documented 20 MHz artifact |
 | JTAG RAM loader | Clears RAM, verifies all image words, releases CPU after successful verification |
 | Standalone C application | MiNTs Life demo and checksum-validated elapsed-time workload run under board Linux |
+| Board GPIO through Linux UIO | Input readings, LED register control and Life GPIO-mode integration verified; manual transitions/optical checks separate |
 | Physical UART input/output | Verified at 115200 8N1 |
 | Simulator branch prediction | PHT, BTB and RAS available; board profile disables prediction |
 | Write-through D-cache | Selected baseline |

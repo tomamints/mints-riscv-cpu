@@ -39,6 +39,7 @@ append their physical UART, SDRAM and JTAG integration files to the core list.
 | `src/aclint_memory.sv` | Software interrupt and timer registers |
 | `src/plic.sv` | PLIC-compatible external interrupt controller |
 | `src/uart_ns16550.sv` | Simulator UART backend |
+| `rtl/peripheral/board_gpio_mmio.sv` | Board-only GPIO register and input synchronization |
 | `rtl/peripheral/uart16550_serial.sv` | Physical serial UART integration |
 | `rtl/bus/membus_sdram_adapter.sv` | Membus-to-SDRAM request/response path |
 | `src/top.sv` | Simulator SoC top |

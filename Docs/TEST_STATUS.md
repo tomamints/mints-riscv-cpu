@@ -10,10 +10,11 @@ all regressions on the latest commit.
 |---|---|---|
 | DE0-CV Linux 6.12 + BusyBox | Pass | Final 20 MHz board profile, 64 MiB SDRAM, normal `riscv_clocksource`, 100 Hz periodic ticks |
 | MiNTs Life C application | Pass on board | Self-test, 1/100-generation benchmark checksums, four-generation UART demo, shell responsive after exit; native C also checked against independent Python model |
+| Board GPIO / UIO | Pass for register access and application integration | Hardware ID, control readback, LED ownership, Life four-generation checksum and restoration; physical switch transitions/optical LED checks not performed |
 | Physical UART interaction | Pass | Repeated commands at 115200 8N1, not just a shell banner |
 | Board userspace checks | Pass | CPU loop, file create/read/remove, 1 MiB zero-data processing, sleep, response after 30 seconds idle |
 | Board time progression | Short comparison passed | Linux 21.96 s vs host 21.92 s; not a precision calibration |
-| Quartus implementation | Pass | 17,081 ALMs, all four corners pass setup/hold/recovery/removal at 20 MHz, 52 pins checked |
+| Quartus implementation | Pass | 17,049 ALMs, all four corners pass setup/hold/recovery/removal at 20 MHz, 66 pins checked |
 | JTAG image transfer | Pass | Final image's 497,281 words written and read back before CPU release |
 | 64-bit timer probe | Pass on board | High bits, low-word rollover, monotonic reads and timer-compare expiry/clear |
 | Verilator Linux autotest on M1 | Pass | `BUSYBOX-TEST-PASS` in the legacy simulator profile |
@@ -69,9 +70,17 @@ The directed `fence.i` script uses a controlled memory-latency shim. It can also
 exercise the SDRAM model path with `RAM_BACKEND=sdram_model`. These are separate
 regressions, not prerequisites that the normal Linux rebuild automatically runs.
 
+Native GPIO-client tests cover pause/resume, debounced reset, ID rejection and
+SIGINT restoration using a file-backed register:
+
+```sh
+python3 tools/test-board-apps.py
+```
+
 Useful board-interface simulations:
 
 ```sh
+bash tools/test-board-gpio.sh
 bash tools/test-jtag-block-mailbox.sh
 bash tools/test-de0cv-soc-sim.sh
 bash tools/test-de0cv-uart.sh
