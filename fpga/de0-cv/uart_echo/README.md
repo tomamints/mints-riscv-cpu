@@ -1,11 +1,10 @@
 # G3: DE0-CV physical UART echo (no CPU, no SDRAM)
 
-Status (2026-11-09): RTL lint and core/top simulations passed; Quartus Fit,
-all-corner timing and constraint/pin audits passed. SRAM programming reached
-100% / Done / exit 0. Physical UART echo tests passed on the connected FTDI TTL232R-3V3.
-Operator LED observation and the optional BREAK diagnostic remain pending.
-GPIO 3.3 V evidence is recorded in [GPIO_VOLTAGE_EVIDENCE.md](GPIO_VOLTAGE_EVIDENCE.md).
-A PASS here is a physical-layer echo PASS, not a 16550 or Linux UART PASS.
+This standalone circuit has passed RTL simulation, Quartus Fit, all-corner
+timing/pin checks and physical UART echo on a 3.3 V FTDI adapter. It does not
+include a CPU or SDRAM. For the integrated Linux UART shell, use the
+[SoC guide](../soc/README.md). GPIO signal-level references are in
+[GPIO_VOLTAGE_EVIDENCE.md](GPIO_VOLTAGE_EVIDENCE.md).
 
 ## What it does
 - 115200 8N1 (CLOCK_50, REF 3.6864 MHz, divisor 2). Every correctly framed byte
@@ -25,7 +24,7 @@ A PASS here is a physical-layer echo PASS, not a 16550 or Linux UART PASS.
 Do not connect pin 11 (VCC5) or the adapter's power wire.
 Source: Terasic DE0-CV User Manual (2015-05-04), Figure 3-12 and Table 3-7.
 
-## Flow (after review GO only)
+## Build and run
 ```sh
 bash tools/test-uart-echo-sim.sh                 # lint + core TB + board-top simulation
 bash tools/build-de0cv-uart-echo-docker.sh       # Quartus compile + check_constraints.tcl + RBF
@@ -55,6 +54,5 @@ build/venv-uart/bin/python tools/uart_echo_test.py --port /dev/cu.usbserial-FTF2
 4096 bytes in 16-byte chunks, 4096 bytes continuous, and final silence all
 passed with exit 0 and complete byte comparison. Log:
 `build/logs/uart-echo-20261109-212209.log`.
-The first JTAG scan after wiring timed out; retry identified the device and
-SRAM programming reached 100% / Done / exit 0 before the host test.
-This confirms physical echo, not CPU/16550 IRQ or Linux on the FPGA.
+These results cover this standalone echo circuit. Integrated CPU/16550 IRQ
+and Linux UART operation are separately described in the [SoC guide](../soc/README.md).

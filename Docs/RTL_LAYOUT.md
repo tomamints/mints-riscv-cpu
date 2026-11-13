@@ -1,71 +1,50 @@
 # RTL Layout
 
-Last updated: 2026-08-14
+The current source list is `core.f`. Shared RTL lives in both `src/` and
+`rtl/`; FPGA-specific files are under `fpga/de0-cv/`. Board build scripts
+append their physical UART, SDRAM and JTAG integration files to the core list.
 
-This document describes the current source layout and the intended direction for
-future cleanup.
+| Directory | Contents |
+|---|---|
+| `src/` | Pipeline, execution, CSRs/PMP, memory bus and simulator SoC |
+| `rtl/cache/` | I/D-cache implementations |
+| `rtl/mmu/` | TLB and instruction/data translation |
+| `rtl/bus/` | CPU Membus-to-SDRAM adapter |
+| `rtl/peripheral/` | 16550 registers and physical serial backend |
+| `fpga/de0-cv/soc/rtl/` | Physical board SoC and top |
+| `fpga/de0-cv/sdram/rtl/` | Native SDRAM controller, bridge and PLL |
+| `fpga/de0-cv/rtl/` | UART PHY, loader and JTAG mailbox |
+| `fpga/de0-cv/mem_probe/rtl/` | Synchronous byte-enable RAM primitive and synthesis probes |
+| `tb/` | Verilator harnesses and SystemVerilog testbenches |
+| `core/test/`, `tb/sw/` | Bare-metal and regression programs |
+| `platform/` | Boot ROM, DTS files and kernel fragments |
+| `tools/whisper_lockstep/` | Architectural reference integration |
 
-## Current Layout
-
-```text
-src/                 SystemVerilog RTL
-tb/                  Verilator C++ harness and testbench code
-tb/unit/             unit-level SystemVerilog testbenches
-core/test/           bare-metal and regression test programs
-platform/            boot ROM, payloads, DTB, and platform files
-tools/               build and analysis helpers
-tools/whisper_lockstep/
-                     Whisper reference wrapper
-third_party/patches/ third-party compatibility patches
-Docs/                public project documentation
-```
-
-`src/` should contain RTL only. Simulation harnesses and fixture files should
-live outside `src/`.
-
-## Important RTL Files
+## Important modules
 
 | File | Role |
 |---|---|
-| `src/core.sv` | 5-stage pipeline integration |
-| `src/inst_fetcher.sv` | frontend, ITLB, I-cache, branch prediction interface |
-| `src/memunit.sv` | LSU, DTLB, PMP, D-cache request path |
-| `src/sv39_ptw.sv` | Sv39 page table walker |
-| `src/tlb.sv` | small TLB structure |
-| `src/branch_predictor.sv` | PHT, BTB, and RAS-based prediction |
-| `src/csrunit.sv` | privileged CSRs and trap/interrupt handling |
-| `src/pmp_checker.sv` | physical memory protection checks |
-| `src/mmio_controller.sv` | MMIO decode |
-| `src/plic.sv` | minimal PLIC-compatible interrupt controller |
-| `src/aclint_memory.sv` | MSWI/MTIMER |
-| `src/uart_ns16550.sv` | minimal NS16550A-compatible UART |
-| `src/top.sv` | SoC top-level integration |
+| `src/core.sv` | CPU pipeline integration |
+| `src/inst_fetcher.sv` | Instruction fetch, translation/cache and prediction integration |
+| `src/memunit.sv` | Load/store, translation and access sequencing |
+| `src/sv39_ptw.sv` | Sv39 page-table walker |
+| `rtl/mmu/tlb.sv` | Configurable associative TLB |
+| `rtl/cache/icache.sv` | Configurable instruction cache |
+| `rtl/cache/dcache.sv` | Data cache and store-buffer integration |
+| `fpga/de0-cv/mem_probe/rtl/ram_1r1w_be64.sv` | Synchronous 64-bit RAM with byte enables |
+| `src/branch_predictor.sv` | PHT, BTB and RAS prediction |
+| `src/csrunit.sv` | Privileged CSRs, traps and interrupt state |
+| `src/pmp_region_decode.sv` | PMP region decoding |
+| `src/pmp_checker.sv` | Physical access checks |
+| `src/aclint_memory.sv` | Software interrupt and timer registers |
+| `src/plic.sv` | PLIC-compatible external interrupt controller |
+| `src/uart_ns16550.sv` | Simulator UART backend |
+| `rtl/peripheral/uart16550_serial.sv` | Physical serial UART integration |
+| `rtl/bus/membus_sdram_adapter.sv` | Membus-to-SDRAM request/response path |
+| `src/top.sv` | Simulator SoC top |
+| `fpga/de0-cv/soc/rtl/de0cv_soc_core.sv` | Board SoC integration |
+| `fpga/de0-cv/soc/rtl/de0cv_soc_top.sv` | Board PLL, pins and virtual JTAG wrapper |
+| `tb/tb_verilator.cpp` | Main Verilator C++ harness |
 
-## Build Lists
-
-The Verilator build uses `core.f` as the RTL file list. Keep `core.f` explicit
-so that RTL changes are reviewable.
-
-The C++ Verilator harness is:
-
-```text
-tb/tb_verilator.cpp
-```
-
-## Future Direction
-
-The current `src/` layout is stable enough for Linux and lockstep work. Larger
-directory moves should wait until there is a clear payoff. If the RTL is split
-later, use a staged structure such as:
-
-```text
-rtl/core/
-rtl/frontend/
-rtl/lsu/
-rtl/mmu/
-rtl/cache/
-rtl/soc/
-rtl/common/
-```
-
-Any future move should preserve the Linux and Whisper baselines at each step.
+Cache and TLB capacities are profile parameters. File locations do not imply
+a fixed cache size; see [current configurations](CURRENT_STATUS.md).

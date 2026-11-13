@@ -1,6 +1,6 @@
 # Native 16-bit SDR SDRAM controller
 
-`rtl/sdram_native16.sv` provides a single outstanding halfword transaction,
+`fpga/de0-cv/sdram/rtl/sdram_native16.sv` provides a single outstanding halfword transaction,
 byte write enables, explicit row closing and periodic refresh. It uses a fixed
 `CLK_HZ=50000000` (default) or `CLK_HZ=20000000`, burst length 1 and CAS
 latency 3. Initialization waits 200 us; refresh admission reserves 16 cycles
@@ -52,7 +52,7 @@ timing, retention, or CPU integration.
 
 ## Standalone 64-bit bridge
 
-`rtl/sdram_bridge64.sv` serializes each aligned 64-bit request into four native
+`fpga/de0-cv/sdram/rtl/sdram_bridge64.sv` serializes each aligned 64-bit request into four native
 halfword operations. It accepts CPU byte addresses only in
 `0x80000000..0x83fffff8`. Out-of-range or unaligned requests return
 `rsp_error=1` without issuing a native operation. Reads assemble little-endian
@@ -62,9 +62,10 @@ halfwords; writes split eight byte enables into four pairs.
 bash tools/test-sdram-bridge64.sh
 ```
 
-This bridge has a standalone request/response interface. It is not connected
-to the CPU's Membus. The CPU access-fault path and AMO serialization must be
-implemented before such a connection is made. Bridge and native controller
+This bridge has a standalone request/response interface. The integrated
+[Linux SoC](../soc/README.md) connects it to the CPU through
+`rtl/bus/membus_sdram_adapter.sv`; the bridge itself does not implement Membus.
+CPU access sequencing and error propagation belong to the adapter/CPU path. Bridge and native controller
 must share cold reset and synchronous `soft_reset` so abandoned replies cannot
 be mistaken for new requests. Native replies must occur after acceptance,
 never combinationally in the acceptance cycle.

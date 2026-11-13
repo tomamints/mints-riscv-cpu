@@ -1,6 +1,9 @@
 # Frontend Branch BTB Optimization
 
-Last updated: 2026-08-20
+Scope: frontend design reference and historical simulator measurements. Branch
+prediction is disabled in the validated DE0-CV profile; these scores do not
+represent its performance. The source can retain an optimization while the
+board profile disables its optional prediction structures.
 
 This document summarizes the Phase 11 frontend optimization work in MiNTs-CPU:
 fetch-side conditional branch BTB lookup, fetch/issue FIFO bypass, and I-cache
@@ -146,16 +149,19 @@ The optimization required explicit `fence.i` handling for frontend prediction
 state. `fence.i` can follow instruction-memory modification, so the branch
 predictor must not keep stale BTB/PHT/RAS state across that boundary.
 
-MiNTs-CPU treats `fence.i` as a precise MEM-stage frontend invalidation event:
+In the current write-through path, `fence.i` waits for older data-memory
+operations to become quiescent before completing the MEM-stage invalidation:
 
 ```text
 fence.i reaches MEM
+  -> drain older stores and wait for data-memory quiescence
+  -> complete once the instruction can leave MEM
   -> redirect fetch to fence.i + 4
   -> invalidate I-cache
   -> invalidate branch predictor state
 ```
 
-Validation after the fix:
+Historical frontend validation (not a fresh run on the current checkout):
 
 ```text
 make build        PASS
@@ -165,9 +171,10 @@ make test-output  PASS
 Whisper lockstep  PASS
 ```
 
-## Remaining Work
+## Delayed-memory ordering
 
-The common assembly benchmark no longer shows the earlier branch-frequency
-proportional gap against Rocket. Remaining frontend work should now focus on
-broader Linux workloads and predictor quality, especially cases where BTB/RAS
-accuracy changes after fetch scheduling improvements.
+An ordinary ISA test with short memory response times does not cover every
+posted-store schedule. The current store-drain condition is also exercised by
+`tools/test-fence-i-posted-store.sh`, including controlled latency and an optional
+SDRAM-model backend. Prediction invalidation alone is insufficient if an older
+instruction-memory write has not yet become visible. See [test status](TEST_STATUS.md).

@@ -1,10 +1,11 @@
 # Third-party Patches
 
-Last updated: 2026-08-14
-
 This directory contains small local patches needed to reproduce MiNTs-CPU
 verification flows with third-party tools that are not vendored in this
 repository.
+
+The ordinary Linux/FPGA rebuild does not fetch or build Whisper. See the
+[reference integration prerequisites](../../tools/whisper_lockstep/README.md).
 
 ## Tenstorrent Whisper
 

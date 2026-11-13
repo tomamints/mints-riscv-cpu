@@ -1,10 +1,8 @@
-# RVA23 Direction Checklist
-
-Last updated: 2026-08-14
+# Architectural Scope and RVA23 Checklist
 
 MiNTs-CPU does not currently claim RVA23 compliance. This checklist records the
-gap between the current RV64IMAC Linux-capable implementation and a future
-profile-oriented target.
+boundaries of the current RV64IMAC Linux-capable implementation. Linux boot
+is not evidence of complete profile compliance.
 
 ## Current Claimed Scope
 
@@ -31,12 +29,11 @@ profile-oriented target.
 | full RVA23 profile | not claimed |
 | SMP/cache coherence | not implemented |
 | complete architectural certification | not claimed |
-| FPGA timing closure | not completed |
 
-## Future Checks
 
-- run a profile-oriented architectural test suite
-- document exact supported extensions and CSRs
-- audit trap/interrupt behavior against the privileged specification
-- audit memory-ordering behavior beyond the current Linux path
-- add FPGA timing and resource reports
+## Physical implementation
+
+The documented DE0-CV build passes timing checks at 20 MHz and runs Linux with
+an interactive UART shell. Physical timing closure and ISA/profile conformance
+are separate properties; passing one does not prove the other. See
+[current status](CURRENT_STATUS.md) and [test status](TEST_STATUS.md).

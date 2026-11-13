@@ -35,7 +35,7 @@ reset解除2クロック、パラメータ1と3の境界も検査する。
 
 ## 合成
 
-M1での環境構築は[実行記録](QUARTUS_M1_SETUP.md)を参照。公式の本体とCyclone V
+M1での環境構築は[環境セットアップ](QUARTUS_M1_SETUP.md)を参照。公式の本体とCyclone V
 パッケージをダウンロードして、Docker Desktop起動後に実行:
 
 ```bash
@@ -66,9 +66,8 @@ local/fpga-tools/bin/openFPGALoader --detect -c usb-blaster
 
 openFPGALoader v1.2.0をソースからビルドする。依存ライブラリとツールは
 `local/`、生成物とパッケージ一覧は`build/`内に置く。
-2026-11-09にM1と実機USB-Blasterで3回連続、IDCODE `0x02b050dd`
-（Cyclone V A4）を読み取れた。最初の読出しはタイムアウトしたため、
-USB認識だけをもってJTAG成功とはしない。その後、下記のSRAM書込みも成功した。
+検出時はCyclone V A4のIDCODE `0x02b050dd`を確認する。
+USBデバイスとしての認識と、JTAG経由でのID読出しは別の確認である。
 
 USB-Blaster経由でデバイス型番を確認後、上記のRBFを揮発性構成へ書き込む。
 合成が完了したらリポジトリ直下で実行:
@@ -86,7 +85,7 @@ LEDR0が0.5秒間隔で点灯・消灯することを目視確認する。
 
 Quartus Full Compilation成功、19 ALMs / 28 registers。50MHzで最小setup slack
 15.813ns、hold slack 0.191ns、全4コーナーでTNS=0。SRAM書込みは100% / Done / exit 0。
-ユーザーが実機LEDR0の点滅を確認した。LinuxやUARTの実機確認とは別の到達点。
+実機LEDR0の点滅を確認済み。LinuxやUARTを含む構成は[SoCガイド](../soc/README.md)を参照。
 
 警告4件: Quartusが`async_reg`属性を認識しない2件、LiteのLogicLockライセンス案内、
 LEDR0のdrive strength/slew rate未指定。実際のFitでは2段同期チェーン1本を検出し、
