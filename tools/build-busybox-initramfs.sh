@@ -621,6 +621,14 @@ slink /bin/printf busybox 0777 0 0
 file /init $OUT_DIR/init 0755 0 0
 LIST
 
+# Optional standalone Linux application, supplied by the standard rebuild.
+if [[ -n ${LIFE_BIN:-} ]]; then
+  [[ $LIFE_BIN == "$repo_root/"* && -x $LIFE_BIN && $LIFE_BIN != *[[:space:]]* ]] || {
+    echo 'LIFE_BIN must be an executable path inside the repo without whitespace' >&2; exit 1;
+  }
+  printf 'file /bin/life %s 0755 0 0\n' "$LIFE_BIN" >> "$OUT_DIR/initramfs.list"
+fi
+
 repo_init="/repo/${OUT_DIR#"$repo_root"/}/init"
 repo_busybox="/repo/${BUSYBOX_BIN#"$repo_root"/}"
 
@@ -628,6 +636,10 @@ sed \
   -e "s| $BUSYBOX_BIN | $repo_busybox |" \
   -e "s| $OUT_DIR/init | $repo_init |" \
   "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.linux.list"
+if [[ -n ${LIFE_BIN:-} ]]; then
+  sed -i.bak "s| $LIFE_BIN | /repo/${LIFE_BIN#"$repo_root"/} |" "$OUT_DIR/initramfs.linux.list"
+  rm "$OUT_DIR/initramfs.linux.list.bak"
+fi
 
 if [[ "$SKIP_CPIO" != "1" ]]; then
   "$OUT_DIR/gen_init_cpio" "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.cpio"

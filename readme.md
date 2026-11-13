@@ -108,6 +108,23 @@ Programming configures **volatile SRAM only**. The loader clears SDRAM,
 writes the image, reads back every image word, and starts the CPU only after
 verification succeeds. Power-off loses both FPGA configuration and RAM data.
 
+## A userspace application
+
+The standard Linux rebuild also embeds [MiNTs Life](examples/life/README.md), a
+standalone C program cross-compiled for RV64IMAC/LP64. From the Linux shell:
+
+```sh
+life --demo 40
+life --bench 100
+```
+
+Both modes have been exercised on the physical board, with checksum validation
+and continued shell operation after exit. The demo animates a 32 × 16 Game of
+Life world over UART. Benchmark mode runs
+without display in the timed loop and reports elapsed time plus a deterministic
+checksum. It is a specific application workload, not a CoreMark score or CPI
+measurement.
+
 ## Architecture and sources
 
 | Location | Contents |

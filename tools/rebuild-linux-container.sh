@@ -84,7 +84,8 @@ busybox() {
 # "default" BusyBox shell on ttyS0. Board outputs are isolated from legacy.
 kernel() {
   local out=/repo/build/linux-build-busybox-$mode$suffix
-  INIT_SCRIPT_MODE=$mode SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
+  bash tools/build-life.sh
+  INIT_SCRIPT_MODE=$mode LIFE_BIN=/repo/build/apps/life SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
   mkdir -p "$out" build/external/linux-out
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- allnoconfig
   (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_minbringup.fragment)

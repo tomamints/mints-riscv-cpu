@@ -9,6 +9,7 @@ all regressions on the latest commit.
 | Check | Recorded result | Scope / limitation |
 |---|---|---|
 | DE0-CV Linux 6.12 + BusyBox | Pass | Final 20 MHz board profile, 64 MiB SDRAM, normal `riscv_clocksource`, 100 Hz periodic ticks |
+| MiNTs Life C application | Pass on board | Self-test, 1/100-generation benchmark checksums, four-generation UART demo, shell responsive after exit; native C also checked against independent Python model |
 | Physical UART interaction | Pass | Repeated commands at 115200 8N1, not just a shell banner |
 | Board userspace checks | Pass | CPU loop, file create/read/remove, 1 MiB zero-data processing, sleep, response after 30 seconds idle |
 | Board time progression | Short comparison passed | Linux 21.96 s vs host 21.92 s; not a precision calibration |

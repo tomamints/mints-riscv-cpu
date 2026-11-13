@@ -53,7 +53,8 @@ in [Rebuild from clean](REBUILD_FROM_CLEAN.md).
 PLATFORM_PROFILE=de0cv64 bash tools/rebuild-linux.sh all
 ```
 
-This produces the interactive board RAM image. It does not build Quartus
+This produces the interactive board RAM image, including the static
+[MiNTs Life C application](../examples/life/README.md) as `/bin/life`. It does not build Quartus
 hardware or program the FPGA. Follow the [board guide](../fpga/de0-cv/soc/README.md)
 for prerequisites, wiring, synthesis, timing signoff, SRAM programming and UART.
 

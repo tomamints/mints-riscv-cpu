@@ -13,6 +13,11 @@ specified in the [board guide](../fpga/de0-cv/soc/README.md).
 | DE0-CV physical FPGA | 20 MHz, 64 MiB SDRAM, 100 Hz periodic Linux ticks | BusyBox shell, repeated UART commands, CPU/file/zero-data load, sleep and idle recovery |
 | Whisper reference comparison | Historical simulation configurations | Over 61 million compared architectural instructions through BusyBox autotest; not rerun for the final board profile |
 
+The standard kernel rebuild also embeds [MiNTs Life](../examples/life/README.md),
+a static RV64IMAC/LP64 C application. Its UART demo, self-test and deterministic
+benchmark checksums have passed on the board, with shell operation after exit.
+Benchmark time is application wall time, not hardware CPI.
+
 A shell prompt alone is not the board test criterion. Continued command
 responses, timer interrupts and time progression were also checked.
 

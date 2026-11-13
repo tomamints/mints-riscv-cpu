@@ -11,6 +11,7 @@ It lists established behavior and boundaries rather than development plans.
 | DE0-CV physical Linux shell | Verified at 20 MHz, 64 MiB SDRAM, normal clocksource and 100 Hz periodic ticks |
 | FPGA timing closure | All four corners pass for the documented 20 MHz artifact |
 | JTAG RAM loader | Clears RAM, verifies all image words, releases CPU after successful verification |
+| Standalone C application | MiNTs Life demo and checksum-validated elapsed-time workload run under board Linux |
 | Physical UART input/output | Verified at 115200 8N1 |
 | Simulator branch prediction | PHT, BTB and RAS available; board profile disables prediction |
 | Write-through D-cache | Selected baseline |
