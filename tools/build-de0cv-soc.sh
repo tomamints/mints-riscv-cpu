@@ -6,15 +6,15 @@
 #   STAGE=map  : Analysis & Synthesis only
 #   STAGE=fit  : + Fitter + timing (default)
 #   STAGE=asm  : + Assembler (SOF for SRAM programming)
-#   FITTER_ROUTABILITY=ALWAYS: enable aggressive routing optimizations;
-#     default AUTOMATICALLY preserves the baseline Fitter settings.
+#   FITTER_ROUTABILITY=ALWAYS (default): aggressive routing optimizations;
+#     AUTOMATICALLY restores the baseline Fitter settings for comparison.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 fi
 stage=${STAGE:-fit}
-routability=${FITTER_ROUTABILITY:-AUTOMATICALLY}
+routability=${FITTER_ROUTABILITY:-ALWAYS}
 case "$routability" in
   AUTOMATICALLY|ALWAYS) ;;
   *) echo 'FITTER_ROUTABILITY must be AUTOMATICALLY or ALWAYS' >&2; exit 2 ;;
