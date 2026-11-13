@@ -3,6 +3,7 @@
 //
 //   de0cv-jtag-load status
 //   de0cv-jtag-load load    IMAGE.hex   clear all RAM, write, read back, compare
+//   de0cv-jtag-load load-run IMAGE.hex  load, fully verify, then release CPU
 //   de0cv-jtag-load verify  IMAGE.hex   read back and compare only
 //   de0cv-jtag-load release IMAGE.hex   read back and compare, then release CPU
 //
@@ -68,6 +69,19 @@ public:
     Status status() {
         select(IR_STATUS);
         return Status{dr_word(0, 64)};
+    }
+    uint64_t debug() {
+        if (!(status().raw & (1ULL << 13)))
+            throw std::runtime_error("FPGA has no debug snapshot support");
+        select(3);
+        dr_word(0x44424731534e4150ULL, 64);
+        auto start = std::chrono::steady_clock::now();
+        while (status().raw & (1ULL << 12)) {
+            if (std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count() > 2)
+                throw std::runtime_error("debug snapshot timeout");
+        }
+        select(3);
+        return dr_word(0, 64);
     }
     // Issue a command and wait for its result.
     Status command(unsigned op, unsigned count, uint64_t word_offset, double timeout_s) {
@@ -224,13 +238,23 @@ void verify_image(Mailbox &mb, const Image &img) {
 int main(int argc, char **argv) {
     try {
         std::string mode = argc >= 2 ? argv[1] : "";
-        if (!(mode == "status" && argc == 2) &&
-            !((mode == "load" || mode == "verify" || mode == "release") && argc == 3)) {
-            std::fprintf(stderr, "usage: %s status | load IMAGE.hex | verify IMAGE.hex | release IMAGE.hex\n", argv[0]);
+        if (!((mode == "status" || mode == "debug") && argc == 2) &&
+            !((mode == "load" || mode == "load-run" || mode == "verify" || mode == "release") && argc == 3)) {
+            std::fprintf(stderr, "usage: %s status | debug | load IMAGE.hex | load-run IMAGE.hex | verify IMAGE.hex | release IMAGE.hex\n", argv[0]);
             return 64;
         }
         Mailbox mb;
         Status s = mb.status();
+        if (mode == "debug") {
+            uint64_t d = mb.debug();
+            unsigned f = unsigned(d >> 32) & 0xffff;
+            uint64_t pc = (d & 0xffffffffULL) | ((f & 1) ? 0xffffffff00000000ULL : 0);
+            std::printf("{\"snapshot\":\"%016llx\",\"pc\":\"%016llx\",\"retired_low16\":%u,\"flags\":%u,\"priv\":%u,\"mem_valid\":%u,\"mem_new\":%u,\"mem_stall\":%u,\"trap\":%u,\"seip\":%u,\"mtip\":%u,\"mie\":%u,\"sie\":%u,\"stip\":%u,\"mem_state\":%u}\n",
+                (unsigned long long)d, (unsigned long long)pc, unsigned(d >> 48), f,
+                f>>14 & 3, f>>13 & 1, f>>12 & 1, f>>11 & 1, f>>10 & 1,
+                f>>9 & 1, f>>8 & 1, f>>7 & 1, f>>6 & 1, f>>5 & 1, f>>2 & 7);
+            return 0;
+        }
         if (mode == "status") {
             std::printf("{\"status\":\"%016llx\",\"cleared\":%d,\"cpu_run\":%d,\"fault\":%d,\"memory_fault\":%d,\"block_words\":%u}\n",
                         (unsigned long long)s.raw, s.cleared(), s.run(), s.fault(), s.memory_fault(), mb.block());
@@ -240,7 +264,7 @@ int main(int argc, char **argv) {
         Image img = read_image(argv[2]);
         if (img.empty()) throw std::runtime_error("empty image");
         auto t0 = std::chrono::steady_clock::now();
-        if (mode == "load") {
+        if (mode == "load" || mode == "load-run") {
             std::fprintf(stderr, "clear all RAM\n");
             check(mb.command(OP_CLEAR, 0, 0, 120), 1, "clear");
             write_image(mb, img);
@@ -248,7 +272,7 @@ int main(int argc, char **argv) {
             throw std::runtime_error("RAM not cleared/loaded");
         }
         verify_image(mb, img);
-        if (mode == "release") {
+        if (mode == "release" || mode == "load-run") {
             mb.put({RUN_WORD});
             Status r = mb.command(OP_RELEASE, 0, 0, 5);
             check(r, 1, "release");

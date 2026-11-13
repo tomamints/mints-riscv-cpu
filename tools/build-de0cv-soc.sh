@@ -24,10 +24,13 @@ cache_lines=${SOC_CACHE_LINES:-32}
   echo 'SOC_CACHE_LINES must be a power of two >= 2' >&2; exit 2;
 }
 [[ $stage == map || $stage == fit || $stage == asm ]] || { echo "STAGE must be map, fit or asm"; exit 2; }
-out=build/fpga/de0cv-soc
+out=${SOC_BUILD_DIR:-build/fpga/de0cv-soc}
+[[ $out == build/fpga/* && $out != *..* ]] || { echo 'SOC_BUILD_DIR must be under build/fpga'; exit 2; }
+debug=${SOC_DEBUG:-0}
+[[ $debug == 0 || $debug == 1 ]] || { echo 'SOC_DEBUG must be 0 or 1'; exit 2; }
 if [[ -e "$out" ]]; then
   mkdir -p build/fpga/archive
-  mv "$out" "build/fpga/archive/de0cv-soc-$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$out" "build/fpga/archive/$(basename "$out")-$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 mkdir -p "$out/rtl" "$out/quartus"
 printf 'FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION=%s\n' "$routability" > "$out/fitter-options.txt"
@@ -66,6 +69,7 @@ profile=(
   "SVCPU_TLB_ENTRIES=${TLB_ENTRIES:-4}"
   "SVCPU_PMP_CARRY_COMPARE=${PMP_CARRY_COMPARE:-1}"
 )
+[[ $debug == 0 ]] || profile+=("SVCPU_FPGA_DEBUG=1")
 printf '%s\n' "${profile[@]}" "PERF=${PERF:-0}" > "$out/profile.txt"
 sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
 {

@@ -34,6 +34,7 @@ module de0cv_soc_core #(
     logic [63:0] lcmd_offset, lcmd_data, lrsp_data;
     logic [7:0]  lcmd_mask;
     logic        cpu_run, ram_cleared, loader_fault, mem_fault;
+    UIntX        core_led;
     Membus loader_bus();
     Membus ram_up();
 
@@ -43,7 +44,8 @@ module de0cv_soc_core #(
         .cmd_valid(lcmd_valid), .cmd_ready(lcmd_ready), .cmd_op(lcmd_op), .cmd_offset(lcmd_offset),
         .cmd_data(lcmd_data), .cmd_mask(lcmd_mask),
         .rsp_valid(lrsp_valid), .rsp_ready(lrsp_ready), .rsp_error(lrsp_error), .rsp_data(lrsp_data),
-        .cpu_run(cpu_run), .cleared(ram_cleared), .loader_fault(loader_fault), .memory_fault(mem_fault)
+        .cpu_run(cpu_run), .cleared(ram_cleared), .loader_fault(loader_fault), .memory_fault(mem_fault),
+        .debug_data(core_led)
     );
     boot_memory_loader #(.RAM_BYTES(RAM_BYTES)) loader (
         .clk(clk), .rst_n(power_n),
@@ -60,7 +62,6 @@ module de0cv_soc_core #(
     Addr         cpu_ram_addr;
     UInt64       cpu_ram_wdata;
     logic [7:0]  cpu_ram_wmask;
-    UIntX        core_led;
     logic        uart_tx_overflow, uart_rx_overrun;
     logic        rxd_meta = 1'b1, rxd_sync = 1'b1;
     always_ff @(posedge clk) begin rxd_meta <= UART_RXD; rxd_sync <= rxd_meta; end

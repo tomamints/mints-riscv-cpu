@@ -4,6 +4,9 @@ import corectrl::*;
 module csrunit (
 	input  logic clk,
 	input  logic rst,
+`ifdef SVCPU_FPGA_DEBUG
+	output logic [2:0] debug_irq_flags_o,
+`endif
 	input  logic valid,
 	input  Addr  pc,
 	input  Inst  inst_bits,
@@ -101,6 +104,9 @@ module csrunit (
 
 	logic is_wfi;
 	assign is_wfi = (inst_bits == 32'h10500073);
+`ifdef SVCPU_FPGA_DEBUG
+	assign debug_irq_flags_o = {mstatus[3], mstatus[1], mip[5]};
+`endif
 
 	logic is_sfence_vma;
 	assign is_sfence_vma = inst_bits[6:0] == OP_SYSTEM &&

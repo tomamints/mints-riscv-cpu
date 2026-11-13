@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 fi
-out=build/fpga/de0cv-soc
+out=${SOC_BUILD_DIR:-build/fpga/de0cv-soc}
 q=$out/quartus
 r=$q/output_files
 [[ -s $r/de0cv_soc.sof ]] || { echo "missing $r/de0cv_soc.sof (build with STAGE=asm)" >&2; exit 1; }

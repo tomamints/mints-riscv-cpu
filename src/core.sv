@@ -710,6 +710,9 @@ module core (
 	logic mems_fence_i;
 	logic mems_fence_i_wait;   // fence.i in MEM, older stores not yet performed
 	logic mems_fence_i_fire;   // fence.i completes this cycle (exactly once)
+`ifdef SVCPU_FPGA_DEBUG
+	logic [2:0] csru_debug_irq_flags;
+`endif
 	logic mems_translation_hazard;
 	logic mems_translation_flush_wait;
 	assign mems_satp_access =
@@ -896,6 +899,9 @@ module core (
 		);
 
 		csrunit csru(
+`ifdef SVCPU_FPGA_DEBUG
+		.debug_irq_flags_o(csru_debug_irq_flags),
+`endif
 		.clk      (clk),
 		.rst      (rst),
 		.valid    (mems_valid),
@@ -1837,7 +1843,17 @@ module core (
 	end
 
 
+`ifdef SVCPU_FPGA_DEBUG
+	// Observation only: MEM PC, pipeline/IRQ flags and retiring progress.
+	// The board snapshots this bus through a JTAG request/ack handshake.
+	assign led = {minstret[15:0], csru_priv_mode,
+		mems_valid, mems_is_new, memu_stall, csru_raise_trap,
+		external_seip, aclint.mtip,
+		csru_debug_irq_flags,
+		memu_debug_state, ids_valid, mems_pc[63], mems_pc[31:0]};
+`else
 	assign led = '0;
+`endif
 
 	/////////////DEBUG ////////////////
 ///////////////////////////////// DEBUG //////////////////////////////////

@@ -24,6 +24,7 @@ module tb_jtag_block_mailbox #(
     logic [1:0] op;
     logic [63:0] off, data, rd;
     logic [7:0] mask;
+    logic [63:0] debug_data = 64'h123456789abcdef0;
     Membus bus();
 
     jtag_block_mailbox #(.BLOCK_WORDS(WORDS)) mbox (
@@ -31,7 +32,7 @@ module tb_jtag_block_mailbox #(
         .clk(clk), .rst_n(rst_n),
         .cmd_valid(cv), .cmd_ready(cr), .cmd_op(op), .cmd_offset(off), .cmd_data(data), .cmd_mask(mask),
         .rsp_valid(rv), .rsp_ready(rr), .rsp_error(re), .rsp_data(rd),
-        .cpu_run(run), .cleared(cleared), .loader_fault(lfault), .memory_fault(mf));
+        .cpu_run(run), .cleared(cleared), .loader_fault(lfault), .memory_fault(mf), .debug_data(debug_data));
     boot_memory_loader #(.RAM_BYTES(RAM_BYTES)) loader (
         .clk(clk), .rst_n(rst_n), .cmd_valid(cv), .cmd_ready(cr), .cmd_op(op),
         .cmd_offset(off), .cmd_data(data), .cmd_mask(mask), .rsp_valid(rv), .rsp_ready(rr),
@@ -116,6 +117,26 @@ module tb_jtag_block_mailbox #(
             $fatal(1, "%s: status %h (want err=%0d count=%0d op=%0d cleared=%0d run=%0d)", what, s, err, count, o, c, r);
     endtask
 
+    task automatic snapshot(input logic [63:0] value);
+        logic [63:0] tx [], rx [], st;
+        int before_accesses, polls;
+        before_accesses = accesses; polls = 0; debug_data = value;
+        tx = new[1]; tx[0] = 64'h44424731534e4150;
+        scan(2'd3, 64, tx, rx);
+        do begin
+            status(st); polls++;
+            if (!st[13] || polls > 50) $fatal(1, "snapshot protocol timeout %h", st);
+        end while (st[12]);
+        scan(2'd3, 64, none, rx);
+        if (rx[0] !== value) $fatal(1, "snapshot %h != %h", rx[0], value);
+        // Changing the live bus cannot tear or update an already captured word.
+        debug_data = ~value;
+        repeat (5) @(posedge clk);
+        scan(2'd3, 64, none, rx);
+        if (rx[0] !== value) $fatal(1, "snapshot not held");
+        if (accesses != before_accesses) $fatal(1, "snapshot touched RAM");
+    endtask
+
     logic [63:0] s, blk [], back [];
     int acc0;
     initial begin
@@ -124,6 +145,8 @@ module tb_jtag_block_mailbox #(
         repeat (3) tck_cycle();
         status(s);
         if (s[0] || s[1] || s[3] || s[4]) $fatal(1, "initial status %h", s);
+        snapshot(64'h0123456789abcdef);
+        snapshot(64'hfedcba9876543210);
 
         // WRITE before CLEAR is refused by the loader.
         blk = new[4]; foreach (blk[i]) blk[i] = rnd();
@@ -206,6 +229,7 @@ module tb_jtag_block_mailbox #(
         blk[0] = RUN; put_block(blk);
         command(cmd_word(2'd3, 0, 0), s); expect_result(s, 0, 1, 3, 1, 1, "release");
         if (!run) $fatal(1, "cpu_run not set");
+        snapshot(64'h80001234abcdef00);
 
         // After release the loader accepts nothing; the mailbox reports, not hangs.
         acc0 = accesses;

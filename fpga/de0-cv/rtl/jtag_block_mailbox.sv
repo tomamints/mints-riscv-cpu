@@ -2,6 +2,9 @@
 //
 // TCK side (virtual JTAG data register, IR selects):
 //   IR 0 STATUS: capture the 64-bit status word below, shift it out.
+//   IR 3 DEBUG: write 64'h44424731534e4150 to request an atomic clk-domain
+//               debug_data snapshot; poll STATUS[12] clear, then scan IR 3
+//               with zero input to read it. STATUS[13] advertises support.
 //   IR 1 CMD   : shift exactly 64 bits; on Update-DR, if no command is in
 //                flight, the word becomes the command and req toggles.
 //                A wrong length or a command while busy is dropped and
@@ -65,10 +68,32 @@ module jtag_block_mailbox #(
     input  logic        cpu_run,
     input  logic        cleared,
     input  logic        loader_fault,
-    input  logic        memory_fault
+    input  logic        memory_fault,
+    input  logic [63:0] debug_data
 );
     localparam int unsigned PTR_W = $clog2(BLOCK_WORDS);
     localparam logic [1:0] IR_STATUS = 2'd0, IR_CMD = 2'd1, IR_DATA = 2'd2;
+    localparam logic [1:0] IR_DEBUG = 2'd3;
+    localparam logic [63:0] DEBUG_REQUEST = 64'h44424731534e4150;
+    // Independent read-only bundled-data handshake; never touches the loader
+    // or RAM, including after RELEASE. Result remains frozen until a new request.
+    logic debug_req_t, debug_ack_c;
+    logic debug_req_meta, debug_req_sync, debug_ack_meta, debug_ack_sync;
+    logic [63:0] debug_result;
+    wire debug_busy = debug_req_t != debug_ack_sync;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            debug_req_meta <= 0; debug_req_sync <= 0;
+            debug_ack_c <= 0; debug_result <= 0;
+        end else begin
+            debug_req_meta <= debug_req_t;
+            debug_req_sync <= debug_req_meta;
+            if (debug_req_sync != debug_ack_c) begin
+                debug_result <= debug_data;
+                debug_ack_c <= debug_req_sync;
+            end
+        end
+    end
 
     // Dual-clock buffers: down (TCK write, clk read), up (clk write, TCK read).
     logic [63:0] down_mem [BLOCK_WORDS];
@@ -107,6 +132,8 @@ module jtag_block_mailbox #(
         status_word[63:48] = 16'h4A4D;
         status_word[31:24] = 8'(PTR_W);
         status_word[11] = data_dropped;
+        status_word[13] = 1'b1; // snapshot protocol available
+        status_word[12] = debug_busy;
         status_word[10] = cmd_dropped;
         status_word[6] = mf_sync;
         status_word[1] = ack_sync;
@@ -125,11 +152,13 @@ module jtag_block_mailbox #(
         req_t = 1'b0; ack_meta = 1'b0; ack_sync = 1'b0; mf_meta = 1'b0; mf_sync = 1'b0;
         cmd_q = '0; sr = '0; nbits = '0; bit_cnt = '0; word_ptr = '0; word_ovf = 1'b0;
         cmd_dropped = 1'b0; data_dropped = 1'b0;
+        debug_req_t = 0; debug_ack_meta = 0; debug_ack_sync = 0;
     end
 
     always_ff @(posedge tck) begin
         ack_meta <= ack_c; ack_sync <= ack_meta;
         mf_meta <= memory_fault; mf_sync <= mf_meta;
+        debug_ack_meta <= debug_ack_c; debug_ack_sync <= debug_ack_meta;
         if (cdr) begin
             nbits <= '0; bit_cnt <= '0; word_ptr <= '0; word_ovf <= 1'b0;
             if (ir == IR_DATA) data_dropped <= 1'b0;
@@ -137,6 +166,7 @@ module jtag_block_mailbox #(
                 IR_STATUS: sr <= status_word;
                 IR_CMD:    sr <= cmd_q;
                 IR_DATA:   sr <= up_rdata;
+                IR_DEBUG:  sr <= debug_result;
                 default:   sr <= '0;
             endcase
         end else if (sdr) begin
@@ -158,6 +188,9 @@ module jtag_block_mailbox #(
             end else begin
                 cmd_dropped <= 1'b1;
             end
+        end else if (udr && ir == IR_DEBUG) begin
+            if (!debug_busy && nbits == 7'd64 && sr == DEBUG_REQUEST)
+                debug_req_t <= ~debug_req_t;
         end
     end
 

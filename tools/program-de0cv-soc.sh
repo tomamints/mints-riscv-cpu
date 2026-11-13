@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${OPENFPGALOADER:=$PWD/local/fpga-tools/bin/openFPGALoader}"
-out=build/fpga/de0cv-soc
+out=${SOC_BUILD_DIR:-build/fpga/de0cv-soc}
 r=$out/quartus/output_files
 grep -q '^SIGNOFF PASS' "$out/signoff.txt" 2>/dev/null || { echo "Run tools/signoff-de0cv-soc.sh first" >&2; exit 1; }
 (cd "$r" && shasum -a 256 -c sha256.txt)
