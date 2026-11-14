@@ -31,3 +31,11 @@ sdverify verify /mnt/sd/mints-verify.bin
 ```
 
 Host-side failure tests (no card access): `python3 tools/test-sdverify.py`.
+
+## Physical result
+
+A 64 KiB test file on FAT32 passed create/fsync, unmount, read-only remount and
+full byte verification on DE0-CV. Its checksum is `215916bff0e06476`.
+The new directory/file was retained; existing card files were not overwritten.
+This confirms readback after a clean remount, not power-cycle or sudden-power-loss
+durability. The same verifier also passed on a RAM file on the physical CPU.

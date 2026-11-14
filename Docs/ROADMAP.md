@@ -18,7 +18,7 @@ It lists established behavior and boundaries rather than development plans.
 | Write-through D-cache | Selected baseline |
 | Write-back D-cache | Experimental; outside validated board profile |
 | Optional DMA | Simulator peripheral; not part of the validated board path |
-| Persistent filesystem / SD-card Linux storage | Not part of the validated configuration |
+| SD-card Linux storage | Physical SDHC/FAT32 read/new-file-write/remount verification passed; power-cycle/loss durability and SD boot unverified |
 | Linux graphical console / standalone keyboard interface | Not part of the validated configuration |
 | Higher board frequency / 250 Hz kernel | Not established by current tests |
 | Long-duration stability / general Linux distribution support | Not established by current tests |

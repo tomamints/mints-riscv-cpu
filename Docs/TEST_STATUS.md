@@ -16,8 +16,13 @@ all regressions on the latest commit.
 | Board time progression | Short comparison passed | Linux 21.96 s vs host 21.92 s; not a precision calibration |
 | VGA renderer / MMIO | Pass in simulation | All 307,200 visible pixels match a reference; sync, blanking, buffer ownership, reset and backpressure checked |
 | VGA Linux clients | Pass for physical command/ack path | Self-test, demo, Life four-generation checksum, LED restoration and continued normal-clock operation; monitor image not observed |
-| Quartus implementation | Pass | 17,123 ALMs, all four corners pass setup/hold/recovery/removal at 20 MHz, 80 pins checked |
-| JTAG image transfer | Pass | VGA image's 515,864 words written and read back before CPU release |
+| SD SPI / shared MMIO | Pass in simulation | All byte values, SDHC init/CMD17+CRC fixture, CS-high clocks, lanes, errors and reset; CPU board-path SD-SPI test passes |
+| SD storage | Pass for physical FAT32 reads/new-file writes | SDHC recognition, whole/partition sector reads, mount/list/unmount; new 64 KiB file fsynced and verified after a read-only remount; power-cycle/loss durability untested |
+| Board SPI polling optimization | Physical comparison | Initial sector-check command 85.279777 s → 5.679393 s; same content hash, includes kernel buffering/read-ahead |
+| Private kernel-source view | Pass | Original sources preserved; repeatable private view and rejection of unexpected edits/context drift |
+| File verifier | Host failure tests and physical RAM-file test pass | Independent pattern, overwrite/corruption/truncation/extra-data/symlink checks; 64 KiB file verified in RAM and on FAT32 after remount |
+| Quartus implementation | Pass | 17,269 ALMs, all four corners pass setup/hold/recovery/removal at 20 MHz, 84 pins checked |
+| JTAG image transfer | Pass | SD-enabled image's 608,569 words written and read back before CPU release |
 | 64-bit timer probe | Pass on board | High bits, low-word rollover, monotonic reads and timer-compare expiry/clear |
 | Verilator Linux autotest on M1 | Pass | `BUSYBOX-TEST-PASS` in the legacy simulator profile |
 | Historical Whisper lockstep | Pass | BusyBox autotest reached after over 61 million architectural comparisons; not rerun for final FPGA profile |
@@ -109,7 +114,7 @@ artifacts. It is not installed by the ordinary Linux rebuild. See
 - Passing every privileged ISA test; the breakpoint failure remains known.
 - Long-duration board stability, 250 Hz board operation or a higher CPU clock.
 - F/D/vector execution, SMP/coherence or a production Linux distribution.
-- Persistent storage, networking or a Linux graphical console on the board.
+- SD boot, power-cycle/power-loss durability, networking or a Linux graphical console on the board.
 - A current board benchmark score or an FPGA-versus-simulator speedup ratio.
 
 Generated test logs and local development records remain outside Git. Published

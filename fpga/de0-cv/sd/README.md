@@ -139,6 +139,40 @@ No card-detect input is wired: Linux polls for cards. Remove cards only after
 unmounting and stopping accesses. The board cannot power-cycle a card; after
 an interrupted protocol session a board power cycle may be needed.
 
+## Saving new files while keeping existing contents
+
+A FAT32 data volume can be retained; erasing/reformatting is not required.
+Mount the card read-write explicitly and confirm `/proc/mounts` identifies
+`/mnt/sd` as the card before creating files there. A directory under an
+unmounted mount point belongs to the RAM root filesystem and is not SD storage.
+Use a dedicated folder, and use a new filename: `sdverify create` refuses
+existing files. The following example uses partition 1, not an arbitrary disk.
+
+```sh
+blockdev --setrw /dev/mmcblk0
+blockdev --setrw /dev/mmcblk0p1
+mount -t vfat -o rw /dev/mmcblk0p1 /mnt/sd
+cat /proc/mounts
+# Continue only after the card is mounted at /mnt/sd as vfat/rw:
+mkdir -p /mnt/sd/MINTS
+sdverify create /mnt/sd/MINTS/CHECK1.BIN
+busybox sync
+umount /mnt/sd
+blockdev --setro /dev/mmcblk0
+blockdev --setro /dev/mmcblk0p1
+mount -t vfat -o ro /dev/mmcblk0p1 /mnt/sd
+sdverify verify /mnt/sd/MINTS/CHECK1.BIN
+umount /mnt/sd
+```
+
+The normal filesystem handles file allocation/caching/writeback. `fsync` and
+clean unmount complete writes; the verifier checks content after remount.
+Files in the RAM root filesystem (for example `/etc` or `/tmp`) are not
+automatically copied to SD. SD as the OS root or an OverlayFS writable layer
+would be a separate configuration; OverlayFS writable layers need filesystem
+features not supplied by FAT32. This board currently uses RAM root + mounted
+SD data storage.
+
 ## Tests
 
 ```sh
@@ -154,3 +188,25 @@ not SD protocol compliance certification or physical-card evidence.
 The full board simulation also issues CPU 32-bit MMIO transfers with CS high,
 checks RX completion/read-to-clear and retains SDRAM/GPIO/VGA/timer checks.
 Physical-card and filesystem results must be reported separately.
+
+## Physical validation scope
+
+The SD-enabled SoC passes all four timing corners (setup/hold/recovery/removal),
+with 17,269 ALMs, 13,928 registers, 64 RAM blocks and 84 checked pins. Worst
+setup slack is +2.168 ns; estimated average/peak interconnect usage is 47%/67%.
+The physically tested RBF is the canonical SoC build.
+
+An SDHC card was recognized, whole-device and partition sector reads passed,
+and FAT32 was mounted read-only, listed and unmounted. GPIO/VGA register tests,
+Life's reference checksum and normal `riscv_clocksource` operation passed after
+card access. A new 64 KiB patterned file passed create/fsync/unmount/read-only-remount and
+full-byte verification, checksum `215916bff0e06476`. Existing files were not
+overwritten, and the card was left unmounted. No filesystem repair or format
+was performed. Power-cycle and power-loss durability are untested.
+exFAT/ext4 support is compiled but has not been physically mounted in this test.
+
+The same initial 512-byte sector-check command took 85.279777 s with the
+upstream polling path and 5.679393 s with direct MMIO polling, with identical
+content hashes. These commands include Linux buffering and read-ahead; they
+are not sustained bandwidth or raw wire-speed measurements. The resulting
+storage path remains a slow prototype, not a performance claim.

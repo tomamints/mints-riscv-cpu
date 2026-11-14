@@ -16,6 +16,8 @@ separate; use the appropriate profile when building.
 | Simulation correctness / performance workloads | [Linux baseline](LINUX_BASELINE.md) |
 | Linux UIO / switch-button input / LED control | [Board GPIO API and apps](../examples/boardctl/README.md) |
 | VGA text engine, timing and memory | [VGA interface](../fpga/de0-cv/vga/README.md) |
+| microSD wiring, driver and read-only inspection | [SD storage](../fpga/de0-cv/sd/README.md) |
+| Sector/file verification utilities | [sdcheck / sdverify](../examples/sdcheck/README.md) |
 | Linux VGA display commands | [vgactl and Life VGA](../examples/vgactl/README.md) |
 | Standalone C application and elapsed-time workload | [MiNTs Life](../examples/life/README.md) |
 | Simulation performance counter definitions | [Performance counters](PERFORMANCE_COUNTERS.md) |

@@ -66,19 +66,43 @@ page count advanced from 0 to 9 through these display tests. No monitor image
 was observed; command acknowledgements do not prove optical output.
 See [VGA details](../fpga/de0-cv/vga/README.md).
 
+## microSD storage
+
+`SVCPU_BOARD_SD=1` adds a mode-0, eight-bit, 400 kHz SPI host at `0x40000040`.
+The board kernel includes MMC block, VFAT/exFAT/ext4 and partition support.
+Physical validation covers an SDHC card, whole-device and partition sector
+reads with consistent hashes, FAT32 read-only mount/list/unmount, and continued
+GPIO/VGA, Life and normal-clock operation. Existing card data was preserved.
+Only FAT32 was physically mounted; exFAT/ext4 are built but not card-tested.
+A new 64 KiB patterned file passed create/fsync, unmount, read-only remount and
+full byte verification (checksum `215916bff0e06476`). Existing files were not
+overwritten and the card was left unmounted.
+
+The board-only Linux source view adds a direct MMIO polling loop to the Altera
+SPI driver for eight-bit standalone MMIO transfers. IRQ, wider-word and subdevice
+paths retain upstream code. The first sector-check command took 85.279777 s
+before and 5.679393 s after this change in the tested setup; buffering/read-ahead
+are included, so these are not raw SPI bandwidth results. There is no FIFO or
+DMA, and the storage path remains slow. Read-ahead can be disabled for small
+inspections. See [SD support](../fpga/de0-cv/sd/README.md).
+
+The root filesystem remains the RAM initramfs. SD boot and
+power-cycle/power-loss durability have not been verified. `sdverify` also passes
+host failure tests and a physical CPU/RAM-file check.
+
 ## Physical implementation
 
 | Metric | Validated DE0-CV build |
 |---|---:|
 | Device | Cyclone V 5CEBA4F23C7N |
-| ALMs | 17,123 / 18,480 (93%) |
-| Registers | 13,871 |
+| ALMs | 17,269 / 18,480 (93%) |
+| Registers | 13,928 |
 | RAM blocks | 64 / 308 |
 | RAM bits | 230,052 / 3,153,920 |
-| Pins checked | 80 |
+| Pins checked | 84 |
 | CPU / SDRAM controller / timer clock | 20 MHz |
-| Worst setup slack | +1.960 ns |
-| Estimated average / peak interconnect usage | 48% / 69% |
+| Worst setup slack | +2.168 ns |
+| Estimated average / peak interconnect usage | 47% / 67% |
 | Timing checks | Setup/hold/recovery/removal pass at all four corners |
 
 This is a passing 20 MHz implementation, not an Fmax measurement. Rebuilt

@@ -35,9 +35,9 @@ an idle interval. The kernel uses the normal `riscv_clocksource`, with 100 Hz
 periodic scheduler ticks. The CPU and hardware timer remain at 20 MHz;
 there is no `clocksource=jiffies` override.
 
-The FPGA implementation uses **17,123 / 18,480 ALMs (93%)** and passes
+The FPGA implementation uses **17,269 / 18,480 ALMs (93%)** and passes
 setup, hold, recovery and removal checks at all four timing corners at
-20 MHz. Worst setup slack is **+1.960 ns**. This establishes the tested
+20 MHz. Worst setup slack is **+2.168 ns**. This establishes the tested
 20 MHz operating point, not a measured maximum frequency.
 
 Verilator also boots Linux through `BUSYBOX-TEST-PASS`. Separate historical
@@ -167,6 +167,36 @@ This is an application-controlled display, not a Linux framebuffer console.
 See [display commands](examples/vgactl/README.md) and
 [timing, memory and verification scope](fpga/de0-cv/vga/README.md).
 
+## microSD storage
+
+The board adds a 400 kHz SPI host and Linux MMC block-device support. Linux and
+BusyBox still boot into SDRAM from the Mac/JTAG image; the card is an additional
+filesystem, not the current boot source. SD data is read into RAM as needed.
+
+Physical tests passed card recognition, full-sector reads, FAT32 read-only
+mount/list/unmount and a 64 KiB create/fsync/unmount/read-only-remount/verify test.
+GPIO/VGA and normal-clock regression checks also pass.
+The board kernel uses a direct-MMIO polling path for eight-bit SPI transfers.
+The same initial sector-check command improved from 85.28 s to 5.68 s on the
+tested setup. This includes Linux buffering/read-ahead and is not a sustained
+SD bandwidth measurement. The no-FIFO polling implementation remains slow.
+
+```sh
+blockdev --setra 0 /dev/mmcblk0
+blockdev --setra 0 /dev/mmcblk0p1
+sdcheck /dev/mmcblk0p1
+mkdir -p /mnt/sd
+mount -t vfat -o ro /dev/mmcblk0p1 /mnt/sd
+ls /mnt/sd
+umount /mnt/sd
+```
+
+Choose the partition/filesystem from the actual card. A new test folder/file was
+used without overwriting existing files. Formatting, power-cycle/power-loss
+durability and SD boot have not been validated. See
+[SD wiring, kernel and read-only inspection](fpga/de0-cv/sd/README.md) and
+[file-check utilities](examples/sdcheck/README.md).
+
 ## Architecture and sources
 
 | Location | Contents |
@@ -186,7 +216,7 @@ See [RTL layout](Docs/RTL_LAYOUT.md) for exact source paths.
 - RV64IMAC, M/S/U privilege, Sv39, eight PMP entries, ACLINT and PLIC-compatible interrupts.
 - Static userspace must use RV64IMAC / LP64; prebuilt floating-point ABI binaries are unsuitable.
 - F/D, vector execution, SMP/cache coherence and full RVA23 compliance are not claimed.
-- The root filesystem and `/tmp` are RAM-based; persistent storage, networking and a graphical console are not part of the validated board configuration.
+- The root filesystem and `/tmp` are RAM-based. microSD FAT32 reads and a new-file write/remount/readback are verified; power-loss durability, networking and a graphical console remain unvalidated.
 - Long-duration stability, 250 Hz board operation and higher FPGA frequencies are not established by the current tests.
 - The board uses a write-through D-cache. Experimental write-back support is not the validated baseline.
 

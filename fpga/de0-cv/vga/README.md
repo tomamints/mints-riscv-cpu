@@ -91,9 +91,9 @@ reporting validation results.
 
 ## Validated board profile
 
-The VGA-enabled SoC fits at 17,123 / 18,480 ALMs, 13,871 registers and 64 RAM
+The VGA-enabled SoC fits at 17,269 / 18,480 ALMs, 13,928 registers and 64 RAM
 blocks (230,052 bits). All four timing corners pass setup, hold, recovery and
-removal; worst setup slack is +1.960 ns. Pin signoff checks 80 board pins,
+removal; worst setup slack is +2.168 ns. Pin signoff checks 84 board pins,
 including all 14 VGA outputs. These results include the source-clock output
 budget described above, not a measured monitor interface.
 
