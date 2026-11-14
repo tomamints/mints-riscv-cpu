@@ -12,7 +12,7 @@ module sd_spi_mmio #(parameter int HALF_CYCLES=25) (
     logic [2:0] bit_index;
     logic [7:0] tx_shift,rx_shift,rx_data;
     logic busy,rx_ready,rx_overrun,tx_overrun,sso,selected,wait_low;
-    (* async_reg="true" *) logic miso_meta,miso_sync;
+    logic miso_meta,miso_sync;
     wire fire=bus.valid && bus.ready;
     wire [4:0] reg_addr={bus.addr[4:2],2'b00};
     wire [31:0] w32=bus.addr[2]?bus.wdata[63:32]:bus.wdata[31:0];

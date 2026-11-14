@@ -76,7 +76,7 @@ not included. No automatic mount or format is performed.
 From the Linux UART shell:
 
 ```sh
-dmesg | tail -30
+dmesg | busybox tail -30
 cat /proc/partitions
 sdcheck /dev/mmcblk0
 # If the card has a first partition:

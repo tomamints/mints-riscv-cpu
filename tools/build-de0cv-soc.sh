@@ -120,6 +120,9 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
     fi
   done < fpga/de0-cv/soc/sd-pins.txt
   echo 'set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SD_MISO'
+  echo 'set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to "de0cv_soc_core:soc|core_top:cpu|board_io_mmio:gpio|sd_spi_mmio:spi|miso_meta"'
+  echo 'set_instance_assignment -name SYNCHRONIZER_IDENTIFICATION "FORCED IF ASYNCHRONOUS" -to "de0cv_soc_core:soc|core_top:cpu|board_io_mmio:gpio|sd_spi_mmio:spi|miso_sync"'
+
   echo 'set_location_assignment PIN_K22 -to UART_TXD'
   echo 'set_location_assignment PIN_M21 -to UART_RXD'
   echo 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD'
