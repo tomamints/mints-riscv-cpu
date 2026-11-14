@@ -83,19 +83,27 @@ busybox() {
 # INIT_SCRIPT_MODE); legacy defaults to autotest, de0cv64 to the interactive
 # "default" BusyBox shell on ttyS0. Board outputs are isolated from legacy.
 kernel() {
+  local src=/sources/linux-6.12
+  if [[ $profile == de0cv64 ]]; then
+    src=/tmp/mints-board-linux-6.12
+    python3 tools/prepare-board-linux.py /sources/linux-6.12 "$src"
+  fi
   local out=/repo/build/linux-build-busybox-$mode$suffix
   bash tools/build-life.sh
   INIT_SCRIPT_MODE=$mode LIFE_BIN=/repo/build/apps/life BOARDCTL_BIN=/repo/build/apps/boardctl VGACTL_BIN=/repo/build/apps/vgactl SDVERIFY_BIN=/repo/build/apps/sdverify SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
   mkdir -p "$out" build/external/linux-out
-  make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- allnoconfig
-  (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_minbringup.fragment)
   if [[ $profile == de0cv64 ]]; then
-    (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_de0cv.fragment)
+    cp "$src/mints-spi-source-manifest.json" build/external/linux-out/board-spi-source-manifest.json
   fi
-  /sources/linux-6.12/scripts/config --file "$out/.config" \
+  make -C "$src" O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- allnoconfig
+  (cd "$out" && "$src"/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_minbringup.fragment)
+  if [[ $profile == de0cv64 ]]; then
+    (cd "$out" && "$src"/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_de0cv.fragment)
+  fi
+  "$src"/scripts/config --file "$out/.config" \
     --set-str INITRAMFS_SOURCE /repo/build/busybox-initramfs-$mode/initramfs.linux.list
-  make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- olddefconfig
-  make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- -j"$JOBS" Image
+  make -C "$src" O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- olddefconfig
+  make -C "$src" O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- -j"$JOBS" Image
   cp "$out/arch/riscv/boot/Image" "$kernel_image"
   cp "$out/.config" build/external/linux-out/config-linux-6.12-riscv64-busybox-$mode-initramfs$suffix
 }

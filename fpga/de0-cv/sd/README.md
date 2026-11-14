@@ -53,7 +53,7 @@ Membus. Partial stores are ignored. One request is accepted until valid drops.
 
 CS is low while both SSO and select bit 0 are set. RX overrun is flagged if
 an unread byte is replaced. Interrupt mask bits and other chip selects are
-not implemented. This is the register subset used by the unmodified Linux
+not implemented. This is the register subset used by the Linux
 [`spi_altera` polling driver](https://github.com/torvalds/linux/blob/v6.12/drivers/spi/spi-altera-core.c)
 and [`mmc_spi`](https://github.com/torvalds/linux/blob/v6.12/drivers/mmc/host/mmc_spi.c),
 not a general replacement for every configuration of the Altera SPI IP.
@@ -64,6 +64,30 @@ The board kernel builds SPI, MMC block, VFAT/exFAT/ext4, MBR/GPT partition
 support and 437/ISO-8859-1/UTF-8 character sets in. No external module installation is needed.
 The GPIO UIO resource and SPI register resource are disjoint; applications
 must not access SPI through the page-aligned GPIO UIO mapping.
+
+## Board kernel polling path
+
+The board rebuild creates a private source view using
+`tools/prepare-board-linux.py`. Upstream sources stay unchanged: unchanged
+files are symlinks, and three SPI driver/header files are private copies.
+A direct `readl`/`writel` loop handles eight-bit, standalone MMIO polling
+transfers. SPI-core serialization and I/O ordering remain; IRQ, wider-word and
+regmap-subdevice paths retain the upstream implementation. Chip-select and
+MMC protocol handling are unchanged. The source contexts are checked before
+patching, and original/patched hashes are recorded in the build output.
+The legacy simulator kernel does not apply this board-only change.
+
+This avoids regmap locking/callback overhead on every transmitted byte. The
+host still has no FIFO and remains CPU-polled at 400 kHz. Do not infer SD
+throughput from the SPI clock or a single cached read. Use completed I/O
+statistics and wall time, accounting for block-device and filesystem read-ahead.
+For a small read-only inspection, read-ahead can be disabled without changing
+card contents:
+
+```sh
+blockdev --setra 0 /dev/mmcblk0
+blockdev --setra 0 /dev/mmcblk0p1
+```
 
 ## First card check: read only
 
