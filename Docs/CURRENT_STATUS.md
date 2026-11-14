@@ -52,17 +52,33 @@ readings were zero. Manual input transitions and optical LED observation were
 not performed; native tests cover pause/resume, button reset and signal cleanup.
 See [GPIO API](../examples/boardctl/README.md).
 
+## VGA application display
+
+The board build enables `SVCPU_BOARD_VGA=1`: an 80 × 30 text screen with
+640 × 480 active pixels, driven from CLOCK_50 with a 25 MHz pixel enable.
+The CPU/timer/SDRAM remain at 20 MHz. Double-buffered text RAM and font ROM
+use nine additional M10K blocks. UART remains the Linux console.
+
+Physical tests passed `vgactl self-test`, demo command acknowledgement, Life
+four-generation checksum `401a90e3423e2d3c`, LED ownership restoration and
+continued benchmark/shell operation using `riscv_clocksource`. The acknowledged
+page count advanced from 0 to 9 through these display tests. No monitor image
+was observed; command acknowledgements do not prove optical output.
+See [VGA details](../fpga/de0-cv/vga/README.md).
+
 ## Physical implementation
 
 | Metric | Validated DE0-CV build |
 |---|---:|
 | Device | Cyclone V 5CEBA4F23C7N |
-| ALMs | 17,049 / 18,480 (92%) |
-| Registers | 13,742 |
-| RAM blocks | 55 / 308 |
-| Pins checked | 66 |
+| ALMs | 17,123 / 18,480 (93%) |
+| Registers | 13,871 |
+| RAM blocks | 64 / 308 |
+| RAM bits | 230,052 / 3,153,920 |
+| Pins checked | 80 |
 | CPU / SDRAM controller / timer clock | 20 MHz |
-| Worst setup slack | +3.750 ns |
+| Worst setup slack | +1.960 ns |
+| Estimated average / peak interconnect usage | 48% / 69% |
 | Timing checks | Setup/hold/recovery/removal pass at all four corners |
 
 This is a passing 20 MHz implementation, not an Fmax measurement. Rebuilt

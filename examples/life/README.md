@@ -1,12 +1,13 @@
 # MiNTs Life
 
 A small Conway's Game of Life application for the MiNTs Linux UART shell.
-It runs the same deterministic 32 × 16 toroidal world in two modes:
+It runs the same deterministic 32 × 16 toroidal world in terminal, board-control and benchmark modes:
 
 ```sh
 life --demo          # 40 generations, terminal animation
 life --demo 10       # shorter demo
 life --board 40     # GPIO-enabled board: switch/button control and generation LEDs
+life --vga 40       # VGA-enabled board: text display, same switch/button controls
 life --bench         # 100 generations, no display inside the measured loop
 life --bench 1000    # longer run
 life --self-test     # block and wraparound blinker checks
@@ -18,11 +19,15 @@ calculation/output time; it does not promise a fixed frame rate. Ctrl-C stops
 the program without changing terminal input settings.
 
 The 32 × 16 size is deliberately small enough for readable UART output.
-Both modes start from the same fixed seed.
+All modes start from the same fixed seed.
 
-For board mode, SW0 pauses/resumes and KEY0 resets the world. See
+For board and VGA modes, SW0 pauses/resumes and KEY0 resets the world. See
 [GPIO controls and prerequisites](../boardctl/README.md); the ordinary `--demo`
 and `--bench` modes do not require GPIO.
+
+For VGA timing, hardware prerequisites and display commands, see
+[VGA text output](../../fpga/de0-cv/vga/README.md) and
+[vgactl](../vgactl/README.md). UART remains the input console.
 
 ## Benchmark meaning
 

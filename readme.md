@@ -35,9 +35,9 @@ an idle interval. The kernel uses the normal `riscv_clocksource`, with 100 Hz
 periodic scheduler ticks. The CPU and hardware timer remain at 20 MHz;
 there is no `clocksource=jiffies` override.
 
-The FPGA implementation uses **17,049 / 18,480 ALMs (92%)** and passes
+The FPGA implementation uses **17,123 / 18,480 ALMs (93%)** and passes
 setup, hold, recovery and removal checks at all four timing corners at
-20 MHz. Worst setup slack is **+3.750 ns**. This establishes the tested
+20 MHz. Worst setup slack is **+1.960 ns**. This establishes the tested
 20 MHz operating point, not a measured maximum frequency.
 
 Verilator also boots Linux through `BUSYBOX-TEST-PASS`. Separate historical
@@ -145,6 +145,27 @@ Physical checks verified register readback, a four-generation GPIO-mode run,
 its checksum and restoration of LED ownership. Pause/reset input transitions
 were exercised in the native model; manual switch transitions and optical LED
 observation are separate checks. See [GPIO interface and controls](examples/boardctl/README.md).
+
+## VGA application display
+
+The VGA-enabled board build adds an 80 × 30 text screen while keeping UART as
+Linux's input/console path. The display uses two M10K-backed text pages and
+swaps them during vertical blank. Linux applications can use:
+
+```sh
+vgactl self-test
+vgactl demo
+life --vga 40
+```
+
+Physical command/acknowledgement tests passed the display self-test, demo and
+a four-generation Life run with the reference checksum. Actual monitor output
+has not yet been visually checked.
+
+Life uses the same SW0 pause/resume and KEY0 reset controls as board mode.
+This is an application-controlled display, not a Linux framebuffer console.
+See [display commands](examples/vgactl/README.md) and
+[timing, memory and verification scope](fpga/de0-cv/vga/README.md).
 
 ## Architecture and sources
 

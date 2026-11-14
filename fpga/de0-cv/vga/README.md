@@ -88,3 +88,18 @@ MMIO commands through the real memory-system integration.
 Timing/pin signoff and register acknowledgements on an FPGA do not replace
 viewing the output on a connected monitor. Keep the distinction explicit when
 reporting validation results.
+
+## Validated board profile
+
+The VGA-enabled SoC fits at 17,123 / 18,480 ALMs, 13,871 registers and 64 RAM
+blocks (230,052 bits). All four timing corners pass setup, hold, recovery and
+removal; worst setup slack is +1.960 ns. Pin signoff checks 80 board pins,
+including all 14 VGA outputs. These results include the source-clock output
+budget described above, not a measured monitor interface.
+
+On the physical FPGA, Linux `vgactl self-test` passed, followed by demo and
+`life --vga 4`. The latter produced the reference checksum `401a90e3423e2d3c`;
+page acknowledgements advanced from 0 to 9 and busy returned to zero. GPIO
+ownership was restored, the post-display benchmark checksum passed, and
+`riscv_clocksource` and the UART shell remained operational. A connected
+monitor image has not yet been observed.

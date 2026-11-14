@@ -22,6 +22,7 @@ Apple M1 Macでビルドし、DE0-CV実機でLinux 6.12とBusyBoxの起動・継
 | Linux時計源 | `riscv_clocksource` |
 | Linux周期割り込み | `CONFIG_HZ=100`、周期動作、NO_HZ/HIGH_RES_TIMERS無効 |
 | GPIO | スイッチ10個・ボタン4個の入力、LED10個の表示切り替え、Linux UIO経由 |
+| VGA | 80×30文字、640×480画素、25 MHzピクセルレート、UARTは入力・コンソールとして継続 |
 | 実機診断 | 読み取り専用JTAG CPUスナップショットを有効化 |
 
 **20 MHzはCPUとハードウェアタイマーのクロック、100 HzはLinuxの周期割り込み頻度です。**
@@ -256,7 +257,7 @@ LEDは世代数の下位10 bitを表示し、終了時は実行前のLED状態�
 - M1 Macで生成した回路をDE0-CVへ転送し、通常時計源でLinuxと対話シェルを起動しました。
 - 継続したUART操作、CPUループ、ファイル作成・読み戻し・削除、1 MiBのゼロデータ処理、`sleep`、30秒待機後の操作を確認しました。
 - 短時間の比較ではLinuxの21.96秒に対しMac側で21.92秒経過しました。精密な時計校正ではありません。
-- 回路は17,049 / 18,480 ALM（92%）、レジスタ13,742、RAMブロック55個です。20 MHzで全4コーナーのsetup/hold/recovery/removalと66ピンの検査を通過し、最悪setup slackは+3.750 nsでした。
+- 回路は17,123 / 18,480 ALM（93%）、レジスタ13,871、RAMブロック64個です。20 MHzで全4コーナーのsetup/hold/recovery/removalと80ピンの検査を通過し、最悪setup slackは+1.960 nsでした。
 - 試した250 Hz構成では応答停止が残り、正常動作を確認できていません。通常時計源で操作を確認できた100 Hz構成を標準としています。長時間の連続運転や一般的なLinuxディストリビューション全体の動作は未検証です。
 - `/tmp`とルートファイルシステムはRAM上です。ファイルを永続保存するストレージはこの構成に含みません。
 
@@ -295,3 +296,26 @@ local/fpga-tools/bin/de0cv-jtag-load debug  # 対応回路の読み取り専用C
 
 Linux以外のイメージを動かす場合も、FPGAを再設定してから対応する`.hex`を`load-run`します。
 関連する回路の説明は[SDRAM](../sdram/README.md)、[UART単体](../uart_echo/README.md)、[ボード一覧](../README.md)にあります。
+
+## VGA文字表示
+
+VGA対応モニターを基板のVGA端子へ接続し、Linuxシェルから実行します。
+
+```sh
+vgactl status
+vgactl self-test
+vgactl demo
+life --vga 40
+```
+
+`life --vga`はSW0で一時停止・再開、KEY0で初期状態へ戻します。
+終了時はLEDの表示権を戻し、VGAには最後の画面を残します。
+Linuxの操作は引き続きUARTから行います。Linux framebufferや画面上のシェルではありません。
+
+[VGAのタイミング・RAM・検証範囲](../vga/README.md)と
+[表示コマンド](../../../examples/vgactl/README.md)を参照してください。
+25 MHzのピクセルレートによる約59.52 Hz表示で、CPU・SDRAM・タイマーは20 MHzのままです。
+
+実機では`vgactl self-test`、demoの切り替え応答、`life --vga 4`の
+チェックサム`401a90e3423e2d3c`、終了後のLED表示権の復元とシェル操作を確認済みです。
+モニター上の表示はまだ目視確認していません。画面切り替えの応答と実際の映像品質は区別しています。

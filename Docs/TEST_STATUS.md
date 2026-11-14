@@ -14,8 +14,10 @@ all regressions on the latest commit.
 | Physical UART interaction | Pass | Repeated commands at 115200 8N1, not just a shell banner |
 | Board userspace checks | Pass | CPU loop, file create/read/remove, 1 MiB zero-data processing, sleep, response after 30 seconds idle |
 | Board time progression | Short comparison passed | Linux 21.96 s vs host 21.92 s; not a precision calibration |
-| Quartus implementation | Pass | 17,049 ALMs, all four corners pass setup/hold/recovery/removal at 20 MHz, 66 pins checked |
-| JTAG image transfer | Pass | Final image's 497,281 words written and read back before CPU release |
+| VGA renderer / MMIO | Pass in simulation | All 307,200 visible pixels match a reference; sync, blanking, buffer ownership, reset and backpressure checked |
+| VGA Linux clients | Pass for physical command/ack path | Self-test, demo, Life four-generation checksum, LED restoration and continued normal-clock operation; monitor image not observed |
+| Quartus implementation | Pass | 17,123 ALMs, all four corners pass setup/hold/recovery/removal at 20 MHz, 80 pins checked |
+| JTAG image transfer | Pass | VGA image's 515,864 words written and read back before CPU release |
 | 64-bit timer probe | Pass on board | High bits, low-word rollover, monotonic reads and timer-compare expiry/clear |
 | Verilator Linux autotest on M1 | Pass | `BUSYBOX-TEST-PASS` in the legacy simulator profile |
 | Historical Whisper lockstep | Pass | BusyBox autotest reached after over 61 million architectural comparisons; not rerun for final FPGA profile |
