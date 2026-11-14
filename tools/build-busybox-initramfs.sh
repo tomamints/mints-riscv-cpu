@@ -627,11 +627,12 @@ file /init $OUT_DIR/init 0755 0 0
 LIST
 
 # Optional static applications supplied by the standard rebuild.
-for app in life boardctl vgactl; do
+for app in life boardctl vgactl sdverify; do
   case $app in
     life) binary=${LIFE_BIN:-};;
     boardctl) binary=${BOARDCTL_BIN:-};;
     vgactl) binary=${VGACTL_BIN:-};;
+    sdverify) binary=${SDVERIFY_BIN:-};;
   esac
   [[ -n $binary ]] || continue
   [[ $binary == "$repo_root/"* && -x $binary && $binary != *[[:space:]]* ]] || {
@@ -649,7 +650,7 @@ sed \
   "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.linux.list"
 printf 'file /bin/sdcheck %s/examples/sdcheck/sdcheck 0755 0 0\n' "$repo_root" >> "$OUT_DIR/initramfs.list"
 printf 'file /bin/sdcheck /repo/examples/sdcheck/sdcheck 0755 0 0\n' >> "$OUT_DIR/initramfs.linux.list"
-for binary in "${LIFE_BIN:-}" "${BOARDCTL_BIN:-}" "${VGACTL_BIN:-}"; do
+for binary in "${LIFE_BIN:-}" "${BOARDCTL_BIN:-}" "${VGACTL_BIN:-}" "${SDVERIFY_BIN:-}"; do
   [[ -n $binary ]] || continue
   sed -i.bak "s| $binary | /repo/${binary#"$repo_root"/} |" "$OUT_DIR/initramfs.linux.list"
   rm "$OUT_DIR/initramfs.linux.list.bak"

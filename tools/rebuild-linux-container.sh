@@ -85,7 +85,7 @@ busybox() {
 kernel() {
   local out=/repo/build/linux-build-busybox-$mode$suffix
   bash tools/build-life.sh
-  INIT_SCRIPT_MODE=$mode LIFE_BIN=/repo/build/apps/life BOARDCTL_BIN=/repo/build/apps/boardctl VGACTL_BIN=/repo/build/apps/vgactl SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
+  INIT_SCRIPT_MODE=$mode LIFE_BIN=/repo/build/apps/life BOARDCTL_BIN=/repo/build/apps/boardctl VGACTL_BIN=/repo/build/apps/vgactl SDVERIFY_BIN=/repo/build/apps/sdverify SKIP_CPIO=1 bash tools/build-busybox-initramfs.sh
   mkdir -p "$out" build/external/linux-out
   make -C /sources/linux-6.12 O="$out" ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- allnoconfig
   (cd "$out" && /sources/linux-6.12/scripts/kconfig/merge_config.sh -m .config /repo/platform/linux_minbringup.fragment)
