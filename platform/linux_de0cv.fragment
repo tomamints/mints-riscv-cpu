@@ -31,3 +31,10 @@ CONFIG_NLS_CODEPAGE_437=y
 CONFIG_NLS_ISO8859_1=y
 CONFIG_FAT_DEFAULT_CODEPAGE=437
 CONFIG_FAT_DEFAULT_IOCHARSET="iso8859-1"
+
+# Read existing Linux / Raspberry Pi root partitions without journal replay
+# (mount explicitly with -o ro,noload). exFAT supports existing data cards.
+CONFIG_EXT4_FS=y
+CONFIG_EXFAT_FS=y
+CONFIG_EXFAT_DEFAULT_IOCHARSET="utf8"
+CONFIG_NLS_UTF8=y

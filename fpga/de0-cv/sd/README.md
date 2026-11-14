@@ -60,8 +60,8 @@ not a general replacement for every configuration of the Altera SPI IP.
 The platform device uses `altr,spi-1.0`, with an `mmc-spi-slot` child at CS 0.
 Only the eight-bit/mode-0 path used by that child is supported.
 
-The board kernel builds SPI, MMC block, VFAT, MBR/GPT partition support and
-437/ISO-8859-1 character sets in. No external module installation is needed.
+The board kernel builds SPI, MMC block, VFAT/exFAT/ext4, MBR/GPT partition
+support and 437/ISO-8859-1/UTF-8 character sets in. No external module installation is needed.
 The GPIO UIO resource and SPI register resource are disjoint; applications
 must not access SPI through the page-aligned GPIO UIO mapping.
 
@@ -70,8 +70,7 @@ must not access SPI through the page-aligned GPIO UIO mapping.
 Use a matching SD-enabled FPGA image and Linux image; an older FPGA image
 has no SPI register window and cannot run this device tree safely. Rebuild
 and program using the [SoC procedure](../soc/README.md). Use an SD memory card
-with an existing FAT32 filesystem for the first mount. exFAT/SDIO support is
-not included. No automatic mount or format is performed.
+with an existing filesystem for the first mount. SDIO is not supported. No automatic mount or format is performed.
 
 From the Linux UART shell:
 
@@ -88,6 +87,23 @@ umount /mnt/sd
 ```
 
 For an unpartitioned FAT32 card, use `/dev/mmcblk0` for the mount instead.
+Identify existing filesystems with `busybox blkid /dev/mmcblk0p1 /dev/mmcblk0p2`.
+Use `-t exfat -o ro` for exFAT. For an existing Linux/ext4 root partition, set
+it read-only with `sdcheck` and mount with **`-t ext4 -o ro,noload`**: `noload`
+prevents journal replay, which a plain read-only ext4 mount can otherwise try.
+
+For example, when partition 2 is ext4:
+
+```sh
+sdcheck /dev/mmcblk0p2
+mount -t ext4 -o ro,noload /dev/mmcblk0p2 /mnt/sd
+cat /mnt/sd/usr/lib/os-release
+umount /mnt/sd
+```
+
+OS metadata and Raspberry Pi firmware filenames can identify an existing OS.
+Do not execute scripts from an unknown card. Partition numbers and filesystem
+types must be determined from the actual card, not assumed from this example.
 `sdcheck` sets the whole block device and chosen partition read-only, verifies
 the setting, reads exactly one sector and prints its SHA256. The temporary
 sample is on the initramfs, not on the card. It neither formats nor repairs
