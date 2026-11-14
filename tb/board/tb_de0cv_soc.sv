@@ -33,6 +33,7 @@ module tb_de0cv_soc #(
     logic [15:0] model_dq;
 
     de0cv_soc_core #(.BOOTROM_HEX(BOOTROM_HEX), .FONT_HEX("fpga/de0-cv/vga/font8x8.hex"), .MAILBOX_WORDS(WORDS)) dut (
+        .SD_MISO(1'b1),.SD_CLK(),.SD_MOSI(),.SD_CS_N(),
         .video_clk(video_clk),.VGA_R(),.VGA_G(),.VGA_B(),.VGA_HS(),.VGA_VS(),
         .clk(clk), .power_n(power_n), .locked(1'b1),
         .tck(tck), .tdi(tdi), .cdr(cdr), .sdr(sdr), .udr(udr), .vir(vir), .tdo(tdo),

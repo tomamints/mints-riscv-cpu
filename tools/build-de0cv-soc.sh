@@ -46,6 +46,8 @@ cp fpga/de0-cv/vga/font8x8.hex "$out/quartus/font8x8.hex"
 files=$( { sed '/^#/d;/^$/d' core.f; cat <<'EOF'
 fpga/de0-cv/vga/rtl/vga_text.sv
 rtl/peripheral/board_gpio_mmio.sv
+rtl/peripheral/board_io_mmio.sv
+fpga/de0-cv/sd/rtl/sd_spi_mmio.sv
 rtl/peripheral/uart16550_regs.sv
 fpga/de0-cv/rtl/uart_baud_gen.sv
 fpga/de0-cv/rtl/uart_tx.sv
@@ -67,7 +69,7 @@ for f in $files; do cp "$f" "$out/rtl/"; done
 shasum -a 256 "$out/quartus/bootrom_linux.hex" "$out/quartus/font8x8.hex" >> "$out/sources.sha256"
 
 profile=(
-  "SYNTHESIS=1" "SVCPU_BOARD_GPIO=1" "SVCPU_BOARD_VGA=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
+  "SYNTHESIS=1" "SVCPU_BOARD_GPIO=1" "SVCPU_BOARD_VGA=1" "SVCPU_BOARD_SD=1" "SVCPU_RAM_EXTERNAL=1" "SVCPU_PHYSICAL_UART=1" "SVCPU_RAM_SIZE_BYTES=67108864"
   "SVCPU_SOC_CACHE_LINES=$cache_lines"
   "SVCPU_BP_PHT_ENTRIES=32" "SVCPU_BP_BTB_ENTRIES=${BP_BTB_ENTRIES:-4}" "SVCPU_BP_RAS_ENTRIES=4"
   "SVCPU_BP_ENABLE=${BP_ENABLE:-0}"
@@ -110,6 +112,14 @@ sdram_qsf=fpga/de0-cv/sdram/quartus/de0_cv_sdram_test.qsf
     printf 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to %s\n' "$name"
     printf 'set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to %s\n' "$name"
   done < fpga/de0-cv/soc/vga-pins.txt
+  while read -r name pin direction; do
+    printf 'set_location_assignment PIN_%s -to %s\n' "$pin" "$name"
+    printf 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to %s\n' "$name"
+    if [[ $direction == output ]]; then
+      printf 'set_instance_assignment -name BOARD_MODEL_FAR_C 6P -to %s\n' "$name"
+    fi
+  done < fpga/de0-cv/soc/sd-pins.txt
+  echo 'set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SD_MISO'
   echo 'set_location_assignment PIN_K22 -to UART_TXD'
   echo 'set_location_assignment PIN_M21 -to UART_RXD'
   echo 'set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD'
@@ -127,6 +137,10 @@ echo 'PROJECT_REVISION = "de0cv_soc"' > "$out/quartus/de0cv_soc.qpf"
   echo 'set_output_delay -clock CLOCK_50 -min 0.0 [get_ports {VGA_R[*] VGA_G[*] VGA_B[*] VGA_HS VGA_VS}]'
   echo 'set_false_path -from [get_ports {SW[*] KEY_N[*]}]'
 
+  echo '# Slow SPI outputs: conservative CPU-clock budget; MISO enters a two-FF synchronizer.'
+  echo 'set_output_delay -clock {*generic_pll1~PLL_OUTPUT_COUNTER|divclk} -max 5.0 [get_ports {SD_CLK SD_MOSI SD_CS_N}]'
+  echo 'set_output_delay -clock {*generic_pll1~PLL_OUTPUT_COUNTER|divclk} -min 0.0 [get_ports {SD_CLK SD_MOSI SD_CS_N}]'
+  echo 'set_false_path -from [get_ports {SD_MISO}] -to [get_registers {*miso_meta}]'
   echo 'set_false_path -from [get_ports {UART_RXD}]'
   echo 'set_false_path -to [get_ports {UART_TXD}]'
   echo '# JTAG mailbox: req/ack toggles cross through two-flop synchronizers;'

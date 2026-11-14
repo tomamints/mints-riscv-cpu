@@ -182,6 +182,20 @@ void main(void) {
     errors+=video_errors;
 #endif
 #endif
+#ifdef BOARD_SD_TEST
+    /* Read/write 32-bit lanes through CPU MMIO; CS remains high throughout. */
+    volatile unsigned *spi=(volatile unsigned *)0x40000040UL;
+    int spi_errors=0;
+    spi[3]=0;spi[5]=0;spi[2]=0;
+    for(unsigned i=0;i<16;i++) {
+        spi[1]=0xff;
+        unsigned polls=0;
+        while(!(spi[2]&0x80) && polls++<10000){}
+        if(!(spi[2]&0x80) || (spi[2]&0x100) || spi[0]!=0xff)++spi_errors;
+        if(spi[2]&0x80)++spi_errors;
+    }
+    puts_(spi_errors?"SD-SPI FAIL\n":"SD-SPI PASS\n");errors+=spi_errors;
+#endif
     errors += timer_test();
     puts_(errors ? "SELFTEST FAIL\n" : "SELFTEST PASS\n");
     puts_("echo mode (letters case-swapped)\n");

@@ -61,6 +61,10 @@ module core_top #(
     output logic [9:0] board_leds_o,
     output logic board_led_enable_o,
 `endif
+`ifdef SVCPU_BOARD_SD
+    input logic sd_miso_i,
+    output logic sd_clk_o,sd_mosi_o,sd_cs_n_o,
+`endif
 `ifdef SVCPU_BOARD_VGA
     output logic video_valid_o,
     output logic [63:0] video_data_o,
@@ -315,6 +319,14 @@ module core_top #(
     end
 
 `ifdef SVCPU_BOARD_GPIO
+`ifdef SVCPU_BOARD_SD
+    board_io_mmio gpio (
+        .clk(clk),.rst_n(rst),.switches(board_switches_i),.keys_n(board_keys_n_i),
+        .leds(board_leds_o),.led_enable(board_led_enable_o),.bus(dbg_membus),
+        .video_valid(video_valid_o),.video_data(video_data_o),.video_ready(video_ready_i),.video_status(video_status_i),
+        .sd_miso(sd_miso_i),.sd_clk(sd_clk_o),.sd_mosi(sd_mosi_o),.sd_cs_n(sd_cs_n_o)
+    );
+`else
     board_gpio_mmio #(
 `ifdef SVCPU_BOARD_VGA
         .VGA_ENABLED(1)
@@ -330,6 +342,7 @@ module core_top #(
         .video_valid(),.video_data(),.video_ready(1'b1),.video_status(64'b0)
 `endif
     );
+`endif
 `else
     always_ff @(posedge clk) begin
         // -----------------------------------------------------------

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Explicit, read-only card check. Never formats, repairs or writes media.
+set -eu
+case "$#" in
+  0) device=/dev/mmcblk0;;
+  1) device=$1;;
+  *) echo 'Usage: sdcheck [/dev/mmcblk0 or /dev/mmcblk0p1]' >&2; exit 2;;
+esac
+case "$device" in
+  /dev/mmcblk0|/dev/mmcblk0p[1-9]) ;;
+  *) echo 'Only mmcblk0 or its partitions 1..9 are accepted' >&2; exit 2;;
+esac
+[ -b "$device" ] || { echo "No card device: $device (inspect dmesg and /sys/class/mmc_host)" >&2; exit 1; }
+# Protect the whole card AND the selected partition before reading/mounting.
+blockdev --setro /dev/mmcblk0
+blockdev --setro "$device"
+[ "$(blockdev --getro /dev/mmcblk0)" = 1 ] && [ "$(blockdev --getro "$device")" = 1 ] || {
+  echo 'Failed to set read-only mode' >&2; exit 1;
+}
+echo "SD read-only: $device"
+echo "Bytes: $(blockdev --getsize64 "$device")"
+echo 'SHA256 of first 512-byte sector:'
+# BusyBox ash has no pipefail: check dd separately before hashing its output.
+sample=/tmp/sdcheck-sector-$$
+trap 'rm -f "$sample"' EXIT HUP INT TERM
+dd if="$device" of="$sample" bs=512 count=1
+[ "$(wc -c < "$sample")" -eq 512 ] || { echo 'Short sector read' >&2; exit 1; }
+sha256sum "$sample"
+echo 'SD-READ-PASS'
+echo "For FAT32: mkdir -p /mnt/sd; mount -t vfat -o ro $device /mnt/sd"

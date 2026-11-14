@@ -23,6 +23,8 @@ module de0cv_soc_core #(
     output wire [9:0]  LEDR,
     input wire [9:0] SW,
     input wire [3:0] KEY_N,
+    input wire SD_MISO,
+    output wire SD_CLK,SD_MOSI,SD_CS_N,
     input  wire        UART_RXD,
     output wire        UART_TXD,
     output wire [12:0] DRAM_ADDR,
@@ -87,6 +89,7 @@ module de0cv_soc_core #(
         .DCACHE_DATA_RAM_STYLE(1), .ICACHE_LINE_COUNT(`SVCPU_SOC_CACHE_LINES), .ICACHE_DATA_RAM_STYLE(1)
     ) cpu (
         .clk(clk), .rst(cpu_rst_n),
+        .sd_miso_i(SD_MISO),.sd_clk_o(SD_CLK),.sd_mosi_o(SD_MOSI),.sd_cs_n_o(SD_CS_N),
         .video_valid_o(video_valid),.video_data_o(video_data),.video_ready_i(video_ready),.video_status_i(video_status),
         .board_switches_i(SW), .board_keys_n_i(KEY_N),
         .board_leds_o(gpio_leds), .board_led_enable_o(gpio_led_enable),

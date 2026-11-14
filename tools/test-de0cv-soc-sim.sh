@@ -33,12 +33,12 @@ out.sort()
 open(dst, "w").write("".join(f"{a:x} {v}\n" for a, v in out))
 PY
 cp fpga/de0-cv/vga/font8x8.hex "$out/font8x8.hex"
-files="$(sed "/^#/d;/^$/d" core.f | tr "\n" " ") fpga/de0-cv/vga/rtl/vga_text.sv rtl/peripheral/board_gpio_mmio.sv rtl/peripheral/uart16550_regs.sv fpga/de0-cv/rtl/uart_baud_gen.sv fpga/de0-cv/rtl/uart_tx.sv fpga/de0-cv/rtl/uart_rx.sv fpga/de0-cv/rtl/uart_phy.sv rtl/peripheral/uart16550_serial.sv rtl/bus/membus_sdram_adapter.sv fpga/de0-cv/sdram/rtl/sdram_bridge64.sv fpga/de0-cv/sdram/rtl/sdram_native16.sv fpga/de0-cv/rtl/boot_memory_loader.sv fpga/de0-cv/rtl/jtag_block_mailbox.sv fpga/de0-cv/soc/rtl/de0cv_soc_core.sv tb/model/sdram_cycle_model16.sv tb/board/tb_de0cv_soc.sv"
+files="$(sed "/^#/d;/^$/d" core.f | tr "\n" " ") fpga/de0-cv/vga/rtl/vga_text.sv rtl/peripheral/board_gpio_mmio.sv rtl/peripheral/board_io_mmio.sv fpga/de0-cv/sd/rtl/sd_spi_mmio.sv rtl/peripheral/uart16550_regs.sv fpga/de0-cv/rtl/uart_baud_gen.sv fpga/de0-cv/rtl/uart_tx.sv fpga/de0-cv/rtl/uart_rx.sv fpga/de0-cv/rtl/uart_phy.sv rtl/peripheral/uart16550_serial.sv rtl/bus/membus_sdram_adapter.sv fpga/de0-cv/sdram/rtl/sdram_bridge64.sv fpga/de0-cv/sdram/rtl/sdram_native16.sv fpga/de0-cv/rtl/boot_memory_loader.sv fpga/de0-cv/rtl/jtag_block_mailbox.sv fpga/de0-cv/soc/rtl/de0cv_soc_core.sv tb/model/sdram_cycle_model16.sv tb/board/tb_de0cv_soc.sv"
 sha256sum $files "$IMAGE" fpga/de0-cv/vga/font8x8.hex > "$out/sources.sha256"
 debug_define=()
 [[ $SOC_DEBUG == 0 ]] || debug_define+=(-DSVCPU_FPGA_DEBUG=1)
 verilator --binary --timing -O3 -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD --top-module tb_de0cv_soc \
-  -DSYNTHESIS=1 -DSVCPU_BOARD_GPIO=1 -DSVCPU_BOARD_VGA=1 -DSVCPU_RAM_EXTERNAL -DSVCPU_PHYSICAL_UART -DSVCPU_RAM_SIZE_BYTES=67108864 \
+  -DSYNTHESIS=1 -DSVCPU_BOARD_GPIO=1 -DSVCPU_BOARD_VGA=1 -DSVCPU_BOARD_SD=1 -DSVCPU_RAM_EXTERNAL -DSVCPU_PHYSICAL_UART -DSVCPU_RAM_SIZE_BYTES=67108864 \
   -DSVCPU_BP_PHT_ENTRIES=32 -DSVCPU_BP_BTB_ENTRIES=4 -DSVCPU_BP_RAS_ENTRIES=4 \
   -DSVCPU_SOC_CACHE_LINES="$SOC_CACHE_LINES" -DSVCPU_TLB_ENTRIES="$TLB_ENTRIES" -DSVCPU_BP_ENABLE="$BP_ENABLE" \
   -DSVCPU_PMP_CARRY_COMPARE=1 "${debug_define[@]}" \

@@ -22,13 +22,14 @@ expect_count {external SDRAM clock} [get_clocks {SDRAM_CLK}] 1
 expect_count {CPU clock} [get_clocks {*generic_pll1~PLL_OUTPUT_COUNTER|divclk}] 1
 expect_count {VGA outputs} [get_ports {VGA_R[*] VGA_G[*] VGA_B[*] VGA_HS VGA_VS}] 14
 expect_count {board inputs} [get_ports {SW[*] KEY_N[*]}] 14
+expect_count {SD SPI pins} [get_ports {SD_CLK SD_MOSI SD_CS_N SD_MISO}] 4
 expect_count {UART pins} [get_ports {UART_TXD UART_RXD}] 2
 foreach_in_collection oc [get_available_operating_conditions] {
     set_operating_conditions $oc
     update_timing_netlist
     set corner [get_operating_conditions_info -display_name $oc]
     foreach kind {setup hold} {
-        foreach {label extra} [list global {} read [list -from $dq] output [list -to $outputs] video [list -to [get_ports {VGA_R[*] VGA_G[*] VGA_B[*] VGA_HS VGA_VS}]]] {
+        foreach {label extra} [list spi [list -to [get_ports {SD_CLK SD_MOSI SD_CS_N}]] global {} read [list -from $dq] output [list -to $outputs] video [list -to [get_ports {VGA_R[*] VGA_G[*] VGA_B[*] VGA_HS VGA_VS}]]] {
             set paths [get_timing_paths -$kind -npaths 1 {*}$extra]
             if {[get_collection_size $paths] == 0} { fail "$corner $label has no $kind path" }
             foreach_in_collection path $paths {
