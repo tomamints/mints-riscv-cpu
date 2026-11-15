@@ -227,7 +227,14 @@ See [RTL layout](Docs/RTL_LAYOUT.md) for exact source paths.
 - [Linux setup](Docs/LINUX_SETUP.md) and [clean rebuild](Docs/REBUILD_FROM_CLEAN.md)
 - [Performance counters](Docs/PERFORMANCE_COUNTERS.md) and [historical simulation baseline](Docs/LINUX_BASELINE.md)
 - [Complete documentation index](Docs/README.md)
-- [Third-party notices](NOTICE)
+- [BSD 3-Clause license](LICENSE) and [copyright / third-party notices](NOTICE)
+
+Copyright (c) 2026, MiNTs Co., Ltd. (MiNTs株式会社). The project's original
+contributions are available under the [BSD 3-Clause license](LICENSE), except
+where a file or component specifies otherwise. Textbook-derived portions retain
+Kanata Abe's copyright notice and BSD 3-Clause terms.
+`tools/prepare-board-linux.py` remains GPL-2.0-only; external dependencies and
+other third-party material retain their respective licenses. See [NOTICE](NOTICE).
 
 [Tenstorrent Whisper](https://github.com/tenstorrent/whisper) is an optional
 architectural reference for simulation lockstep and is licensed under Apache 2.0.

@@ -1,4 +1,18 @@
-MiNTs-CPU third-party notices
+MiNTs-CPU copyright and third-party notices
+
+MiNTs-CPU original contributions
+  Copyright (c) 2026, MiNTs Co., Ltd. (MiNTs株式会社)
+  This attribution covers the company's original contributions, not
+  third-party material. Third-party copyright notices and license terms
+  remain applicable to their respective portions.
+
+The MiNTs-CPU original contributions are licensed under the BSD 3-Clause
+License in LICENSE, except where a file or component specifies otherwise.
+In particular, tools/prepare-board-linux.py is GPL-2.0-only and is not
+relicensed by the top-level LICENSE. External dependencies and third-party
+material retain their respective licenses.
+
+Third-party notices
 
 This project uses Tenstorrent Whisper as an optional RISC-V instruction set
 simulator and architectural reference model for lockstep verification.
@@ -24,5 +38,5 @@ veryl-riscv-book
   Copyright (c) 2025, Kanata Abe
   License text: LICENSES/veryl-riscv-book-BSD-3-Clause
 
-This notice is for third-party software attribution only. It does not define
-the license of the MiNTs-CPU RTL, documentation, or project-specific tools.
+Retain the textbook copyright notice and BSD 3-Clause terms for the
+textbook-derived portions, in addition to the notices for MiNTs contributions.
