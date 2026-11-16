@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1190" viewBox="0 0 1680 1190">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+<marker id="arrowg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c4c4c4"/></marker>
+</defs>
+<rect width="1680" height="1190" fill="#ffffff"/>
+<text x="840.0" y="32.0" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">MiNTs-CPU architecture: Verilator simulator SoC</text>
+<text x="840.0" y="60.0" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="normal" fill="#555" text-anchor="middle" dominant-baseline="middle">Shared CPU RTL with the simulator memory, I/O and verification harness; sizes are the plain Makefile defaults</text>
+<rect x="30" y="85" width="1230" height="345" rx="14" fill="#eef6ee" stroke="#4f8a4f" stroke-width="2"/>
+<text x="44" y="103.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#4f8a4f" text-anchor="start" dominant-baseline="middle">CPU core: in-order 5-stage pipeline, RV64IMAC, M/S/U privilege</text>
+<text x="1246" y="103.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4f8a4f" text-anchor="end" dominant-baseline="middle" font-style="italic">IF → ID → EX → MEM → WB</text>
+<rect x="50" y="120" width="225" height="295" rx="14" fill="#e9f1fb" stroke="#3d6fb0" stroke-width="2"/>
+<text x="64" y="138.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#3d6fb0" text-anchor="start" dominant-baseline="middle">IF  instruction fetch</text>
+<rect x="290" y="120" width="200" height="295" rx="14" fill="#eef6ee" stroke="#4f8a4f" stroke-width="2"/>
+<text x="304" y="138.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#4f8a4f" text-anchor="start" dominant-baseline="middle">ID  decode</text>
+<rect x="505" y="120" width="220" height="295" rx="14" fill="#eef6ee" stroke="#4f8a4f" stroke-width="2"/>
+<text x="519" y="138.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#4f8a4f" text-anchor="start" dominant-baseline="middle">EX  execute</text>
+<rect x="740" y="120" width="300" height="295" rx="14" fill="#fdf3e6" stroke="#c47a1c" stroke-width="2"/>
+<text x="754" y="138.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#c47a1c" text-anchor="start" dominant-baseline="middle">MEM  memory access</text>
+<rect x="1055" y="120" width="190" height="295" rx="14" fill="#eef6ee" stroke="#4f8a4f" stroke-width="2"/>
+<text x="1069" y="138.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#4f8a4f" text-anchor="start" dominant-baseline="middle">WB  write back</text>
+<rect x="65" y="155" width="195" height="46" rx="7" fill="#ffffff" stroke="#3d6fb0" stroke-width="1.5"/>
+<text x="162.5" y="171.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Instruction fetcher</text>
+<text x="162.5" y="186.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#3d6fb0" text-anchor="middle" dominant-baseline="middle">fetch / issue FIFOs, RVC expand</text>
+<rect x="65" y="209" width="195" height="46" rx="7" fill="#ffffff" stroke="#3d6fb0" stroke-width="1.5"/>
+<text x="162.5" y="225.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Branch predictor</text>
+<text x="162.5" y="240.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#3d6fb0" text-anchor="middle" dominant-baseline="middle">PHT 128 / BTB 32 / RAS 8</text>
+<rect x="65" y="263" width="195" height="46" rx="7" fill="#ffffff" stroke="#3d6fb0" stroke-width="1.5"/>
+<text x="162.5" y="279.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">ITLB (Sv39)</text>
+<text x="162.5" y="294.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#3d6fb0" text-anchor="middle" dominant-baseline="middle">8 entries</text>
+<rect x="65" y="317" width="195" height="46" rx="7" fill="#ffffff" stroke="#3d6fb0" stroke-width="1.5"/>
+<text x="162.5" y="333.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">I-cache</text>
+<text x="162.5" y="348.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#3d6fb0" text-anchor="middle" dominant-baseline="middle">4 KiB, 32 B lines</text>
+<rect x="65" y="371" width="195" height="32" rx="7" fill="#ffffff" stroke="#7a55b5" stroke-width="1.5"/>
+<text x="162.5" y="387.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">PMP fetch / issue checks</text>
+<rect x="305" y="160" width="170" height="52" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="390.0" y="186.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Instruction decoder</text>
+<rect x="305" y="225" width="170" height="52" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="390.0" y="244.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Register file</text>
+<text x="390.0" y="259.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">32 × 64 bit, 2R1W</text>
+<rect x="305" y="290" width="170" height="52" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="390.0" y="309.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Control / hazards</text>
+<text x="390.0" y="324.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">forwarding, stalls</text>
+<rect x="520" y="155" width="190" height="46" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="615.0" y="178.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">ALU</text>
+<rect x="520" y="209" width="190" height="46" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="615.0" y="225.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Branch unit</text>
+<text x="615.0" y="240.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">early JAL / JALR / branch redirect</text>
+<rect x="520" y="263" width="190" height="46" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="615.0" y="279.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Mul / Div unit</text>
+<text x="615.0" y="294.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">M extension</text>
+<rect x="520" y="317" width="190" height="46" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="615.0" y="333.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">CSR unit</text>
+<text x="615.0" y="348.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">traps, interrupts, counters</text>
+<rect x="755" y="155" width="130" height="46" rx="7" fill="#ffffff" stroke="#c47a1c" stroke-width="1.5"/>
+<text x="820.0" y="171.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">memunit</text>
+<text x="820.0" y="186.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">align / split</text>
+<rect x="755" y="209" width="130" height="46" rx="7" fill="#ffffff" stroke="#c47a1c" stroke-width="1.5"/>
+<text x="820.0" y="225.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">DTLB (Sv39)</text>
+<text x="820.0" y="240.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">8 entries</text>
+<rect x="755" y="263" width="130" height="46" rx="7" fill="#ffffff" stroke="#7a55b5" stroke-width="1.5"/>
+<text x="820.0" y="286.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">PMP data check</text>
+<rect x="900" y="155" width="125" height="100" rx="7" fill="#ffffff" stroke="#c47a1c" stroke-width="1.5"/>
+<text x="962.5" y="184.4" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">D-cache</text>
+<text x="962.5" y="199.4" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">4 KiB</text>
+<text x="962.5" y="213.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">write-through</text>
+<text x="962.5" y="226.9" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">store buffer 4</text>
+<rect x="900" y="263" width="125" height="46" rx="7" fill="#ffffff" stroke="#c47a1c" stroke-width="1.5"/>
+<text x="962.5" y="279.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">AMO unit</text>
+<text x="962.5" y="294.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">LR/SC, AMO*</text>
+<rect x="755" y="317" width="270" height="46" rx="7" fill="#ffffff" stroke="#c47a1c" stroke-width="1.5"/>
+<text x="890.0" y="333.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">fence.i drain</text>
+<text x="890.0" y="348.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">store buffer + AMO idle before re-fetch</text>
+<rect x="1070" y="160" width="160" height="52" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="1150.0" y="186.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Register writeback</text>
+<rect x="1070" y="225" width="160" height="52" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="1150.0" y="244.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Retire</text>
+<text x="1150.0" y="259.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">minstret, retire port</text>
+<rect x="1070" y="290" width="160" height="52" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="1150.0" y="309.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Performance counters</text>
+<text x="1150.0" y="324.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4f8a4f" text-anchor="middle" dominant-baseline="middle">cycle / instret CSRs</text>
+<path d="M 275 268 L 290 268" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<path d="M 490 268 L 505 268" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<path d="M 725 268 L 740 268" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<path d="M 1040 268 L 1055 268" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<path d="M 110 415 L 110 526" fill="none" stroke="#7a55b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="33.5" y="462" width="65.1" height="16" rx="3" fill="#ffffff" fill-opacity="0.92"/>
+<text x="66" y="470.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">ITLB miss</text>
+<path d="M 800 415 L 800 444 L 215 444 L 215 526" fill="none" stroke="#7a55b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="474.4" y="436" width="171.3" height="16" rx="3" fill="#ffffff" fill-opacity="0.92"/>
+<text x="560" y="444.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">DTLB miss → page-table walk</text>
+<path d="M 140 415 L 140 466 L 830 466 L 830 520" fill="none" stroke="#3d6fb0" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="340.6" y="458" width="318.8" height="16" rx="3" fill="#ffffff" fill-opacity="0.92"/>
+<text x="500" y="466.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#3d6fb0" text-anchor="middle" dominant-baseline="middle">fetch memory port: I-cache refill + I-side PTE reads</text>
+<path d="M 180 526 L 180 469" fill="none" stroke="#7a55b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+<path d="M 245 526 L 245 486 L 870 486 L 870 415" fill="none" stroke="#7a55b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="447.8" y="478" width="224.4" height="16" rx="3" fill="#ffffff" fill-opacity="0.92"/>
+<text x="560" y="486.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">D-side PTE reads → memunit → D-cache</text>
+<path d="M 962 415 L 962 520" fill="none" stroke="#c47a1c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="959.6" y="458" width="200.8" height="16" rx="3" fill="#ffffff" fill-opacity="0.92"/>
+<text x="1060" y="466.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#c47a1c" text-anchor="middle" dominant-baseline="middle">D-cache miss / uncached / stores</text>
+<rect x="30" y="495" width="710" height="155" rx="14" fill="#f3eefb" stroke="#7a55b5" stroke-width="2"/>
+<text x="726" y="513.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#7a55b5" text-anchor="end" dominant-baseline="middle">MMU / protection</text>
+<rect x="50" y="526" width="215" height="56" rx="7" fill="#ffffff" stroke="#7a55b5" stroke-width="1.5"/>
+<text x="157.5" y="540.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Sv39 page-table walkers</text>
+<text x="157.5" y="555.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">I: fetch memory port</text>
+<text x="157.5" y="569.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">D: memunit → D-cache</text>
+<rect x="280" y="526" width="210" height="56" rx="7" fill="#ffffff" stroke="#7a55b5" stroke-width="1.5"/>
+<text x="385.0" y="547.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">PMP region decode</text>
+<text x="385.0" y="562.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">8 entries, decoded once, shared</text>
+<rect x="505" y="526" width="215" height="56" rx="7" fill="#ffffff" stroke="#7a55b5" stroke-width="1.5"/>
+<text x="612.5" y="547.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">PMP checkers</text>
+<text x="612.5" y="562.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">fetch, issue, data, 2 × PTW</text>
+<rect x="50" y="592" width="670" height="44" rx="7" fill="#ffffff" stroke="#7a55b5" stroke-width="1.5"/>
+<text x="385.0" y="607.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">satp / ASID, sfence.vma, SUM / MXR</text>
+<text x="385.0" y="622.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#7a55b5" text-anchor="middle" dominant-baseline="middle">M-mode bypass; access fault on PMP violation</text>
+<rect x="760" y="495" width="500" height="155" rx="14" fill="#f2f2f2" stroke="#666666" stroke-width="2"/>
+<text x="774" y="513.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#666666" text-anchor="start" dominant-baseline="middle">SoC interconnect</text>
+<rect x="780" y="520" width="220" height="56" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="890.0" y="541.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">I/D memory arbiter</text>
+<text x="890.0" y="556.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">I-side, D-high, D-low</text>
+<rect x="1020" y="520" width="220" height="56" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="1130.0" y="541.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">MMIO controller</text>
+<text x="1130.0" y="556.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">address decode → devices / RAM</text>
+<rect x="780" y="588" width="460" height="46" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="1010.0" y="604.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">DMA engine  @ 0x3000_0000</text>
+<text x="1010.0" y="619.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">RAM master, MMIO-programmed</text>
+<path d="M 1000 548 L 1020 548" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<path d="M 1130 650 L 1130 690" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="30" y="670" width="1230" height="180" rx="14" fill="#f2f2f2" stroke="#666666" stroke-width="2"/>
+<text x="44" y="688.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#666666" text-anchor="start" dominant-baseline="middle">Devices and memory map</text>
+<rect x="45" y="712" width="165" height="120" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="127.5" y="758.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Boot ROM</text>
+<text x="127.5" y="773.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">0x0000_1000</text>
+<text x="127.5" y="787.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">reset vector</text>
+<rect x="220" y="712" width="165" height="120" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="302.5" y="758.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">ACLINT</text>
+<text x="302.5" y="773.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">0x0200_0000</text>
+<text x="302.5" y="787.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">MSWI / MTIMER</text>
+<rect x="395" y="712" width="165" height="120" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="477.5" y="758.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">PLIC</text>
+<text x="477.5" y="773.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">0x0C00_0000</text>
+<text x="477.5" y="787.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">external IRQs</text>
+<rect x="570" y="712" width="165" height="120" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="652.5" y="751.4" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">UART</text>
+<text x="652.5" y="766.4" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">0x1000_0000</text>
+<text x="652.5" y="780.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">NS16550A</text>
+<text x="652.5" y="793.9" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">DPI byte backend</text>
+<rect x="745" y="712" width="165" height="120" rx="7" fill="#ffffff" stroke="#666666" stroke-width="2.4"/>
+<text x="827.5" y="758.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Debug / exit MMIO</text>
+<text x="827.5" y="773.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">0x4000_0000</text>
+<text x="827.5" y="787.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">printf, test exit</text>
+<rect x="844" y="704.0" width="62" height="15" rx="7" fill="#2f5f99"/>
+<text x="875.0" y="712.0" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">SIM ONLY</text>
+<rect x="920" y="712" width="165" height="120" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1002.5" y="751.4" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">Board I/O</text>
+<text x="1002.5" y="766.4" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">0x4000_0000</text>
+<text x="1002.5" y="780.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">LED / SW / KEY,</text>
+<text x="1002.5" y="793.9" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">VGA text, microSD</text>
+<rect x="1095" y="712" width="165" height="120" rx="7" fill="#ffffff" stroke="#666666" stroke-width="1.5"/>
+<text x="1177.5" y="744.5" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">RAM</text>
+<text x="1177.5" y="759.5" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">0x8000_0000</text>
+<text x="1177.5" y="773.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">128 MiB model</text>
+<text x="1177.5" y="787.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">(optional build:</text>
+<text x="1177.5" y="800.8" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666666" text-anchor="middle" dominant-baseline="middle">SDRAM ctrl + model)</text>
+<rect x="1280" y="85" width="370" height="345" rx="14" fill="#eaf2fb" stroke="#2f5f99" stroke-width="2"/>
+<text x="1294" y="103.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#2f5f99" text-anchor="start" dominant-baseline="middle">Verification (simulation)</text>
+<rect x="1576" y="95.5" width="62" height="15" rx="7" fill="#2f5f99"/>
+<text x="1607.0" y="103.5" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">SIM ONLY</text>
+<rect x="1300" y="122" width="330" height="50" rx="7" fill="#ffffff" stroke="#2f5f99" stroke-width="2.4"/>
+<text x="1465.0" y="140.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">riscv-tests ISA suite</text>
+<text x="1465.0" y="155.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#2f5f99" text-anchor="middle" dominant-baseline="middle">rv64 ui / um / ua / uc / mi / si</text>
+<rect x="1300" y="182" width="330" height="50" rx="7" fill="#ffffff" stroke="#2f5f99" stroke-width="2.4"/>
+<text x="1465.0" y="200.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Whisper lockstep (optional)</text>
+<text x="1465.0" y="215.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#2f5f99" text-anchor="middle" dominant-baseline="middle">PC, register, memory, trap compare</text>
+<rect x="1300" y="242" width="330" height="50" rx="7" fill="#ffffff" stroke="#2f5f99" stroke-width="2.4"/>
+<text x="1465.0" y="260.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">RAM latency shim (optional)</text>
+<text x="1465.0" y="275.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#2f5f99" text-anchor="middle" dominant-baseline="middle">variable memory latency injection</text>
+<rect x="1300" y="302" width="330" height="50" rx="7" fill="#ffffff" stroke="#2f5f99" stroke-width="2.4"/>
+<text x="1465.0" y="320.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Traces and PERF_SUMMARY</text>
+<text x="1465.0" y="335.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#2f5f99" text-anchor="middle" dominant-baseline="middle">fetch / cache / TLB / predictor statistics</text>
+<rect x="1300" y="362" width="330" height="50" rx="7" fill="#ffffff" stroke="#2f5f99" stroke-width="2.4"/>
+<text x="1465.0" y="380.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Linux boot (Linux rebuild profile)</text>
+<text x="1465.0" y="395.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#2f5f99" text-anchor="middle" dominant-baseline="middle">OpenSBI → Linux 6.12 → BusyBox autotest</text>
+<rect x="1280" y="495" width="370" height="355" rx="14" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="1294" y="513.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#a8a8a8" text-anchor="start" dominant-baseline="middle">DE0-CV board integration</text>
+<rect x="1300" y="530" width="330" height="46" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1465.0" y="546.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">PLL</text>
+<text x="1465.0" y="561.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">20 MHz CPU, phase-shifted SDRAM clock</text>
+<rect x="1300" y="586" width="330" height="56" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1465.0" y="600.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">SDRAM path</text>
+<text x="1465.0" y="615.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">membus_sdram_adapter → bridge64 →</text>
+<text x="1465.0" y="629.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">sdram_native16 (x16 SDR, 64 MiB)</text>
+<rect x="1300" y="652" width="330" height="56" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1465.0" y="666.2" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">JTAG boot loader</text>
+<text x="1465.0" y="681.2" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">virtual JTAG mailbox → loader: clear,</text>
+<text x="1465.0" y="695.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">write, read-back verify, then release CPU</text>
+<rect x="1300" y="716" width="160" height="70" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1380.0" y="730.4" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">VGA text</text>
+<text x="1380.0" y="745.4" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">80 × 30, 640 × 480</text>
+<text x="1380.0" y="759.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">command/ack verified;</text>
+<text x="1380.0" y="772.9" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">monitor image not observed</text>
+<rect x="1470" y="716" width="160" height="70" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1550.0" y="730.4" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">microSD (SPI)</text>
+<text x="1550.0" y="745.4" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">polled; FAT32 read +</text>
+<text x="1550.0" y="759.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">new-file write/readback</text>
+<text x="1550.0" y="772.9" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">verified on board</text>
+<rect x="1300" y="794" width="330" height="46" rx="7" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1465.0" y="810.1" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">JTAG CPU snapshots</text>
+<text x="1465.0" y="825.1" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#a8a8a8" text-anchor="middle" dominant-baseline="middle">read-only debug (SVCPU_FPGA_DEBUG)</text>
+<path d="M 1252 772 L 1288 772 L 1288 614 L 1300 614" fill="none" stroke="#c4c4c4" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrowg)"/>
+<rect x="30" y="870" width="1620" height="300" rx="14" fill="#f2f2f2" stroke="#666666" stroke-width="2"/>
+<text x="44" y="888.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#666666" text-anchor="start" dominant-baseline="middle">Software stack and configuration</text>
+<rect x="55" y="910" width="145" height="40" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="127.5" y="930.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Boot ROM</text>
+<rect x="225" y="910" width="145" height="40" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="297.5" y="930.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">OpenSBI v1.3.1</text>
+<path d="M 200 930 L 225 930" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="395" y="910" width="145" height="40" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="467.5" y="930.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">Linux 6.12</text>
+<path d="M 370 930 L 395 930" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="565" y="910" width="145" height="40" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="637.5" y="930.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">BusyBox 1.36.1</text>
+<path d="M 540 930 L 565 930" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="735" y="910" width="145" height="40" rx="7" fill="#ffffff" stroke="#4f8a4f" stroke-width="1.5"/>
+<text x="807.5" y="930.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#222" text-anchor="middle" dominant-baseline="middle">UART shell</text>
+<path d="M 710 930 L 735 930" fill="none" stroke="#555" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="55" y="976.0" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#333" text-anchor="start" dominant-baseline="middle">Configuration (Docs/CURRENT_STATUS.md):</text>
+<text x="55" y="1000.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#2f5f99" text-anchor="start" dominant-baseline="middle"></text>
+<text x="215" y="1000.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#2f5f99" text-anchor="start" dominant-baseline="middle">plain Makefile defaults</text>
+<text x="470" y="1000.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#2f5f99" text-anchor="start" dominant-baseline="middle">Linux rebuild profile</text>
+<text x="55" y="1020.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">Branch prediction</text>
+<text x="215" y="1020.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">PHT 128 / BTB 32 / RAS 8</text>
+<text x="470" y="1020.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">PHT 128 / BTB 32 / RAS 8</text>
+<text x="55" y="1038.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">ITLB / DTLB</text>
+<text x="215" y="1038.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">8 entries each</text>
+<text x="470" y="1038.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">8 entries each</text>
+<text x="55" y="1056.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">I-cache</text>
+<text x="215" y="1056.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">4 KiB</text>
+<text x="470" y="1056.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">4 KiB</text>
+<text x="55" y="1074.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">D-cache</text>
+<text x="215" y="1074.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">4 KiB, write-through</text>
+<text x="470" y="1074.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">16 KiB, write-through</text>
+<text x="55" y="1092.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">Store buffer</text>
+<text x="215" y="1092.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">4 entries</text>
+<text x="470" y="1092.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">8 entries</text>
+<text x="55" y="1110.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">RAM</text>
+<text x="215" y="1110.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">128 MiB model</text>
+<text x="470" y="1110.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">128 MiB model</text>
+<text x="55" y="1128.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#444" text-anchor="start" dominant-baseline="middle">DTB timebase</text>
+<text x="215" y="1128.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">50 MHz</text>
+<text x="470" y="1128.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#444" text-anchor="start" dominant-baseline="middle">50 MHz</text>
+<text x="940" y="910.0" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="bold" fill="#333" text-anchor="start" dominant-baseline="middle">Legend</text>
+<rect x="940" y="928" width="34" height="20" rx="4" fill="#fff" stroke="#666" stroke-width="1.5"/>
+<text x="985" y="938.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#333" text-anchor="start" dominant-baseline="middle">used in this configuration</text>
+<rect x="940" y="958" width="34" height="20" rx="4" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="985" y="968.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#333" text-anchor="start" dominant-baseline="middle">FPGA board only (not in this view)</text>
+<rect x="948" y="990.5" width="62" height="15" rx="7" fill="#2f5f99"/>
+<text x="979.0" y="998.5" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">SIM ONLY</text>
+<text x="1020" y="998.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#333" text-anchor="start" dominant-baseline="middle">present only in this configuration</text>
+<text x="940" y="1032.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666" text-anchor="start" dominant-baseline="middle" font-style="italic">Blocks show the plain Makefile defaults; the Linux rebuild profile differs only in</text>
+<text x="940" y="1050.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666" text-anchor="start" dominant-baseline="middle" font-style="italic">D-cache size and store-buffer depth. "optional" items are separate build options.</text>
+<text x="940" y="1068.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666" text-anchor="start" dominant-baseline="middle" font-style="italic">The DE0-CV board SoC is shown in architecture_fpga.svg.</text>
+<text x="940" y="1086.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#666" text-anchor="start" dominant-baseline="middle" font-style="italic">Conceptual block diagram: buses, handshakes and arbitration are simplified.</text>
+</svg>
