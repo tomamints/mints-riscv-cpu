@@ -6,8 +6,18 @@ PMP, instruction and data caches, a store buffer, branch prediction, interrupt
 controllers and a UART. It builds on the
 [cpu.kanataso.net teaching CPU material](https://cpu.kanataso.net/).
 
-The project boots OpenSBI, Linux 6.12 and BusyBox in Verilator. It also runs
-Linux with an interactive UART shell on a physical DE0-CV FPGA.
+The design is developed and evaluated using Verilator, Linux workloads,
+architectural lockstep and performance counters. It also boots Linux on a
+physical DE0-CV FPGA as one implementation of the configurable CPU.
+
+Highlights from the simulation environment:
+
+- OpenSBI, Linux 6.12 and BusyBox boot through the autotest.
+- A historical BusyBox autotest passed lockstep against Whisper for 61,610,275
+  committed instructions.
+- A separate historical Linux command-loop run measured CPI 2.376 over
+  100 million simulated cycles, including boot. This is a workload-specific
+  simulation checkpoint, not a result for the DE0-CV profile.
 
 ## Architecture
 
