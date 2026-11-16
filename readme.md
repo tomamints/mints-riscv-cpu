@@ -24,6 +24,18 @@ and [configuration comparison](Docs/CURRENT_STATUS.md#configuration-comparison).
 Both diagrams can be regenerated with `python3 tools/draw-architecture.py`.
 For source organization, see [RTL layout](Docs/RTL_LAYOUT.md).
 
+| Component | Role |
+|---|---|
+| CPU pipeline | In-order instruction fetch, decode, execute, memory and writeback; integer, multiply/divide, atomic and compressed instructions |
+| Memory system | Configurable I/D caches, a write-through data path and store buffer |
+| Virtual memory | Sv39 instruction/data TLBs and page-table walkers |
+| Privileged architecture | M/S/U modes, CSRs, traps, interrupts and PMP physical access checks |
+| Frontend | Branch prediction with PHT, BTB and return-address stack when enabled |
+| SoC peripherals | ACLINT timer/software interrupts, PLIC-compatible external interrupts, UART and DMA |
+
+These are configurable implementation features; see the diagram and profile
+table below for the settings used by the two Linux environments.
+
 ## Verification
 
 - **Linux simulation:** Verilator boots OpenSBI, Linux and BusyBox through
@@ -36,6 +48,27 @@ For source organization, see [RTL layout](Docs/RTL_LAYOUT.md).
 
 These are prototype results, not a claim of complete RISC-V certification or
 production readiness. See [verification results and limitations](Docs/TEST_STATUS.md).
+
+## Simulator and FPGA profiles
+
+The table compares the Linux simulator rebuild profile with the validated board
+profile. They are selected configurations, not the maximum capacities of the RTL.
+
+| Parameter | Linux simulator rebuild | DE0-CV FPGA |
+|---|---:|---:|
+| RAM | 128 MiB simulated | 64 MiB SDRAM |
+| I-cache / D-cache | 4 KiB / 16 KiB | 1 KiB / 1 KiB |
+| Cache line | 32 B | 32 B |
+| Store buffer | 8 entries | 4 entries |
+| ITLB / DTLB | 8 entries each | 2 entries each |
+| Branch prediction | Enabled | Disabled |
+| D-cache policy | Write-through | Write-through |
+| Hardware timer timebase | 50 MHz | 20 MHz |
+| Linux userspace | BusyBox autotest | Interactive BusyBox shell |
+
+The plain Makefile defaults differ from the Linux simulator rebuild profile.
+No controlled benchmark has yet quantified the performance difference between
+these profiles. See [current status](Docs/CURRENT_STATUS.md) for details.
 
 ## Run in Verilator
 
@@ -53,14 +86,32 @@ See [clean rebuild and dependencies](Docs/REBUILD_FROM_CLEAN.md).
 
 The DE0-CV profile uses 1 KiB instruction and data caches, two entries per TLB,
 and disabled branch prediction. Its physical implementation passed timing at
-20 MHz and used 17,269 / 18,480 ALMs. VGA command acknowledgement and microSD
-file read/write were exercised; VGA monitor output and SD boot remain unverified.
+20 MHz and used 17,269 / 18,480 ALMs. The tested build passed setup, hold,
+recovery and removal checks at all four timing corners, with worst setup slack
+of +2.168 ns. This is a validated operating point, not a measured maximum frequency.
 
-[**DE0-CV Linux guide / 実機起動ガイド →**](fpga/de0-cv/soc/README.md)
+The board adds a physical UART, SDRAM controller, JTAG loader and board I/O.
+The following diagram uses the same layout as the simulator view so the shared
+and board-specific parts can be compared.
+
+![MiNTs-CPU architecture: DE0-CV FPGA board SoC](Docs/images/architecture_fpga.svg)
+
+VGA command acknowledgement and microSD file read/write were exercised; VGA
+monitor output, SD boot and long-duration stability remain unverified.
+
+[**DE0-CV Linux guide →**](fpga/de0-cv/soc/README.md)
 
 Additional details: [current status and profile comparison](Docs/CURRENT_STATUS.md),
 [MiNTs Life](examples/life/README.md), [GPIO](examples/boardctl/README.md),
 [VGA](fpga/de0-cv/vga/README.md), and [microSD](fpga/de0-cv/sd/README.md).
+
+## Scope and limitations
+
+The validated userspace uses static RV64IMAC / LP64 binaries. Floating-point
+F/D, vector execution, SMP/cache coherence and full RVA23 compliance are not
+claimed. The board root filesystem is a RAM-based initramfs; microSD is additional
+storage. Long-duration stability and 250 Hz board operation are not established.
+Experimental write-back cache support is outside the validated board profile.
 
 ## Documentation and license
 
@@ -69,7 +120,7 @@ Additional details: [current status and profile comparison](Docs/CURRENT_STATUS.
 - [Performance counters](Docs/PERFORMANCE_COUNTERS.md) and [simulation baseline](Docs/LINUX_BASELINE.md)
 - [BSD 3-Clause license](LICENSE) and [copyright / third-party notices](NOTICE)
 
-Copyright (c) 2026, MiNTs Co., Ltd. (MiNTs株式会社). The project's original
+Copyright (c) 2026, MiNTs Co., Ltd. The project's original
 contributions are available under the [BSD 3-Clause license](LICENSE), except
 where a file or component specifies otherwise. Textbook-derived portions retain
 Kanata Abe's copyright notice and BSD 3-Clause terms.
