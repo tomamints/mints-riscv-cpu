@@ -86,116 +86,19 @@ simulator; success is `BUSYBOX-TEST-PASS`. See
 
 ### Linux on DE0-CV
 
-After installing the Quartus container and native USB-Blaster tools as described
-in the [board guide](fpga/de0-cv/soc/README.md):
+The board uses a 20 MHz CPU with 64 MiB SDRAM and an interactive UART shell.
+See the [DE0-CV Linux guide](fpga/de0-cv/soc/README.md) for setup, wiring,
+building and booting, and the [clean rebuild guide](Docs/REBUILD_FROM_CLEAN.md)
+for dependencies and recovery.
 
-```sh
-PLATFORM_PROFILE=de0cv64 bash tools/rebuild-linux.sh all
-STAGE=asm bash tools/build-de0cv-soc.sh
-bash tools/build-de0cv-jtag-load.sh
-```
+## Applications and board I/O
 
-Connect the board's USB-Blaster USB-B port and a separate 3.3 V USB-UART
-adapter. JP1-8 → adapter RXD, JP1-10 → adapter TXD, JP1-12 → GND. Open the
-UART terminal at 115200 8N1, without flow control, before starting the CPU.
-
-```sh
-bash tools/program-de0cv-soc.sh
-local/fpga-tools/bin/de0cv-jtag-load load-run build/platform/de0cv64/opensbi_ram.hex
-```
-
-Programming configures **volatile SRAM only**. The loader clears SDRAM,
-writes the image, reads back every image word, and starts the CPU only after
-verification succeeds. Power-off loses both FPGA configuration and RAM data.
-
-## A userspace application
-
-The standard Linux rebuild also embeds [MiNTs Life](examples/life/README.md), a
-standalone C program cross-compiled for RV64IMAC/LP64. From the Linux shell:
-
-```sh
-life --demo 40
-life --bench 100
-```
-
-Both modes have been exercised on the physical board, with checksum validation
-and continued shell operation after exit. The demo animates a 32 × 16 Game of
-Life world over UART. Benchmark mode runs
-without display in the timed loop and reports elapsed time plus a deterministic
-checksum. It is a specific application workload, not a CoreMark score or CPI
-measurement.
-
-## Linux-to-board GPIO
-
-The board exposes its ten switches, four user buttons and application LED
-controls through a small MMIO register and Linux UIO. From the Linux shell:
-
-```sh
-boardctl status
-boardctl leds 0x155
-boardctl diagnostics
-life --board 40
-```
-
-Life's board mode uses SW0 to pause/resume, KEY0 to reset the world, and LEDs
-to display the generation. The normal diagnostic display is restored on exit;
-sticky fault indicators remain visible in application mode.
-
-Physical checks verified register readback, a four-generation GPIO-mode run,
-its checksum and restoration of LED ownership. Pause/reset input transitions
-were exercised in the native model; manual switch transitions and optical LED
-observation are separate checks. See [GPIO interface and controls](examples/boardctl/README.md).
-
-## VGA application display
-
-The VGA-enabled board build adds an 80 × 30 text screen while keeping UART as
-Linux's input/console path. The display uses two M10K-backed text pages and
-swaps them during vertical blank. Linux applications can use:
-
-```sh
-vgactl self-test
-vgactl demo
-life --vga 40
-```
-
-Physical command/acknowledgement tests passed the display self-test, demo and
-a four-generation Life run with the reference checksum. Actual monitor output
-has not yet been visually checked.
-
-Life uses the same SW0 pause/resume and KEY0 reset controls as board mode.
-This is an application-controlled display, not a Linux framebuffer console.
-See [display commands](examples/vgactl/README.md) and
-[timing, memory and verification scope](fpga/de0-cv/vga/README.md).
-
-## microSD storage
-
-The board adds a 400 kHz SPI host and Linux MMC block-device support. Linux and
-BusyBox still boot into SDRAM from the Mac/JTAG image; the card is an additional
-filesystem, not the current boot source. SD data is read into RAM as needed.
-
-Physical tests passed card recognition, full-sector reads, FAT32 read-only
-mount/list/unmount and a 64 KiB create/fsync/unmount/read-only-remount/verify test.
-GPIO/VGA and normal-clock regression checks also pass.
-The board kernel uses a direct-MMIO polling path for eight-bit SPI transfers.
-The same initial sector-check command improved from 85.28 s to 5.68 s on the
-tested setup. This includes Linux buffering/read-ahead and is not a sustained
-SD bandwidth measurement. The no-FIFO polling implementation remains slow.
-
-```sh
-blockdev --setra 0 /dev/mmcblk0
-blockdev --setra 0 /dev/mmcblk0p1
-sdcheck /dev/mmcblk0p1
-mkdir -p /mnt/sd
-mount -t vfat -o ro /dev/mmcblk0p1 /mnt/sd
-ls /mnt/sd
-umount /mnt/sd
-```
-
-Choose the partition/filesystem from the actual card. A new test folder/file was
-used without overwriting existing files. Formatting, power-cycle/power-loss
-durability and SD boot have not been validated. See
-[SD wiring, kernel and read-only inspection](fpga/de0-cv/sd/README.md) and
-[file-check utilities](examples/sdcheck/README.md).
+[MiNTs Life](examples/life/README.md) is a C application validated on the
+physical board. The board also supports [GPIO](examples/boardctl/README.md),
+[VGA text output](fpga/de0-cv/vga/README.md), and [microSD storage](fpga/de0-cv/sd/README.md).
+The VGA command path has been tested, but monitor output has not been visually
+checked. The SD card is additional storage; Linux currently boots from an image
+loaded over JTAG. See the linked guides for commands and validation boundaries.
 
 ## Architecture and sources
 
