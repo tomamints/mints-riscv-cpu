@@ -1,0 +1,14 @@
+SW[0] U13 input
+SW[1] V13 input
+SW[2] T13 input
+SW[3] T12 input
+SW[4] AA15 input
+SW[5] AB15 input
+SW[6] AA14 input
+SW[7] AA13 input
+SW[8] AB13 input
+SW[9] AB12 input
+KEY_N[0] U7 input
+KEY_N[1] W9 input
+KEY_N[2] M7 input
+KEY_N[3] M6 input

@@ -448,6 +448,12 @@ int main(int argc, char** argv)
             : std::strtoull(dbg_addr_text, nullptr, 0);
 
     auto dut = std::make_unique<Vcore_top>();
+#ifdef ENABLE_PHYSICAL_UART
+    dut->uart_rx_i = 1;
+    const bool serial_trace = std::getenv("UART_SERIAL_TRACE") != nullptr;
+    bool serial_prev = true, serial_receiving = false;
+    unsigned serial_elapsed = 0, serial_bit = 0, serial_byte = 0;
+#endif
     dut->MMAP_DBG_ADDR = dbg_addr;
 
     // Active-low reset.
@@ -569,6 +575,34 @@ int main(int argc, char** argv)
          ++half_cycle) {
         dut->clk = !dut->clk;
         dut->eval();
+
+#ifdef ENABLE_PHYSICAL_UART
+        // Independent 115200-baud 8N1 observer for the 20 MHz physical backend.
+        // Sample at bit centers using integer rational times, not DUT counters.
+        if (serial_trace && dut->clk) {
+            const bool line = dut->uart_tx_o;
+            if (!serial_receiving && serial_prev && !line) {
+                serial_receiving = true;
+                serial_elapsed = serial_bit = serial_byte = 0;
+            } else if (serial_receiving) {
+                ++serial_elapsed;
+                if (std::uint64_t(serial_elapsed) * 2 * 115200 >=
+                    std::uint64_t(3 + 2 * serial_bit) * 20000000) {
+                    if (serial_bit < 8) {
+                        serial_byte |= unsigned(line) << serial_bit++;
+                    } else {
+                        if (!line) {
+                            std::cerr << "UART_SERIAL_TX framing error\n";
+                            return 1;
+                        }
+                        std::printf("UART_SERIAL_TX byte=%02x\n", serial_byte);
+                        serial_receiving = false;
+                    }
+                }
+            }
+            serial_prev = line;
+        }
+#endif
 
 #ifdef SVCPU_WHISPER_LOCKSTEP
         if (dut->clk == 1 && dut->lockstep_uart_tx_valid) {

@@ -180,7 +180,23 @@ module branch_predictor #(
     end
 
     always_ff @(posedge clk or negedge rst) begin
-        if (!rst || invalidate) begin
+        if (!rst) begin
+            for (int i = 0; i < PHT_ENTRIES; i++) begin
+                pht[i] <= 2'b01;
+                pht_valid[i] <= 1'b0;
+            end
+            for (int i = 0; i < BTB_ENTRIES; i++) begin
+                btb_valid[i] <= 1'b0;
+                btb_is_branch[i] <= 1'b0;
+                btb_tag[i] <= '0;
+                btb_target[i] <= '0;
+            end
+            for (int i = 0; i < RAS_ENTRIES; i++) begin
+                ras_stack[i] <= '0;
+            end
+            ras_sp <= '0;
+            ras_valid <= 1'b0;
+        end else if (invalidate) begin
             for (int i = 0; i < PHT_ENTRIES; i++) begin
                 pht[i] <= 2'b01;
                 pht_valid[i] <= 1'b0;

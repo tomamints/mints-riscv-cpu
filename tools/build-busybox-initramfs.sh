@@ -618,8 +618,28 @@ slink /bin/ps busybox 0777 0 0
 slink /bin/sleep busybox 0777 0 0
 slink /bin/stty busybox 0777 0 0
 slink /bin/printf busybox 0777 0 0
+slink /bin/blockdev busybox 0777 0 0
+slink /bin/sha256sum busybox 0777 0 0
+slink /bin/wc busybox 0777 0 0
+slink /bin/dd busybox 0777 0 0
+slink /bin/umount busybox 0777 0 0
 file /init $OUT_DIR/init 0755 0 0
 LIST
+
+# Optional static applications supplied by the standard rebuild.
+for app in life boardctl vgactl sdverify; do
+  case $app in
+    life) binary=${LIFE_BIN:-};;
+    boardctl) binary=${BOARDCTL_BIN:-};;
+    vgactl) binary=${VGACTL_BIN:-};;
+    sdverify) binary=${SDVERIFY_BIN:-};;
+  esac
+  [[ -n $binary ]] || continue
+  [[ $binary == "$repo_root/"* && -x $binary && $binary != *[[:space:]]* ]] || {
+    echo "Invalid $app executable path (must be inside repo without whitespace)" >&2; exit 1;
+  }
+  printf 'file /bin/%s %s 0755 0 0\n' "$app" "$binary" >> "$OUT_DIR/initramfs.list"
+done
 
 repo_init="/repo/${OUT_DIR#"$repo_root"/}/init"
 repo_busybox="/repo/${BUSYBOX_BIN#"$repo_root"/}"
@@ -628,6 +648,13 @@ sed \
   -e "s| $BUSYBOX_BIN | $repo_busybox |" \
   -e "s| $OUT_DIR/init | $repo_init |" \
   "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.linux.list"
+printf 'file /bin/sdcheck %s/examples/sdcheck/sdcheck 0755 0 0\n' "$repo_root" >> "$OUT_DIR/initramfs.list"
+printf 'file /bin/sdcheck /repo/examples/sdcheck/sdcheck 0755 0 0\n' >> "$OUT_DIR/initramfs.linux.list"
+for binary in "${LIFE_BIN:-}" "${BOARDCTL_BIN:-}" "${VGACTL_BIN:-}" "${SDVERIFY_BIN:-}"; do
+  [[ -n $binary ]] || continue
+  sed -i.bak "s| $binary | /repo/${binary#"$repo_root"/} |" "$OUT_DIR/initramfs.linux.list"
+  rm "$OUT_DIR/initramfs.linux.list.bak"
+done
 
 if [[ "$SKIP_CPIO" != "1" ]]; then
   "$OUT_DIR/gen_init_cpio" "$OUT_DIR/initramfs.list" > "$OUT_DIR/initramfs.cpio"

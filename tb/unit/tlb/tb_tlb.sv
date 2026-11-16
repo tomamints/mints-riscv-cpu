@@ -1,6 +1,8 @@
 import eei::*;
 
-module tb_tlb;
+module tb_tlb #(
+	parameter int unsigned ENTRIES = 8
+);
 	logic clk;
 	logic rst;
 	logic flush;
@@ -27,13 +29,14 @@ module tb_tlb;
 	logic refill_d;
 
 	tlb #(
-		.ENTRY_COUNT(8)
+		.ENTRY_COUNT(ENTRIES)
 	) dut (
 		.clk(clk),
 		.rst(rst),
 		.flush(flush),
 		.lookup_valid(lookup_valid),
 		.lookup_va(lookup_va),
+		.lookup_asid(16'h0),
 		.lookup_priv_mode(lookup_priv_mode),
 		.lookup_access_type(lookup_access_type),
 		.lookup_sum(lookup_sum),
@@ -44,6 +47,7 @@ module tb_tlb;
 		.fault_detail(fault_detail),
 		.refill_valid(refill_valid),
 		.refill_va(refill_va),
+		.refill_asid(16'h0),
 		.refill_ppn(refill_ppn),
 		.refill_level(refill_level),
 		.refill_r(refill_r),
@@ -167,17 +171,17 @@ module tb_tlb;
 		lookup(64'h0000_0000_0000_1000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(!hit, "flush must invalidate entries");
 
-		refill(64'hffff_ffff_8020_0000, 44'h0000_0000_0802, 2'd1, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+		refill(64'hffff_ffff_8020_0000, 44'h0000_0008_0200, 2'd1, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
 		lookup(64'hffff_ffff_8021_2340, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit, "2MiB superpage refill must hit within the same VPN[2:1]");
 		check(pa == 64'h0000_0000_8021_2340, "2MiB PA must combine PPN[2:1] with VA[20:0]");
 
-		refill(64'hffff_ffff_8000_0000, 44'h0000_0000_0800, 2'd2, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
+		refill(64'hffff_ffff_8000_0000, 44'h0000_0008_0000, 2'd2, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
 		lookup(64'hffff_ffff_8123_4560, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(hit, "1GiB superpage refill must hit within the same VPN[2]");
 		check(pa == 64'h0000_0000_8123_4560, "1GiB PA must combine PPN[2] with VA[29:0]");
 
-		for (int unsigned i = 0; i < 8; i++) begin
+		for (int unsigned i = 0; i < ENTRIES; i++) begin
 			refill(64'h0000_0000_0001_0000 + (Addr'(i) << 12), 44'(44'h1000 + i), 2'd0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0);
 		end
 		lookup(64'h0000_0000_0001_0000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
@@ -186,7 +190,7 @@ module tb_tlb;
 		lookup(64'h0000_0000_0001_0000, S, PMP_ACCESS_EXEC, 1'b0, 1'b0);
 		check(!hit, "round-robin refill must evict first entry after wrap");
 
-		$display("[TLB TEST] pass");
+		$display("[TLB TEST] pass entries=%0d", ENTRIES);
 		$finish;
 	end
 endmodule : tb_tlb

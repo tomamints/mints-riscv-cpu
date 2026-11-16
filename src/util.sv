@@ -1,6 +1,7 @@
 // ------------------------------
 // svutil package (DPI-C 直ラッパ)
 // ------------------------------
+`ifndef SYNTHESIS
 package svutil;
 
     // --- get_env の C関数 ---
@@ -19,6 +20,7 @@ package svutil;
     endfunction
 
 endpackage : svutil
+`endif
 
 
 
@@ -27,6 +29,7 @@ endpackage : svutil
 // ------------------------------
 package util;
 
+`ifndef SYNTHESIS
     function string get_env(input string name);
         return svutil::get_env(name);
     endfunction
@@ -34,5 +37,16 @@ package util;
     function longint get_input();
         return svutil::get_input();
     endfunction
+`else
+    // Synthesis: no host environment or input (board builds use parameters
+    // and the physical UART).
+    function string get_env(input string name);
+        return "";
+    endfunction
+
+    function longint get_input();
+        return 0;
+    endfunction
+`endif
 
 endpackage : util

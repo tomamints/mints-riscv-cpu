@@ -160,7 +160,7 @@ def run_test(args, dbg_addr, rom_hex, ram_hex):
     result_file_path = os.path.join(args.output_dir, ram_hex.replace(os.sep, "_") + ".txt")
     env = os.environ.copy()
     env["DBG_ADDR"] = str(dbg_addr)
-    cmd = [args.sim_path, rom_hex, ram_hex, "0"]
+    cmd = [args.sim_path, rom_hex, ram_hex, "0"] + list(args.sim_arg)
 
     success = False
     with open(result_file_path, "w") as f:
@@ -191,6 +191,7 @@ def parse_args():
     parser.add_argument("-t", "--time_limit", type=float, default=10, help="execution time limit; 0 means no limit")
     parser.add_argument("--rom", default="build/test/bootrom.hex", help="ROM hex file")
     parser.add_argument("--ram_base", type=lambda value: int(value, 0), default=0x80000000, help="RAM base address")
+    parser.add_argument("--sim-arg", dest="sim_arg", action="append", default=[], help="extra simulator argument (e.g. +PLUSARG=value); repeatable")
     return parser.parse_args()
 
 

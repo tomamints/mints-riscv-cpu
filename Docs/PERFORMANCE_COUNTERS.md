@@ -1,6 +1,13 @@
 # Performance Counters
 
-Last updated: 2026-08-20
+Scope: Verilator-only instrumentation. The example measurements are historical
+simulation checkpoints and were not rerun for the final FPGA profile. Board
+builds do not expose these `+PERF_SUMMARY` counters through Linux.
+See [profile comparison](CURRENT_STATUS.md) and [measurement workload](LINUX_BASELINE.md).
+
+Run the `make` examples in a Linux build environment with the simulator and
+named image already built. The specialized command-loop image is not an output
+of the default Linux rebuild.
 
 MiNTs-CPU exposes simulation-only performance counters through the
 `+PERF_SUMMARY` Verilator plusarg. They are intended for comparing RTL changes
@@ -47,7 +54,7 @@ grep -aE '^\[PERF\] cycles|^\[PERF\] primary|^\[PERF\] active|^\[PERF\] events|^
 | `[PERF-STOREBUF-*]` | store buffer occupancy, drain, and dependency counters |
 | `[PERF-ITLB]`, `[PERF-DTLB]` | TLB and PTW behavior |
 
-## Current Stable Checkpoint
+## Historical Simulation Checkpoint
 
 Stable 100M-cycle result:
 
@@ -75,7 +82,7 @@ DCACHE_WRITE_BACK=0
 | Fetch-side branch BTB + fetch fall-through | reduced taken-branch and fetch-block handoff overhead |
 | Write-back experiment | reduced traffic, but did not beat stable write-through CPI |
 
-Current frontend evidence:
+Recorded frontend evidence:
 
 ```text
 [PERF-FETCH-STALL] fifo_full=7320628 control_recovery=14156540 translation_issue=19680007 translation_req_wait=0 translation_rsp=22023 icache_req=2586028 icache_rsp=5765099 fault=0 no_request=0
@@ -94,7 +101,7 @@ Current frontend evidence:
 - Performance numbers are Verilator simulation checkpoints, not FPGA or silicon
   frequency results.
 
-## CPI Stack Direction
+## Interpreting a CPI Stack
 
 The current counter groups are intended to support CPI-stack summaries across
 workloads:

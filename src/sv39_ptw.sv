@@ -340,10 +340,12 @@ module sv39_ptw (
 
 				Req: begin
 					if (mem_fire) begin
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_SV39")) begin
 							$display("[SV39] REQ level=%0d va=%h pte_addr=%h base_ppn=%h vpn=%h",
 								level, req_va, pte_addr, base_ppn, vpn);
 						end
+`endif
 						mem_outstanding <= 1'b1;
 						state <= WaitResp;
 					end
@@ -351,9 +353,11 @@ module sv39_ptw (
 
 				WaitResp: begin
 					if (mem_rvalid) begin
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_SV39")) begin
 							$display("[SV39] RESP pte=%h", mem_rdata);
 						end
+`endif
 						mem_outstanding <= 1'b0;
 						if (mem_error) begin
 							result_fault <= 1'b1;
@@ -368,10 +372,12 @@ module sv39_ptw (
 				end
 
 				Check: begin
+`ifndef SYNTHESIS
 					if ($test$plusargs("TRACE_SV39")) begin
 						$display("[SV39] CHECK level=%0d pte=%h invalid=%b reserved_nonleaf=%b nonleaf=%b access_perm_fault=%b superpage_misaligned=%b ad_fault=%b",
 							level, pte, pte_invalid, pte_reserved_nonleaf, pte_nonleaf, pte_access_perm_fault, superpage_misaligned, pte_ad_fault);
 					end
+`endif
 					if (pte_invalid) begin
 						result_fault <= 1'b1;
 						result_fault_detail <= invalid_fault_detail(pte_v_invalid, pte_w_no_r);

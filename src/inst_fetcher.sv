@@ -1,19 +1,37 @@
+// Carry-chain PMP compares on timing-critical checkers (board profile); the
+// result is identical either way (tools/test-pmp-prefix.sh checks both).
+`ifndef SVCPU_PMP_CARRY_COMPARE
+`define SVCPU_PMP_CARRY_COMPARE 0
+`endif
 import eei::*;
 import corectrl::*;
 
-module inst_fetcher (
+`ifndef SVCPU_BP_PHT_ENTRIES
+`define SVCPU_BP_PHT_ENTRIES 128
+`endif
+`ifndef SVCPU_BP_ENABLE
+`define SVCPU_BP_ENABLE 1
+`endif
+`ifndef SVCPU_BP_BTB_ENTRIES
+`define SVCPU_BP_BTB_ENTRIES 32
+`endif
+`ifndef SVCPU_BP_RAS_ENTRIES
+`define SVCPU_BP_RAS_ENTRIES 8
+`endif
+
+module inst_fetcher #(
+    parameter int unsigned ICACHE_LINE_COUNT = 128,
+    parameter int unsigned ICACHE_DATA_RAM_STYLE = 0,
+    parameter int unsigned BP_PHT_ENTRIES = `SVCPU_BP_PHT_ENTRIES,
+    parameter int unsigned BP_BTB_ENTRIES = `SVCPU_BP_BTB_ENTRIES,
+    parameter int unsigned BP_RAS_ENTRIES = `SVCPU_BP_RAS_ENTRIES,
+    parameter bit BP_ENABLE = `SVCPU_BP_ENABLE
+) (
     input  logic             clk,
     input  logic             rst,
     input  PrivMode          priv_mode,
     input  UIntX             pmpcfg0,
-    input  UIntX             pmpaddr0,
-    input  UIntX             pmpaddr1,
-    input  UIntX             pmpaddr2,
-    input  UIntX             pmpaddr3,
-    input  UIntX             pmpaddr4,
-    input  UIntX             pmpaddr5,
-    input  UIntX             pmpaddr6,
-    input  UIntX             pmpaddr7,
+    input PmpRegion [7:0] pmp_regions,
     input  UIntX             satp,
     input  logic             sstatus_sum,
     input  logic             sstatus_mxr,
@@ -49,7 +67,7 @@ module inst_fetcher (
     logic           fetch_fifo_bypass_fire;
 
     fifo #(
-        .DATA_TYPE (fetch_fifo_type),
+        .DATA_WIDTH($bits(fetch_fifo_type)),
         .WIDTH     (3)
     ) fetch_fifo (
         .clk         (clk),
@@ -111,7 +129,7 @@ module inst_fetcher (
     logic           issue_fifo_core_valid;
 
     fifo #(
-        .DATA_TYPE (issue_fifo_type),
+        .DATA_WIDTH($bits(issue_fifo_type)),
         .WIDTH     (2)
     ) issue_fifo (
         .clk    (clk),
@@ -199,26 +217,23 @@ module inst_fetcher (
     logic issue_pmp_allow_raw;
     logic issue_pmp_allow;
 
-    pmp_checker pmp_issue_checker (
+    pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) pmp_issue_checker (
         .priv_mode(priv_mode),
         .access_start(issue_pmp_addr),
         .access_size(issue_pmp_size),
         .access_type(PMP_ACCESS_EXEC),
         .pmpcfg0(pmpcfg0),
-        .pmpaddr0(pmpaddr0),
-        .pmpaddr1(pmpaddr1),
-        .pmpaddr2(pmpaddr2),
-        .pmpaddr3(pmpaddr3),
-        .pmpaddr4(pmpaddr4),
-        .pmpaddr5(pmpaddr5),
-        .pmpaddr6(pmpaddr6),
-        .pmpaddr7(pmpaddr7),
+        .pmp_regions(pmp_regions),
         .allow(issue_pmp_allow_raw)
     );
 
     assign issue_pmp_allow = need_translate ? 1'b1 : issue_pmp_allow_raw;
 
-    branch_predictor static_branch_predictor (
+    generate
+    if (BP_ENABLE) begin : g_predictor
+    branch_predictor #(
+        .PHT_ENTRIES(BP_PHT_ENTRIES), .BTB_ENTRIES(BP_BTB_ENTRIES), .RAS_ENTRIES(BP_RAS_ENTRIES)
+    ) static_branch_predictor (
         .clk(clk),
         .rst(rst),
         .invalidate(core_if.fetch_invalidate),
@@ -247,6 +262,17 @@ module inst_fetcher (
         .update_target(core_if.bp_update_target),
         .update_return_addr(core_if.bp_update_return_addr)
     );
+    end else begin : g_no_predictor
+        assign branch_prediction_valid = 1'b0;
+        assign branch_predicted_taken = 1'b0;
+        assign branch_predicted_next_pc = branch_predictor_pc + (branch_predictor_is_rvc ? Addr'(2) : Addr'(4));
+        assign branch_predicted_from_btb = 1'b0;
+        assign branch_predicted_from_ras = 1'b0;
+        assign fetch_prediction_valid = 1'b0;
+        assign fetch_predicted_branch_pc = '0;
+        assign fetch_predicted_next_pc = '0;
+    end
+    endgenerate
 
     assign branch_predictor_inst_valid =
         fetch_fifo_storage_rvalid &&
@@ -589,12 +615,20 @@ module inst_fetcher (
 
     assign satp_sv39 = satp[63:60] == 4'd8;
     assign need_translate = satp_sv39 && (priv_mode != M);
+`ifndef SYNTHESIS
     assign trace_fetch_event =
         $test$plusargs("TRACE_FETCH_ALL") ||
         $test$plusargs("TRACE_FETCH_EVENT");
+`else
+    assign trace_fetch_event = 1'b0;   // trace-only: disabled in synthesis
+`endif
+`ifndef SYNTHESIS
     assign trace_fetch_fault =
         trace_fetch_event ||
         $test$plusargs("TRACE_FETCH_FAULT");
+`else
+    assign trace_fetch_fault = 1'b0;   // trace-only: disabled in synthesis
+`endif
 `ifndef SYNTHESIS
     assign trace_fetch_fault_match =
         !trace_fetch_fault_pc_valid ||
@@ -634,14 +668,7 @@ module inst_fetcher (
         .req_priv_mode(priv_mode),
         .satp(satp),
         .pmpcfg0(pmpcfg0),
-        .pmpaddr0(pmpaddr0),
-        .pmpaddr1(pmpaddr1),
-        .pmpaddr2(pmpaddr2),
-        .pmpaddr3(pmpaddr3),
-        .pmpaddr4(pmpaddr4),
-        .pmpaddr5(pmpaddr5),
-        .pmpaddr6(pmpaddr6),
-        .pmpaddr7(pmpaddr7),
+        .pmp_regions(pmp_regions),
         .rsp_valid(fetch_translation_rsp_valid),
         .rsp_ready(fetch_translation_rsp_ready),
         .rsp_pa(fetch_translation_pa),
@@ -657,7 +684,7 @@ module inst_fetcher (
         .ptw_mem_rdata(mem_if.rdata)
     );
 
-    icache fetch_icache (
+    icache #(.LINE_COUNT(ICACHE_LINE_COUNT), .DATA_RAM_STYLE(ICACHE_DATA_RAM_STYLE)) fetch_icache (
         .clk(clk),
         .rst(rst),
 	        .cancel(fetch_redirect),
@@ -675,20 +702,13 @@ module inst_fetcher (
         .mem_rdata(mem_if.rdata)
     );
 
-    pmp_checker pmp_fetch_checker (
+    pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) pmp_fetch_checker (
         .priv_mode(priv_mode),
         .access_start(need_translate ? fetch_req_paddr : fetch_pc),
         .access_size(UIntX'(8)),
         .access_type(PMP_ACCESS_EXEC),
         .pmpcfg0(pmpcfg0),
-        .pmpaddr0(pmpaddr0),
-        .pmpaddr1(pmpaddr1),
-        .pmpaddr2(pmpaddr2),
-        .pmpaddr3(pmpaddr3),
-        .pmpaddr4(pmpaddr4),
-        .pmpaddr5(pmpaddr5),
-        .pmpaddr6(pmpaddr6),
-        .pmpaddr7(pmpaddr7),
+        .pmp_regions(pmp_regions),
         .allow(fetch_pmp_allow)
     );
 
@@ -707,9 +727,16 @@ module inst_fetcher (
     assign icache_mem_rvalid =
         mem_if.rvalid &&
         fetch_mem_owner == FetchMemOwnerIcache;
-    assign fetch_fifo_wready =
-        fetch_fifo_storage_wready_two ||
-        (!fetch_fifo_storage_rvalid && !core_if.is_hazard && issue_fifo_wready);
+    // An empty multi-entry FIFO (head == tail) always has two free slots, so
+    // the former "|| (!storage_rvalid && !is_hazard && issue_fifo_wready)" term
+    // never changed this signal. Dropping it keeps the value bit-for-bit and
+    // removes a combinational control_hazard -> I-cache request path.
+    assign fetch_fifo_wready = fetch_fifo_storage_wready_two;
+`ifndef SYNTHESIS
+    always_ff @(posedge clk)
+        if (rst && !fetch_fifo_storage_rvalid && !fetch_fifo_storage_wready_two)
+            $fatal(1, "inst_fetcher: empty fetch FIFO without two free slots");
+`endif
     assign fetch_wait_resp_next_req =
         fetch_state == FetchWaitResp &&
         icache_rsp_fire &&
@@ -1142,6 +1169,7 @@ module inst_fetcher (
     end
 `endif
 
+`ifndef SYNTHESIS
     final begin
         if ($test$plusargs("PERF_SUMMARY")) begin
             $display("[PERF-FETCH-STALL] fifo_full=%0d control_recovery=%0d translation_issue=%0d translation_req_wait=%0d translation_rsp=%0d icache_req=%0d icache_rsp=%0d fault=%0d no_request=%0d",
@@ -1166,5 +1194,6 @@ module inst_fetcher (
                 perf_fetch_icache_rsp_fifo_wait_cycle);
         end
     end
+`endif
 
 endmodule

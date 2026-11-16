@@ -22,6 +22,7 @@ src/alu.sv
 src/brunit.sv
 src/branch_predictor.sv
 src/csrunit.sv
+src/pmp_region_decode.sv
 src/pmp_checker.sv
 src/sv39_ptw.sv
 rtl/mmu/tlb.sv
@@ -29,6 +30,7 @@ rtl/mmu/address_translation.sv
 rtl/mmu/instruction_translation.sv
 rtl/mmu/data_translation.sv
 rtl/cache/icache.sv
+fpga/de0-cv/mem_probe/rtl/ram_1r1w_be64.sv
 rtl/cache/dcache.sv
 src/muldivunit.sv
 src/memunit.sv

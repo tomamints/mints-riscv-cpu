@@ -1,13 +1,22 @@
 # Linux Baseline
 
-Last updated: 2026-08-20
+Scope: legacy Verilator simulation. The measurements below are historical
+checkpoints, including the 2026-11-06 follow-up, not scores for the current
+20 MHz FPGA profile. See [test status](TEST_STATUS.md) for current validation
+boundaries and [Linux setup](LINUX_SETUP.md) for supported rebuild commands.
+
+The `make` examples require a Linux build environment with the corresponding
+simulator and boot artifacts; they are not native macOS commands. The ordinary
+rebuild produces the autotest image, not the specialized historical command-loop
+image named in the performance example. Whisper additionally requires its
+external source/library; see [the integration prerequisites](../tools/whisper_lockstep/README.md).
 
 This document defines the Linux regression baseline used before and after
 microarchitectural changes.
 
 ## Primary Correctness Baseline
 
-The primary correctness gate is the BusyBox autotest initramfs:
+The simulator correctness workload is the BusyBox autotest initramfs:
 
 ```bash
 make run-opensbi-input \
@@ -40,7 +49,7 @@ make run-opensbi-lockstep \
   OPENSBI_CYCLES=0
 ```
 
-Expected pass marker:
+Recorded pass marker (the comparison count is not fixed):
 
 ```text
 [LOCKSTEP] PASS: 61610275 instructions compared (BusyBox autotest passed)
@@ -48,7 +57,7 @@ Expected pass marker:
 
 ## Performance Baseline
 
-The stable performance checkpoint uses the command-loop initramfs and a bounded
+The historical performance checkpoint uses the command-loop initramfs and a bounded
 100M-cycle run:
 
 ```bash
@@ -80,8 +89,7 @@ write-through cache invalidation/response fix (2026-11-06):
 Using the same configuration and command-loop image, this completes 298,735
 more instructions in the fixed window (about 0.7%). The window includes Linux
 boot activity, and the changes were measured together; it does not isolate the
-effect of each optimization. The `tee` process reported an output error, but
-the summary above was recovered from its log. The write-back cache mode has not
+effect of each optimization. The write-back cache mode has not
 been validated for the invalidation/response fix.
 
 The BusyBox autotest also passed Whisper lockstep with these changes:
@@ -107,7 +115,7 @@ Previous stable checkpoint before the latest frontend fetch handoff work:
 [PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
 ```
 
-The current frontend work increases the fixed-window retired instruction count
+The measured frontend changes increased the fixed-window retired instruction count
 by about 2.25M instructions and moves CPI from about 2.529 to 2.393 on the same
 100M-cycle Linux boot workload.
 

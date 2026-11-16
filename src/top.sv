@@ -13,22 +13,79 @@ import util::*;
 `define SVCPU_DCACHE_WRITE_BACK 0
 `endif
 
+`ifndef SVCPU_DCACHE_DATA_RAM_STYLE
+`define SVCPU_DCACHE_DATA_RAM_STYLE 0
+`endif
+
+`ifndef SVCPU_ICACHE_LINE_COUNT
+`define SVCPU_ICACHE_LINE_COUNT 128
+`endif
+`ifndef SVCPU_ICACHE_DATA_RAM_STYLE
+`define SVCPU_ICACHE_DATA_RAM_STYLE 0
+`endif
+
 module core_top #(
     parameter bit    RAM_FILEPATH_IS_ENV = 1,
+`ifdef SYNTHESIS
+    // untyped: Quartus 20.1 rejects string-typed parameters in $readmemh
+    parameter        RAM_FILEPATH        = "RAM_FILE_PATH",
+`else
     parameter string RAM_FILEPATH        = "RAM_FILE_PATH",
+`endif
     parameter bit    ROM_FILEPATH_IS_ENV = 1,
+`ifdef SYNTHESIS
+    parameter        ROM_FILEPATH        = "ROM_FILE_PATH",
+`else
     parameter string ROM_FILEPATH        = "ROM_FILE_PATH",
+`endif
     parameter int unsigned DCACHE_LINE_COUNT = `SVCPU_DCACHE_LINE_COUNT,
     parameter int unsigned DCACHE_STORE_BUFFER_DEPTH = `SVCPU_DCACHE_STORE_BUFFER_DEPTH,
-    parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK
+    parameter bit DCACHE_WRITE_BACK = `SVCPU_DCACHE_WRITE_BACK,
+    parameter int unsigned DCACHE_DATA_RAM_STYLE = `SVCPU_DCACHE_DATA_RAM_STYLE,
+    parameter int unsigned ICACHE_LINE_COUNT = `SVCPU_ICACHE_LINE_COUNT,
+    parameter int unsigned ICACHE_DATA_RAM_STYLE = `SVCPU_ICACHE_DATA_RAM_STYLE
 ) (
 `ifdef TEST_MODE
     output logic test_success,
 `endif
     input  logic clk,
+`ifdef SVCPU_PHYSICAL_UART
+    input  logic uart_rx_i,
+    output logic uart_tx_o,
+    output logic uart_tx_overflow_o,
+    output logic uart_rx_overrun_o,
+`endif
+`ifdef SVCPU_BOARD_GPIO
+    input logic [9:0] board_switches_i,
+    input logic [3:0] board_keys_n_i,
+    output logic [9:0] board_leds_o,
+    output logic board_led_enable_o,
+`endif
+`ifdef SVCPU_BOARD_SD
+    input logic sd_miso_i,
+    output logic sd_clk_o,sd_mosi_o,sd_cs_n_o,
+`endif
+`ifdef SVCPU_BOARD_VGA
+    output logic video_valid_o,
+    output logic [63:0] video_data_o,
+    input logic video_ready_i,
+    input logic [63:0] video_status_i,
+`endif
     input  logic rst,
     input  Addr  MMAP_DBG_ADDR,
     output UIntX led
+`ifdef SVCPU_RAM_EXTERNAL
+    ,
+    // RAM Membus (byte offset from MMAP_RAM_BEGIN) to a board memory path
+    output logic        ram_valid_o,
+    input  logic        ram_ready_i,
+    output Addr         ram_addr_o,
+    output logic        ram_wen_o,
+    output UInt64       ram_wdata_o,
+    output logic [7:0]  ram_wmask_o,
+    input  logic        ram_rvalid_i,
+    input  UInt64       ram_rdata_i
+`endif
 
 `ifdef SVCPU_WHISPER_LOCKSTEP
     ,
@@ -123,6 +180,18 @@ module core_top #(
 `endif
 );
 
+    // Capacity profile check (C3 M3c): an explicit SVCPU_RAM_SIZE_BYTES must be
+    // non-zero, a power of two, a multiple of 8 and not overflow BEGIN + SIZE.
+    // An invalid size instantiates a module that does not exist, so elaboration
+    // fails in both simulation and synthesis. Absent in the legacy profile.
+`ifdef SVCPU_RAM_SIZE_BYTES
+    generate
+    if (!RAM_SIZE_VALID) begin : g_invalid_ram_size
+        svcpu_error_invalid_ram_size_profile invalid_ram_size_profile ();
+    end
+    endgenerate
+`endif
+
     // アドレスをデータ単位に変換
     function automatic logic [RAM_ADDR_WIDTH-1:0] addr_to_ramaddr(
         input logic [XLEN-1:0] addr
@@ -176,30 +245,20 @@ module core_top #(
         .ADDR_WIDTH(XLEN)
     ) i_membus();
 
-    core_inst_if #(
-    ) i_membus_core();
+    core_inst_if i_membus_core();
 
     Membus #(
         .DATA_WIDTH(MEMBUS_DATA_WIDTH),
         .ADDR_WIDTH(XLEN)
     ) d_membus();
 
-    core_data_if #(
-    ) d_membus_core();
+    core_data_if d_membus_core();
 
-    core_data_if #(
-    ) dcache_membus_core();
+    core_data_if dcache_membus_core();
 
     PrivMode pmp_priv_mode;
     UIntX pmpcfg0_fetch_value;
-    UIntX pmpaddr0_fetch_value;
-    UIntX pmpaddr1_fetch_value;
-    UIntX pmpaddr2_fetch_value;
-    UIntX pmpaddr3_fetch_value;
-    UIntX pmpaddr4_fetch_value;
-    UIntX pmpaddr5_fetch_value;
-    UIntX pmpaddr6_fetch_value;
-    UIntX pmpaddr7_fetch_value;
+    PmpRegion [7:0] pmp_regions_fetch_value;
     UIntX satp_fetch_value;
     logic translation_flush_fetch_value;
     logic dcache_flush_busy;
@@ -215,6 +274,13 @@ module core_top #(
     logic dcache_debug_rsp_valid;
     logic dcache_debug_flush_active;
     logic [3:0] amou_debug_state;
+    logic amou_idle;
+    // fence.i completion (WB0): every older store has been performed at RAM.
+    // mmio_controller releases only on the device response and a write
+    // response means "performed", so an idle amounit with an empty store
+    // buffer and an idle D-cache leaves nothing outstanding below the core.
+    logic dmem_quiescent;
+    logic fence_i_drain;   // core: fence.i waiting in MEM for dmem_quiescent
     logic amou_debug_slave_valid;
     logic amou_debug_slave_ready;
     logic amou_debug_slave_rvalid;
@@ -252,6 +318,32 @@ module core_top #(
         plic_source_irq[PLIC_UART_IRQ] = uart_irq;
     end
 
+`ifdef SVCPU_BOARD_GPIO
+`ifdef SVCPU_BOARD_SD
+    board_io_mmio gpio (
+        .clk(clk),.rst_n(rst),.switches(board_switches_i),.keys_n(board_keys_n_i),
+        .leds(board_leds_o),.led_enable(board_led_enable_o),.bus(dbg_membus),
+        .video_valid(video_valid_o),.video_data(video_data_o),.video_ready(video_ready_i),.video_status(video_status_i),
+        .sd_miso(sd_miso_i),.sd_clk(sd_clk_o),.sd_mosi(sd_mosi_o),.sd_cs_n(sd_cs_n_o)
+    );
+`else
+    board_gpio_mmio #(
+`ifdef SVCPU_BOARD_VGA
+        .VGA_ENABLED(1)
+`else
+        .VGA_ENABLED(0)
+`endif
+    ) gpio (
+        .clk(clk), .rst_n(rst), .switches(board_switches_i), .keys_n(board_keys_n_i),
+        .leds(board_leds_o), .led_enable(board_led_enable_o), .bus(dbg_membus),
+`ifdef SVCPU_BOARD_VGA
+        .video_valid(video_valid_o),.video_data(video_data_o),.video_ready(video_ready_i),.video_status(video_status_i)
+`else
+        .video_valid(),.video_data(),.video_ready(1'b1),.video_status(64'b0)
+`endif
+    );
+`endif
+`else
     always_ff @(posedge clk) begin
         // -----------------------------------------------------------
         // Debug membus は常に ready
@@ -288,6 +380,8 @@ module core_top #(
             end
         end
     end
+
+`endif
 
     always_ff @(posedge clk or negedge rst) begin
         if (!rst) begin
@@ -340,7 +434,9 @@ module core_top #(
 
     // I/D → MMIO（要求多重化 & 応答戻し）
     always_comb begin
-        memarb_select_d = d_membus.valid && !(d_membus_low_priority && i_membus.valid);
+        // While fence.i waits for the drain, D low priority is ignored so that
+        // instruction prefetch cannot starve the store-buffer drain.
+        memarb_select_d = d_membus.valid && !(d_membus_low_priority && i_membus.valid && !fence_i_drain);
         memarb_issue_is_i = i_membus.valid && !memarb_select_d;
 
         i_membus.ready  = mmio_membus.ready && !memarb_select_d;
@@ -365,19 +461,142 @@ module core_top #(
         end
     end
 
+    // Optional simulation-only RAM latency injection (C3 M1, default off).
+    // Sits on the 64-bit byte-offset Membus, upstream of addr_to_ramaddr.
+`ifdef SVCPU_RAM_LATENCY_SHIM
+    Membus shim_ram_membus();
+    membus_latency_shim ram_latency_shim (
+        .clk  (clk),
+        .rst  (rst),
+        .up   (arb_ram_membus),
+        .down (shim_ram_membus)
+    );
+`define SVCPU_RAM_CONV_MEMBUS shim_ram_membus
+    // Sim-only observer (no functional effect), enabled by +RAM_SHIM_TRACE_FENCE:
+    // prints the cycle at which the I-side fetch_invalidate (fence.i) is consumed,
+    // on the shim trace time base, plus the core cycle counter for cross-checking.
+    bit ram_shim_trace_fence;
+    initial ram_shim_trace_fence = $test$plusargs("RAM_SHIM_TRACE_FENCE");
+    always @(posedge clk) begin
+        if (ram_shim_trace_fence && rst && i_membus_core.fetch_invalidate)
+            $display("RAM_SHIM_FENCE cyc=%0d core_cycle=%0d pc=%016h",
+                     ram_latency_shim.trace_cyc, c.debug_cycle, c.mems_pc);
+    end
+`else
+`define SVCPU_RAM_CONV_MEMBUS arb_ram_membus
+`endif
+
+`ifdef SVCPU_RAM_SDRAM_MODEL
+    // Simulation RAM backend through the FPGA SDRAM path (C3 M3b):
+    //   RAM Membus -> membus_sdram_adapter -> sdram_bridge64 -> sdram_native16
+    //   (CLK_HZ 20 MHz profile) -> sdram_cycle_model16 (clock-sampled model).
+    // A preloader owns the adapter until the RAM image is written; meanwhile the
+    // CPU RAM port gets no ready (the CPU waits at its first RAM access; no reset
+    // hold, no warm-reset pulse). Cold reset of the SDRAM path = rst.
+    Membus preload_membus();
+    Membus sdram_up_membus();
+    logic sdram_preload_done;
+    sdram_preloader #(
+        .FILEPATH_IS_ENV(RAM_FILEPATH_IS_ENV),
+        .FILEPATH       (RAM_FILEPATH)
+    ) sdram_preload (
+        .clk  (clk),
+        .rst  (rst),
+        .done (sdram_preload_done),
+        .bus  (preload_membus)
+    );
+    always_comb begin
+        if (sdram_preload_done) begin
+            sdram_up_membus.valid = `SVCPU_RAM_CONV_MEMBUS.valid;
+            sdram_up_membus.addr  = `SVCPU_RAM_CONV_MEMBUS.addr;
+            sdram_up_membus.wen   = `SVCPU_RAM_CONV_MEMBUS.wen;
+            sdram_up_membus.wdata = `SVCPU_RAM_CONV_MEMBUS.wdata;
+            sdram_up_membus.wmask = `SVCPU_RAM_CONV_MEMBUS.wmask;
+        end else begin
+            sdram_up_membus.valid = preload_membus.valid;
+            sdram_up_membus.addr  = preload_membus.addr;
+            sdram_up_membus.wen   = preload_membus.wen;
+            sdram_up_membus.wdata = preload_membus.wdata;
+            sdram_up_membus.wmask = preload_membus.wmask;
+        end
+        `SVCPU_RAM_CONV_MEMBUS.ready  = sdram_preload_done && sdram_up_membus.ready;
+        `SVCPU_RAM_CONV_MEMBUS.rvalid = sdram_preload_done && sdram_up_membus.rvalid;
+        `SVCPU_RAM_CONV_MEMBUS.rdata  = sdram_up_membus.rdata;
+        preload_membus.ready  = !sdram_preload_done && sdram_up_membus.ready;
+        preload_membus.rvalid = !sdram_preload_done && sdram_up_membus.rvalid;
+        preload_membus.rdata  = sdram_up_membus.rdata;
+    end
+
+    logic        sdram_req_valid, sdram_req_ready, sdram_req_write, sdram_rsp_valid, sdram_rsp_error;
+    logic [63:0] sdram_req_addr, sdram_req_wdata, sdram_rsp_data;
+    logic [7:0]  sdram_req_be;
+    logic        sdram_fault, sdram_fault_seen, sdram_fault_wen;
+    logic [1:0]  sdram_fault_kind;
+    logic [63:0] sdram_fault_offset, sdram_fault_abs;
+    membus_sdram_adapter sdram_adapter (
+        .clk(clk), .rst_n(rst), .soft_reset(1'b0), .up(sdram_up_membus),
+        .req_valid(sdram_req_valid), .req_ready(sdram_req_ready), .req_addr(sdram_req_addr),
+        .req_write(sdram_req_write), .req_wdata(sdram_req_wdata), .req_be(sdram_req_be),
+        .rsp_valid(sdram_rsp_valid), .rsp_data(sdram_rsp_data), .rsp_error(sdram_rsp_error),
+        .fault(sdram_fault), .fault_seen(sdram_fault_seen), .fault_kind(sdram_fault_kind),
+        .fault_offset(sdram_fault_offset), .fault_abs(sdram_fault_abs), .fault_wen(sdram_fault_wen)
+    );
+    logic        sdram_nv, sdram_nready, sdram_nwrite, sdram_nrvalid, sdram_oe;
+    logic [24:0] sdram_naddr;
+    logic [15:0] sdram_nwdata, sdram_nrdata, sdram_dq_out, sdram_dq_in;
+    logic [1:0]  sdram_nbe, sdram_ba, sdram_dqm;
+    logic [12:0] sdram_a;
+    logic        sdram_cke, sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n;
+    sdram_bridge64 sdram_bridge (
+        .clk(clk), .rst_n(rst), .soft_reset(1'b0),
+        .req_valid(sdram_req_valid), .req_ready(sdram_req_ready), .req_addr(sdram_req_addr),
+        .req_write(sdram_req_write), .req_wdata(sdram_req_wdata), .req_be(sdram_req_be),
+        .rsp_valid(sdram_rsp_valid), .rsp_data(sdram_rsp_data), .rsp_error(sdram_rsp_error),
+        .native_valid(sdram_nv), .native_ready(sdram_nready), .native_addr(sdram_naddr),
+        .native_write(sdram_nwrite), .native_wdata(sdram_nwdata), .native_be(sdram_nbe),
+        .native_rsp_valid(sdram_nrvalid), .native_rsp_data(sdram_nrdata)
+    );
+    sdram_native16 #(.CLK_HZ(20_000_000)) sdram_ctrl (
+        .clk(clk), .rst_n(rst), .soft_reset(1'b0),
+        .req_valid(sdram_nv), .req_ready(sdram_nready), .req_addr(sdram_naddr),
+        .req_write(sdram_nwrite), .req_wdata(sdram_nwdata), .req_be(sdram_nbe),
+        .rsp_valid(sdram_nrvalid), .rsp_data(sdram_nrdata), .init_done(),
+        .dram_addr(sdram_a), .dram_ba(sdram_ba), .dram_dqm(sdram_dqm), .dram_cke(sdram_cke),
+        .dram_cs_n(sdram_cs_n), .dram_ras_n(sdram_ras_n), .dram_cas_n(sdram_cas_n),
+        .dram_we_n(sdram_we_n), .dq_in(sdram_dq_in), .dq_out(sdram_dq_out), .dq_oe(sdram_oe)
+    );
+    sdram_cycle_model16 #(.CLK_HZ(20_000_000), .UNWRITTEN(16'h0000)) sdram_model (
+        .clk(clk), .rst_n(rst), .a(sdram_a), .ba(sdram_ba), .dqm(sdram_dqm), .cke(sdram_cke),
+        .csn(sdram_cs_n), .rasn(sdram_ras_n), .casn(sdram_cas_n), .wen(sdram_we_n),
+        .oe(sdram_oe), .dout(sdram_dq_out), .din(sdram_dq_in)
+    );
+`elsif SVCPU_RAM_EXTERNAL
+    // Board profile: the RAM Membus leaves core_top (board wrapper owns the
+    // SDRAM path, the boot loader and the CPU reset hold).
+    assign ram_valid_o = `SVCPU_RAM_CONV_MEMBUS.valid;
+    assign ram_addr_o  = `SVCPU_RAM_CONV_MEMBUS.addr;
+    assign ram_wen_o   = `SVCPU_RAM_CONV_MEMBUS.wen;
+    assign ram_wdata_o = `SVCPU_RAM_CONV_MEMBUS.wdata;
+    assign ram_wmask_o = `SVCPU_RAM_CONV_MEMBUS.wmask;
+    assign `SVCPU_RAM_CONV_MEMBUS.ready  = ram_ready_i;
+    assign `SVCPU_RAM_CONV_MEMBUS.rvalid = ram_rvalid_i;
+    assign `SVCPU_RAM_CONV_MEMBUS.rdata  = ram_rdata_i;
+`else
     // arbiter後のMembus → RAM(=membus_if) 変換
     always_comb begin
-        ram_membus.valid = arb_ram_membus.valid;
-        arb_ram_membus.ready = ram_membus.ready;
+        ram_membus.valid = `SVCPU_RAM_CONV_MEMBUS.valid;
+        `SVCPU_RAM_CONV_MEMBUS.ready = ram_membus.ready;
 
-        ram_membus.addr  = addr_to_ramaddr(arb_ram_membus.addr);
-        ram_membus.wen   = arb_ram_membus.wen;
-        ram_membus.wdata = arb_ram_membus.wdata;
-        ram_membus.wmask = arb_ram_membus.wmask;
+        ram_membus.addr  = addr_to_ramaddr(`SVCPU_RAM_CONV_MEMBUS.addr);
+        ram_membus.wen   = `SVCPU_RAM_CONV_MEMBUS.wen;
+        ram_membus.wdata = `SVCPU_RAM_CONV_MEMBUS.wdata;
+        ram_membus.wmask = `SVCPU_RAM_CONV_MEMBUS.wmask;
 
-        arb_ram_membus.rvalid = ram_membus.rvalid;
-        arb_ram_membus.rdata  = ram_membus.rdata;
+        `SVCPU_RAM_CONV_MEMBUS.rvalid = ram_membus.rvalid;
+        `SVCPU_RAM_CONV_MEMBUS.rdata  = ram_membus.rdata;
     end
+`endif
+`undef SVCPU_RAM_CONV_MEMBUS
 
 
 
@@ -395,6 +614,8 @@ module core_top #(
 
 
     // RAM/ROM 実体
+`ifndef SVCPU_RAM_SDRAM_MODEL
+`ifndef SVCPU_RAM_EXTERNAL
     memory #(
         .DATA_WIDTH     (RAM_DATA_WIDTH),
         .ADDR_WIDTH     (RAM_ADDR_WIDTH),
@@ -405,6 +626,8 @@ module core_top #(
         .rst    (rst),
         .membus (ram_membus)
     );
+`endif
+`endif
 
     memory #(
         .DATA_WIDTH     (ROM_DATA_WIDTH),
@@ -443,7 +666,8 @@ module core_top #(
     dcache #(
         .LINE_COUNT(DCACHE_LINE_COUNT),
         .STORE_BUFFER_DEPTH(DCACHE_STORE_BUFFER_DEPTH),
-        .WRITE_BACK(DCACHE_WRITE_BACK)
+        .WRITE_BACK(DCACHE_WRITE_BACK),
+        .DATA_RAM_STYLE(DCACHE_DATA_RAM_STYLE)
     ) dcache0 (
         .clk        (clk),
         .rst        (rst),
@@ -476,6 +700,7 @@ module core_top #(
         .amo_commit_valid(amo_commit_valid),
         .amo_commit_wdata(amo_commit_wdata),
         .debug_state(amou_debug_state),
+        .idle(amou_idle),
         .debug_slave_valid(amou_debug_slave_valid),
         .debug_slave_ready(amou_debug_slave_ready),
         .debug_slave_rvalid(amou_debug_slave_rvalid),
@@ -485,6 +710,14 @@ module core_top #(
         .debug_slave_saved_valid(amou_debug_slave_saved_valid)
     );
 
+    assign dmem_quiescent = dcache_debug_store_buffer_empty &&
+                            (dcache_debug_state == 3'd0) &&   // dcache Idle
+                            amou_idle;
+`ifndef SYNTHESIS
+    initial if (DCACHE_WRITE_BACK)
+        $warning("fence.i completion covers WRITE_BACK=0 only (no dirty-line clean)");
+`endif
+
     dma u_dma(
         .clk (clk),
         .rst (rst),
@@ -492,6 +725,15 @@ module core_top #(
         .ram(dma_ram_membus)
     );
 
+`ifdef SVCPU_PHYSICAL_UART
+    uart16550_serial #(.CLK_HZ(20_000_000), .REF_HZ(3_686_400)) uart0 (
+        .clk(clk), .rst(rst), .membus(uart_membus), .irq(uart_irq),
+        .rxd(uart_rx_i), .txd(uart_tx_o),
+        .diag_tx_overflow(uart_tx_overflow_o), .diag_rx_overrun(uart_rx_overrun_o)
+    );
+    assign uart_tx_char_valid = 1'b0;
+    assign uart_tx_char = '0;
+`else
     uart_ns16550 uart0 (
         .clk           (clk),
         .rst           (rst),
@@ -500,6 +742,7 @@ module core_top #(
         .tx_char_valid (uart_tx_char_valid),
         .tx_char       (uart_tx_char)
     );
+`endif
 
     plic plic0 (
         .clk        (clk),
@@ -520,19 +763,12 @@ module core_top #(
 
 
 
-    inst_fetcher fethcer (
+    inst_fetcher #(.ICACHE_LINE_COUNT(ICACHE_LINE_COUNT), .ICACHE_DATA_RAM_STYLE(ICACHE_DATA_RAM_STYLE)) fethcer (
         .clk       (clk),
         .rst       (rst),
         .priv_mode (pmp_priv_mode),
         .pmpcfg0   (pmpcfg0_fetch_value),
-        .pmpaddr0  (pmpaddr0_fetch_value),
-        .pmpaddr1  (pmpaddr1_fetch_value),
-        .pmpaddr2  (pmpaddr2_fetch_value),
-        .pmpaddr3  (pmpaddr3_fetch_value),
-        .pmpaddr4  (pmpaddr4_fetch_value),
-        .pmpaddr5  (pmpaddr5_fetch_value),
-        .pmpaddr6  (pmpaddr6_fetch_value),
-        .pmpaddr7  (pmpaddr7_fetch_value),
+        .pmp_regions(pmp_regions_fetch_value),
         .satp      (satp_fetch_value),
         .sstatus_sum(sstatus_sum_fetch_value),
         .sstatus_mxr(sstatus_mxr_fetch_value),
@@ -609,24 +845,20 @@ module core_top #(
 
         .pmp_priv_mode(pmp_priv_mode),
         .pmpcfg0_fetch_value(pmpcfg0_fetch_value),
-        .pmpaddr0_fetch_value(pmpaddr0_fetch_value),
-        .pmpaddr1_fetch_value(pmpaddr1_fetch_value),
-        .pmpaddr2_fetch_value(pmpaddr2_fetch_value),
-        .pmpaddr3_fetch_value(pmpaddr3_fetch_value),
-        .pmpaddr4_fetch_value(pmpaddr4_fetch_value),
-        .pmpaddr5_fetch_value(pmpaddr5_fetch_value),
-        .pmpaddr6_fetch_value(pmpaddr6_fetch_value),
-        .pmpaddr7_fetch_value(pmpaddr7_fetch_value),
+        .pmp_regions_fetch_value(pmp_regions_fetch_value),
         .satp_fetch_value(satp_fetch_value),
         .translation_flush_fetch_value(translation_flush_fetch_value),
         .sstatus_sum_fetch_value(sstatus_sum_fetch_value),
         .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
         .dcache_flush_busy(dcache_flush_busy),
+        .dmem_quiescent(dmem_quiescent),
+        .fence_i_drain(fence_i_drain),
         .external_meip(plic_meip),
         .external_seip(plic_seip),
         .aclint   (aclint_core_bus)
     );
 
+`ifndef SYNTHESIS
     final begin
         if ($test$plusargs("PERF_SUMMARY")) begin
             $display("[PERF-MEMARB] i_grant=%0d d_grant=%0d d_low_grant=%0d d_low_defer=%0d",
@@ -640,6 +872,7 @@ module core_top #(
                 perf_memarb_d_low_wait_cycle);
         end
     end
+`endif
 
 `ifdef SVCPU_WHISPER_LOCKSTEP
     assign lockstep_uart_tx_valid = uart_tx_char_valid;

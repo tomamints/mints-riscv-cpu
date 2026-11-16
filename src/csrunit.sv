@@ -4,6 +4,9 @@ import corectrl::*;
 module csrunit (
 	input  logic clk,
 	input  logic rst,
+`ifdef SVCPU_FPGA_DEBUG
+	output logic [2:0] debug_irq_flags_o,
+`endif
 	input  logic valid,
 	input  Addr  pc,
 	input  Inst  inst_bits,
@@ -43,29 +46,29 @@ module csrunit (
 );
 
 //WMASK determines which bit can change or not. WARL can write anything but read legal.
-	localparam UIntX MSTATUS_WMASK = UIntX'('h0000_0000_007e_19aa) ;
-	localparam UIntX MTVEC_WMASK  = 'hffff_ffff_ffff_fffd; //MTVECは[1:0]はMODE設定
-	localparam UIntX MEDELEG_WMASK  = 'hffff_ffff_ffff_f7ff;
-	localparam UIntX MIDELEG_WMASK  = UIntX'('h0000_0000_0000_0222);
-	localparam UIntX MCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
-	localparam UIntX MSCRATCH_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MEPC_WMASK   = 'hffff_ffff_ffff_fffe;
-	localparam UIntX MCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MTVAL_WMASK  = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MIP_WMASK  = UIntX'('h0000_0000_0000_0022);
-	localparam UIntX MIE_WMASK  = UIntX'('h0000_0000_0000_0aaa);
-	localparam UIntX MCYCLE_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX MINSTRET_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX SSTATUS_WMASK  = UIntX'('h0000_0000_000c_0122);
-	localparam UIntX SIP_WMASK      = UIntX'('h0000_0000_0000_0022);
-	localparam UIntX SIE_WMASK      = UIntX'('h0000_0000_0000_0222);
-	localparam UIntX SCOUNTEREN_WMASK  = UIntX'('h0000_0000_0000_0007);
-	localparam UIntX STVEC_WMASK  = 'hffff_ffff_ffff_fffd;
-	localparam UIntX SSCRATCH_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX SEPC_WMASK   = 'hffff_ffff_ffff_fffe;
-	localparam UIntX SCAUSE_WMASK = 'hffff_ffff_ffff_ffff;
-	localparam UIntX STVAL_WMASK  = 'hffff_ffff_ffff_ffff;
-	localparam UIntX SATP_WMASK   = 'hffff_ffff_ffff_ffff;
+	localparam UIntX MSTATUS_WMASK = UIntX'(64'h0000_0000_007e_19aa) ;
+	localparam UIntX MTVEC_WMASK  = 64'hffff_ffff_ffff_fffd; //MTVECは[1:0]はMODE設定
+	localparam UIntX MEDELEG_WMASK  = 64'hffff_ffff_ffff_f7ff;
+	localparam UIntX MIDELEG_WMASK  = UIntX'(64'h0000_0000_0000_0222);
+	localparam UIntX MCOUNTEREN_WMASK  = UIntX'(64'h0000_0000_0000_0007);
+	localparam UIntX MSCRATCH_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MEPC_WMASK   = 64'hffff_ffff_ffff_fffe;
+	localparam UIntX MCAUSE_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MTVAL_WMASK  = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MIP_WMASK  = UIntX'(64'h0000_0000_0000_0022);
+	localparam UIntX MIE_WMASK  = UIntX'(64'h0000_0000_0000_0aaa);
+	localparam UIntX MCYCLE_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX MINSTRET_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX SSTATUS_WMASK  = UIntX'(64'h0000_0000_000c_0122);
+	localparam UIntX SIP_WMASK      = UIntX'(64'h0000_0000_0000_0022);
+	localparam UIntX SIE_WMASK      = UIntX'(64'h0000_0000_0000_0222);
+	localparam UIntX SCOUNTEREN_WMASK  = UIntX'(64'h0000_0000_0000_0007);
+	localparam UIntX STVEC_WMASK  = 64'hffff_ffff_ffff_fffd;
+	localparam UIntX SSCRATCH_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX SEPC_WMASK   = 64'hffff_ffff_ffff_fffe;
+	localparam UIntX SCAUSE_WMASK = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX STVAL_WMASK  = 64'hffff_ffff_ffff_ffff;
+	localparam UIntX SATP_WMASK   = 64'hffff_ffff_ffff_ffff;
 	localparam logic [3:0] SATP_MODE_BARE = 4'd0;
 	localparam logic [3:0] SATP_MODE_SV39 = 4'd8;
 
@@ -83,7 +86,7 @@ module csrunit (
 
 
 	//read masks
-	localparam UIntX SSTATUS_RMASK  = UIntX'('h8000_0003_018f_e762);
+	localparam UIntX SSTATUS_RMASK  = UIntX'(64'h8000_0003_018f_e762);
 
 
 	//CSRR(W|S|C)かどうか
@@ -101,6 +104,9 @@ module csrunit (
 
 	logic is_wfi;
 	assign is_wfi = (inst_bits == 32'h10500073);
+`ifdef SVCPU_FPGA_DEBUG
+	assign debug_irq_flags_o = {mstatus[3], mstatus[1], mip[5]};
+`endif
 
 	logic is_sfence_vma;
 	assign is_sfence_vma = inst_bits[6:0] == OP_SYSTEM &&
@@ -156,7 +162,8 @@ module csrunit (
 		(csr_addr == INSTRET) ? !mcounteren[2] :
 										1'b0;
 
-	logic zicntr_denied_U =
+	logic zicntr_denied_U;
+	assign zicntr_denied_U =
 		(csr_addr == CYCLE)   ? !scounteren[0] :
 		(csr_addr == TIME)    ? !scounteren[1] :
 		(csr_addr == INSTRET) ? !scounteren[2] :
@@ -198,9 +205,11 @@ module csrunit (
 	UInt64 trace_timer_start_minstret;
 
 	initial begin
+`ifndef SYNTHESIS
 		if (!$value$plusargs("TRACE_TIMER_MINSTRET=%h", trace_timer_start_minstret)) begin
 			trace_timer_start_minstret = '0;
 		end
+`endif
 	end
 
 	assign pmpcfg0_value = pmpcfg0;
@@ -216,7 +225,7 @@ module csrunit (
 	assign sstatus_sum = mstatus[18];
 	assign sstatus_mxr = mstatus[19];
 
-	assign mip = (mip_reg & ~UIntX'('h0000_0000_0000_0a88)) | {
+	assign mip = (mip_reg & ~(UIntX'(64'h0000_0000_0000_0a88))) | {
 		{(XLEN - 12){1'b0}},
 		external_meip, // MEIP
 		1'b0, // 0
@@ -588,6 +597,7 @@ module csrunit (
 			mcycle += 1;
 			mip_reg <= mip_reg | set_s_interrupt_pending;
 			if (valid) begin
+`ifndef SYNTHESIS
 				if ($test$plusargs("TRACE_TIMER_IRQ") &&
 					minstret >= trace_timer_start_minstret &&
 					trace_post_timer_count != 0 &&
@@ -608,7 +618,9 @@ module csrunit (
 					trace_post_timer_count <= trace_post_timer_count - 1'b1;
 					trace_post_timer_last_minstret <= minstret;
 				end
+`endif
 				if (raise_trap) begin
+`ifndef SYNTHESIS
 					if ($test$plusargs("TRACE_TRAP")) begin
 						$display("[TRAP] pc=%h inst=%h mode=%0d expt=%b intr=%b ret=%b cause=%h tval=%h vector=%h next_mode=%0d satp=%h stvec=%h mtvec=%h",
 							pc,
@@ -625,6 +637,8 @@ module csrunit (
 							stvec,
 							mtvec);
 					end
+`endif
+`ifndef SYNTHESIS
 					if ($test$plusargs("TRACE_TIMER_IRQ") &&
 						minstret >= trace_timer_start_minstret &&
 						raise_interrupt &&
@@ -642,6 +656,7 @@ module csrunit (
 							sip,
 							mstatus);
 					end
+`endif
 					if (raise_expt || raise_interrupt) begin
 						if (raise_interrupt &&
 							(trap_cause == SUPERVISOR_TIMER_INTERRUPT || trap_cause == MACHINE_TIMER_INTERRUPT)) begin
@@ -684,6 +699,7 @@ module csrunit (
 							mstatus[8] <= mode[0];
 						end
 					end else if (trap_return) begin
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_TIMER_IRQ") &&
 							minstret >= trace_timer_start_minstret &&
 							trace_timer_active) begin
@@ -701,6 +717,7 @@ module csrunit (
 								sip,
 								mstatus);
 						end
+`endif
 						if (is_mret) begin
 							//save mstatus.mie to mstatus.mipe
 							// and set mstatus.mpie = 1
@@ -725,6 +742,7 @@ module csrunit (
 					mode <= trap_mode_next;
 				end else begin
 					if (csr_write_en) begin
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_CSR") && (
 							csr_addr == MSTATUS ||
 							csr_addr == SSTATUS ||
@@ -746,6 +764,8 @@ module csrunit (
 								(csr_addr == SATP) ? validate_satp(satp, wdata) : wdata,
 								inst_bits);
 						end
+`endif
+`ifndef SYNTHESIS
 						if ($test$plusargs("TRACE_TIMER_IRQ") &&
 							minstret >= trace_timer_start_minstret &&
 							(csr_addr == SIP || csr_addr == MIP) &&
@@ -763,6 +783,7 @@ module csrunit (
 								sip,
 								aclint.setstip);
 						end
+`endif
 						case (csr_addr) //これらはそれぞれのCSRレジスタにwdataを入れている。
 							MSTATUS  : mstatus  <= validate_mstatus(mstatus, wdata);
 							MTVEC    : mtvec    <= wdata;

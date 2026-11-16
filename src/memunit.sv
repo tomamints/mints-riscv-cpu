@@ -1,3 +1,8 @@
+// Carry-chain PMP compares on timing-critical checkers (board profile); the
+// result is identical either way (tools/test-pmp-prefix.sh checks both).
+`ifndef SVCPU_PMP_CARRY_COMPARE
+`define SVCPU_PMP_CARRY_COMPARE 0
+`endif
 import eei::*;
 import corectrl::*;
 
@@ -13,14 +18,7 @@ module memunit (
 	input logic sstatus_mxr,
 	input logic translation_flush,
 	input UIntX pmpcfg0,
-	input UIntX pmpaddr0,
-	input UIntX pmpaddr1,
-	input UIntX pmpaddr2,
-	input UIntX pmpaddr3,
-	input UIntX pmpaddr4,
-	input UIntX pmpaddr5,
-	input UIntX pmpaddr6,
-	input UIntX pmpaddr7,
+	input PmpRegion [7:0] pmp_regions,
 	input Addr addr,
 	input UIntX rs2,
 	output UIntX rdata,
@@ -158,7 +156,8 @@ module memunit (
 		UInt64 perf_mem_split_response_bus_wait_cycle;
 		UInt64 perf_mem_split_response_done_count;
 
-		localparam Addr MMAP_RAM_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
+		// end of the normal (cacheable) RAM range: eei capacity profile (legacy 16 MiB)
+		localparam Addr MMAP_RAM_END = MMAP_RAM_NORMAL_END;
 
 	function automatic logic [3:0] access_size_bytes(input logic [1:0] funct3_lo);
 		unique case (funct3_lo)
@@ -396,20 +395,13 @@ module memunit (
 			((state == TranslateWait) ? req_needs_write_permission : current_needs_write_permission) ?
 				PMP_ACCESS_WRITE : PMP_ACCESS_READ;
 
-	pmp_checker data_pmp_checker (
+	pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) data_pmp_checker (
 		.priv_mode(priv_mode),
 		.access_start(data_pmp_addr),
 		.access_size(data_pmp_size),
 		.access_type(data_pmp_access_type),
 		.pmpcfg0(pmpcfg0),
-		.pmpaddr0(pmpaddr0),
-		.pmpaddr1(pmpaddr1),
-		.pmpaddr2(pmpaddr2),
-		.pmpaddr3(pmpaddr3),
-		.pmpaddr4(pmpaddr4),
-		.pmpaddr5(pmpaddr5),
-		.pmpaddr6(pmpaddr6),
-		.pmpaddr7(pmpaddr7),
+		.pmp_regions(pmp_regions),
 		.allow(data_pmp_allow)
 	);
 
@@ -427,14 +419,7 @@ module memunit (
 		.req_mxr(sstatus_mxr),
 		.satp(satp),
 		.pmpcfg0(pmpcfg0),
-		.pmpaddr0(pmpaddr0),
-		.pmpaddr1(pmpaddr1),
-		.pmpaddr2(pmpaddr2),
-		.pmpaddr3(pmpaddr3),
-		.pmpaddr4(pmpaddr4),
-		.pmpaddr5(pmpaddr5),
-		.pmpaddr6(pmpaddr6),
-		.pmpaddr7(pmpaddr7),
+		.pmp_regions(pmp_regions),
 		.rsp_valid(translation_rsp_valid),
 		.rsp_ready(translation_rsp_ready),
 		.rsp_pa(translation_pa),
@@ -561,10 +546,12 @@ module memunit (
 			expt.valid = 1'b1;
 			expt.cause = fault_cause;
 			expt.value = fault_value;
+`ifndef SYNTHESIS
 			if ($test$plusargs("TRACE_SV39")) begin
 				$display("[SV39] FAULT cause=%0d detail=%0d value=%h",
 					fault_cause, fault_detail, fault_value);
 			end
+`endif
 		end
 	end
 
@@ -840,10 +827,12 @@ module memunit (
 						if (data_mem_rvalid) begin
 							if (req_crosses_word) begin
 								req_first_rdata <= membus.rdata;
+`ifndef SYNTHESIS
 								if ($test$plusargs("TRACE_MEMUNIT")) begin
 									$display("[MEMU] split first addr=%h data=%h offset=%0d size=%0d",
 										req_paddr, membus.rdata, req_offset, req_size);
 								end
+`endif
 								state <= SplitAccessWaitReady;
 							end else begin
 								state <= Init;
@@ -860,6 +849,7 @@ module memunit (
 					SplitAccessWaitValid: begin
 						if (data_mem_rvalid) begin
 							load_result <= extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3);
+`ifndef SYNTHESIS
 							if ($test$plusargs("TRACE_MEMUNIT")) begin
 								$display("[MEMU] split second addr=%h data=%h result=%h funct3=%b",
 									({req_paddr[XLEN-1:3], 3'b000} + Addr'(8)),
@@ -867,6 +857,7 @@ module memunit (
 									extract_load_data({membus.rdata, req_first_rdata}, req_offset, req_funct3),
 									req_funct3);
 							end
+`endif
 							state <= Init;
 						end
 					end
@@ -887,6 +878,7 @@ module memunit (
 		end
 	end
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display("[PERF-MEMU-STALL] translation=%0d access_ready=%0d response=%0d split_ready=%0d split_response=%0d discard=%0d fault=%0d",
@@ -936,4 +928,5 @@ module memunit (
 				perf_mem_split_response_bus_wait_cycle);
 		end
 	end
+`endif
 endmodule : memunit

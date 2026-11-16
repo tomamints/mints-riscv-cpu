@@ -1,0 +1,114 @@
+/dts-v1/;
+
+/*
+ * DE0-CV board profile (C3 M3c, PLATFORM_PROFILE=de0cv64).
+ * Differences from platform/riscv_cpu.dts (legacy simulation profile):
+ *   - memory: 64 MiB SDRAM at 0x80000000 (RTL decode bounded to the same size);
+ *   - timebase-frequency and cpu clock-frequency: 20 MHz common CPU/SDRAM clock
+ *     (ACLINT mtime increments once per CPU clock);
+ *   - UART clock-frequency: 3.6864 MHz reference enable generated fractionally
+ *     from 20 MHz by uart16550_serial. This is the baud reference, not the CPU
+ *     clock; divisor 2 selects 115200 baud. SoC integration must use that backend.
+ */
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "mints,cpu", "mints,risc-v-cpu";
+	model = "MiNTs-CPU DE0-CV";
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+		bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 ignore_loglevel uio_pdrv_genirq.of_id=mints,de0cv-gpio";
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <20000000>;
+
+		cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "okay";
+			compatible = "riscv";
+			clock-frequency = <20000000>;
+			/* Linux 6.12 may disable the deprecated ISA-string fallback. */
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "c", "zicntr", "zicsr", "zifencei";
+			riscv,isa = "rv64imac_zicntr_zicsr_zifencei";
+			mmu-type = "riscv,sv39";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x04000000>;
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		gpio@40000000 {
+			compatible = "mints,de0cv-gpio";
+			reg = <0x0 0x40000000 0x0 0x20>;
+			linux,uio-name = "mints-gpio";
+			status = "okay";
+		};
+
+		spi@40000040 {
+			compatible = "altr,spi-1.0";
+			reg = <0x0 0x40000040 0x0 0x18>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+			mmc@0 {
+				compatible = "mmc-spi-slot";
+				reg = <0>;
+				spi-max-frequency = <400000>;
+				voltage-ranges = <3300 3300>;
+			};
+		};
+
+		uart0: serial@10000000 {
+			compatible = "ns16550a";
+			reg = <0x0 0x10000000 0x0 0x100>;
+			interrupt-parent = <&plic>;
+			interrupts = <10>;
+			clock-frequency = <3686400>;
+			current-speed = <115200>;
+			reg-shift = <0>;
+			reg-io-width = <1>;
+			status = "okay";
+		};
+
+		plic: interrupt-controller@c000000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0x0 0x0c000000 0x0 0x04000000>;
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			riscv,ndev = <32>;
+			interrupts-extended = <&cpu0_intc 11>,
+			                      <&cpu0_intc 9>;
+		};
+
+		clint: clint@2000000 {
+			compatible = "riscv,clint0";
+			reg = <0x0 0x02000000 0x0 0x0000c000>;
+			interrupts-extended = <&cpu0_intc 3>,
+			                      <&cpu0_intc 7>;
+		};
+	};
+};

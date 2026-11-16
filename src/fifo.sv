@@ -1,5 +1,6 @@
+// Packed payloads cross the port as bits; callers pass DATA_WIDTH=$bits(type).
 module fifo #(
-	parameter type DATA_TYPE = logic,
+	parameter int DATA_WIDTH = 1,
 	parameter int WIDTH = 2
 	)(
 		input logic clk,
@@ -8,10 +9,10 @@ module fifo #(
 		output logic wready,
 		output logic wready_two,
 		input logic wvalid,
-		input DATA_TYPE wdata,
+		input logic [DATA_WIDTH-1:0] wdata,
 		input logic rready,
 		output logic rvalid,
-		output DATA_TYPE rdata
+		output logic [DATA_WIDTH-1:0] rdata
 		);
 
 		generate
@@ -45,7 +46,7 @@ module fifo #(
 
 				Ptr head;
 				Ptr tail;
-				DATA_TYPE mem[0:(1<<WIDTH)-1];
+				logic [DATA_WIDTH-1:0] mem[0:(1<<WIDTH)-1];
 
 				logic[WIDTH-1:0] tail_plus1;
 				logic[WIDTH-1:0] tail_plus2;

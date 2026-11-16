@@ -1,0 +1,4 @@
+SD_CLK H11 output
+SD_MOSI B11 output
+SD_MISO K9 input
+SD_CS_N C11 output

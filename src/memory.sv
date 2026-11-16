@@ -4,7 +4,12 @@ module memory#(
 	parameter int DATA_WIDTH = 32,
 	parameter int ADDR_WIDTH = 10,
 	parameter bit FILEPATH_IS_ENV = 0,
+`ifdef SYNTHESIS
+	// Quartus 20.1 rejects a string-typed parameter in $readmemh
+	parameter FILEPATH = ""
+`else
 	parameter string FILEPATH = ""
+`endif
 )(
 	input  logic clk,
 	input  logic rst,
@@ -28,6 +33,14 @@ module memory#(
 	DataType            rdata_saved;
 
 	// メモリ初期化
+`ifdef SYNTHESIS
+	// Synthesis: the image is the FILEPATH parameter (no host environment).
+	// Quartus 20.1 cannot compare a string parameter, so every synthesized
+	// instance must name an image (the board ROM; the board RAM is external).
+	initial begin
+		$readmemh(FILEPATH, mem);
+	end
+`else
 	initial begin
 		string init_filepath;
 		if (FILEPATH_IS_ENV) begin
@@ -43,6 +56,7 @@ module memory#(
 			$display("memory: no initialization file specified");
 		end
 	end
+`endif
 
 	// Ready は状態に依存
 	always_comb begin

@@ -79,23 +79,23 @@ module core (
 
 	output PrivMode pmp_priv_mode,
 	output UIntX pmpcfg0_fetch_value,
-	output UIntX pmpaddr0_fetch_value,
-	output UIntX pmpaddr1_fetch_value,
-	output UIntX pmpaddr2_fetch_value,
-	output UIntX pmpaddr3_fetch_value,
-	output UIntX pmpaddr4_fetch_value,
-	output UIntX pmpaddr5_fetch_value,
-	output UIntX pmpaddr6_fetch_value,
-	output UIntX pmpaddr7_fetch_value,
+	output PmpRegion [7:0] pmp_regions_fetch_value,
 	output UIntX satp_fetch_value,
 	output logic translation_flush_fetch_value,
 	output logic sstatus_sum_fetch_value,
 	output logic sstatus_mxr_fetch_value,
 	input  logic dcache_flush_busy,
+	input  logic dmem_quiescent,
+	output logic fence_i_drain,
 	input  logic external_meip,
 	input  logic external_seip,
 	aclint_if.slave aclint
 );
+	InstCtrl exs_ctrl;
+	InstCtrl mems_ctrl;
+	ExceptionInfo mems_expt;
+	InstCtrl wbs_ctrl;
+
 
 
 	typedef struct packed {
@@ -222,9 +222,12 @@ module core (
 	end
 
 ////////////////// ID Stage /////////////////////
-	logic ids_valid = i_membus.rvalid;
-	Addr ids_pc = i_membus.raddr;
-	Inst ids_inst_bits = i_membus.rdata;
+	logic ids_valid;
+	assign ids_valid = i_membus.rvalid;
+	Addr ids_pc;
+	assign ids_pc = i_membus.raddr;
+	Inst ids_inst_bits;
+	assign ids_inst_bits = i_membus.rdata;
 	logic ids_inst_valid;
 	InstCtrl ids_ctrl;
 	UIntX ids_imm;
@@ -272,24 +275,36 @@ module core (
 
 	////////////////EX Stage /////////////////
 
-	logic exs_valid      = exq_rvalid;
-	Addr  exs_pc         = exq_rdata.addr;
-	Inst  exs_inst_bits  = exq_rdata.bits;
-	InstCtrl  exs_ctrl   = exq_rdata.ctrl;
-	UIntX  exs_imm       = exq_rdata.imm;
-	logic exs_predicted_taken = exq_rdata.predicted_taken;
-	Addr  exs_predicted_next_pc = exq_rdata.predicted_next_pc;
-	logic exs_predicted_from_btb = exq_rdata.predicted_from_btb;
-	logic exs_predicted_from_ras = exq_rdata.predicted_from_ras;
+	logic exs_valid;
+
+	assign exs_valid = exq_rvalid;
+	Addr exs_pc;
+	assign exs_pc = exq_rdata.addr;
+	Inst exs_inst_bits;
+	assign exs_inst_bits = exq_rdata.bits;
+	assign exs_ctrl = exq_rdata.ctrl;
+	UIntX exs_imm;
+	assign exs_imm = exq_rdata.imm;
+	logic exs_predicted_taken;
+	assign exs_predicted_taken = exq_rdata.predicted_taken;
+	Addr exs_predicted_next_pc;
+	assign exs_predicted_next_pc = exq_rdata.predicted_next_pc;
+	logic exs_predicted_from_btb;
+	assign exs_predicted_from_btb = exq_rdata.predicted_from_btb;
+	logic exs_predicted_from_ras;
+	assign exs_predicted_from_ras = exq_rdata.predicted_from_ras;
 
 
 	//レジスタ
 	UIntX regfile [31:0]; //regfileを32個作った
 
 	//レジスタ番号
-	logic [4:0] exs_rs1_addr = exs_inst_bits[19:15];
-	logic [4:0] exs_rs2_addr = exs_inst_bits[24:20];
-	logic [4:0] exs_rd_addr = exs_inst_bits[11:7];
+	logic [4:0] exs_rs1_addr;
+	assign exs_rs1_addr = exs_inst_bits[19:15];
+	logic [4:0] exs_rs2_addr;
+	assign exs_rs2_addr = exs_inst_bits[24:20];
+	logic [4:0] exs_rd_addr;
+	assign exs_rd_addr = exs_inst_bits[11:7];
 
 	UIntX exs_rs1_data,exs_rs2_data;
 	UIntX exs_rs1_forwarded_data, exs_rs2_forwarded_data;
@@ -486,6 +501,8 @@ module core (
 		UIntX pmpaddr5_value;
 		UIntX pmpaddr6_value;
 		UIntX pmpaddr7_value;
+		// PMP entries decoded once and shared by every pmp_checker
+		PmpRegion [7:0] pmp_regions;
 		UIntX satp_value;
 		logic sstatus_sum;
 		logic sstatus_mxr;
@@ -548,14 +565,19 @@ module core (
 		assign memaddr = exs_ctrl.is_amo ? exs_rs1_forwarded_data : exs_alu_result;
 		assign pmp_priv_mode = csru_priv_mode;
 		assign pmpcfg0_fetch_value = pmpcfg0_value;
-		assign pmpaddr0_fetch_value = pmpaddr0_value;
-		assign pmpaddr1_fetch_value = pmpaddr1_value;
-		assign pmpaddr2_fetch_value = pmpaddr2_value;
-		assign pmpaddr3_fetch_value = pmpaddr3_value;
-		assign pmpaddr4_fetch_value = pmpaddr4_value;
-		assign pmpaddr5_fetch_value = pmpaddr5_value;
-		assign pmpaddr6_fetch_value = pmpaddr6_value;
-		assign pmpaddr7_fetch_value = pmpaddr7_value;
+		assign pmp_regions_fetch_value = pmp_regions;
+		pmp_region_decode pmp_decode (
+			.pmpcfg0(pmpcfg0_value),
+			.pmpaddr0(pmpaddr0_value),
+			.pmpaddr1(pmpaddr1_value),
+			.pmpaddr2(pmpaddr2_value),
+			.pmpaddr3(pmpaddr3_value),
+			.pmpaddr4(pmpaddr4_value),
+			.pmpaddr5(pmpaddr5_value),
+			.pmpaddr6(pmpaddr6_value),
+			.pmpaddr7(pmpaddr7_value),
+			.regions(pmp_regions)
+		);
 		assign satp_fetch_value = satp_value;
 		assign sstatus_sum_fetch_value = sstatus_sum;
 		assign sstatus_mxr_fetch_value = sstatus_mxr;
@@ -672,16 +694,25 @@ module core (
 	////////////MEM Stage ////////////////
 
 	logic mems_is_new;
-	logic mems_valid      = memq_rvalid;
-	Addr  mems_pc         = memq_rdata.addr;
-	Inst  mems_inst_bits  = memq_rdata.bits;
-	InstCtrl  mems_ctrl   = memq_rdata.ctrl;
-	ExceptionInfo  mems_expt   = memq_rdata.expt;
-	logic[4:0]  mems_rd_addr       = mems_inst_bits[11:7];
+	logic mems_valid;
+	assign mems_valid = memq_rvalid;
+	Addr mems_pc;
+	assign mems_pc = memq_rdata.addr;
+	Inst mems_inst_bits;
+	assign mems_inst_bits = memq_rdata.bits;
+	assign mems_ctrl = memq_rdata.ctrl;
+	assign mems_expt = memq_rdata.expt;
+	logic[4:0] mems_rd_addr;
+	assign mems_rd_addr = mems_inst_bits[11:7];
 
 	logic mems_satp_access;
 	logic mems_sfence_vma;
 	logic mems_fence_i;
+	logic mems_fence_i_wait;   // fence.i in MEM, older stores not yet performed
+	logic mems_fence_i_fire;   // fence.i completes this cycle (exactly once)
+`ifdef SVCPU_FPGA_DEBUG
+	logic [2:0] csru_debug_irq_flags;
+`endif
 	logic mems_translation_hazard;
 	logic mems_translation_flush_wait;
 	assign mems_satp_access =
@@ -702,7 +733,7 @@ module core (
 	assign mems_branch_taken = inst_is_br(mems_ctrl) && memq_rdata.br_taken;
 
 	assign ex_early_jal_pc_next = exs_alu_result;
-	assign ex_early_jalr_pc_next = exs_alu_result & ~Addr'(1);
+	assign ex_early_jalr_pc_next = exs_alu_result & ~(Addr'(1));
 	assign ex_early_jalr_misaligned =
 		IALIGN == 32 &&
 		ex_early_jalr_pc_next[1:0] != 2'b00;
@@ -765,7 +796,7 @@ module core (
 		 (mems_ctrl.is_jump &&
 		  (mems_inst_bits[6:0] != OP_JAL) &&
 		  (mems_inst_bits[6:0] != OP_JALR)) ||
-		 mems_fence_i ||
+		 mems_fence_i_fire ||
 		 (mems_translation_hazard && !dcache_flush_busy));
 	assign control_hazard =
 		mem_control_hazard ||
@@ -779,16 +810,13 @@ module core (
 		!dcache_flush_busy &&
 		!csru_raise_trap &&
 		!mems_expt.valid;
-	assign i_membus.fetch_invalidate =
-		mems_valid &&
-		mems_is_new &&
-		mems_fence_i &&
-		!csru_raise_trap &&
-		!mems_expt.valid;
+	// Fires once: mems_fence_i_fire is true only in the cycle fence.i leaves MEM
+	// (it implies the MEM -> WB transfer below), so no is_new gating is needed.
+	assign i_membus.fetch_invalidate = mems_fence_i_fire;
 	assign control_hazard_pc_next =
 		mem_control_hazard
 			? ((csru_raise_trap) ? csru_trap_vector :
-			   (mems_translation_hazard || mems_fence_i) ? mems_pc + Addr'(4) :
+			   (mems_translation_hazard || mems_fence_i_fire) ? mems_pc + Addr'(4) :
 			   memq_rdata.jump_addr)
 			: (ex_early_jal_redirect ? ex_early_jal_pc_next :
 			   ex_early_jalr_redirect ? ex_early_jalr_pc_next :
@@ -844,14 +872,7 @@ module core (
 			.sstatus_mxr(sstatus_mxr),
 			.translation_flush(translation_flush_fetch_value),
 			.pmpcfg0(pmpcfg0_value),
-			.pmpaddr0(pmpaddr0_value),
-			.pmpaddr1(pmpaddr1_value),
-			.pmpaddr2(pmpaddr2_value),
-			.pmpaddr3(pmpaddr3_value),
-			.pmpaddr4(pmpaddr4_value),
-			.pmpaddr5(pmpaddr5_value),
-			.pmpaddr6(pmpaddr6_value),
-			.pmpaddr7(pmpaddr7_value),
+			.pmp_regions(pmp_regions),
 			.addr   (memu_addr),
 			.rs2    (memq_rdata.rs2_data),
 			.rdata  (memu_rdata),
@@ -878,6 +899,9 @@ module core (
 		);
 
 		csrunit csru(
+`ifdef SVCPU_FPGA_DEBUG
+		.debug_irq_flags_o(csru_debug_irq_flags),
+`endif
 		.clk      (clk),
 		.rst      (rst),
 		.valid    (mems_valid),
@@ -919,10 +943,29 @@ module core (
 		);
 
 
+	// fence.i waits in MEM until every older store is performed (WB0), then
+	// redirects and invalidates the I-cache in the single cycle it leaves MEM.
+	// A trap or exception on the fence.i itself is not delayed.
+	assign mems_fence_i_wait =
+		mems_valid &&
+		mems_fence_i &&
+		!dmem_quiescent &&
+		!csru_raise_trap &&
+		!mems_expt.valid;
+	assign mems_fence_i_fire =
+		mems_valid &&
+		mems_fence_i &&
+		dmem_quiescent &&
+		wbq_wready &&
+		!memu_stall &&
+		!csru_raise_trap &&
+		!mems_expt.valid;
+	assign fence_i_drain = mems_fence_i_wait;
+
 	always_comb begin
 		//MEM -> WB
-		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait;
-		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait;
+		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait && !mems_fence_i_wait;
+		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait && !mems_fence_i_wait;
 		wbq_wdata.addr = memq_rdata.addr;
 		wbq_wdata.bits = memq_rdata.bits;
 		wbq_wdata.ctrl = memq_rdata.ctrl;
@@ -977,13 +1020,20 @@ module core (
 
 	//////////WB Stage //////////
 
-	logic wbs_valid      = wbq_rvalid;
-	Addr  wbs_pc         = wbq_rdata.addr;
-	Inst  wbs_inst_bits  = wbq_rdata.bits;
-	InstCtrl  wbs_ctrl   = wbq_rdata.ctrl;
-	UIntX  wbs_imm       = wbq_rdata.imm;
+	logic wbs_valid;
 
-	logic [4:0] wbs_rd_addr = wbs_inst_bits[11:7];
+	assign wbs_valid = wbq_rvalid;
+	Addr wbs_pc;
+	assign wbs_pc = wbq_rdata.addr;
+	Inst wbs_inst_bits;
+	assign wbs_inst_bits = wbq_rdata.bits;
+	assign wbs_ctrl = wbq_rdata.ctrl;
+	UIntX wbs_imm;
+	assign wbs_imm = wbq_rdata.imm;
+
+	logic [4:0] wbs_rd_addr;
+
+	assign wbs_rd_addr = wbs_inst_bits[11:7];
 	UIntX wbs_wb_data;
 	logic wbs_writes_minstret;
 	logic architectural_retire;
@@ -1496,6 +1546,7 @@ module core (
 			if (d_membus.valid && d_membus.ready) begin
 				perf_dbus_req_count <= perf_dbus_req_count + 1;
 			end
+`ifndef SYNTHESIS
 			if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
 				wbs_valid &&
 				(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1503,6 +1554,8 @@ module core (
 				(strsize_trace_count < UInt64'(200))) begin
 				strsize_trace_count <= strsize_trace_count + 1;
 			end
+`endif
+`ifndef SYNTHESIS
 			if ($test$plusargs("TRACE_STRSIZE_MULDIV") &&
 				(exs_valid || exs_muldiv_rvalid) &&
 				(exs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1510,6 +1563,7 @@ module core (
 				(strsize_muldiv_trace_count < UInt64'(80))) begin
 				strsize_muldiv_trace_count <= strsize_muldiv_trace_count + 1;
 			end
+`endif
 			if (minstret_wen) begin
 				minstret <= minstret_wdata;
 			end else if (minstret_auto_increment)begin
@@ -1518,6 +1572,7 @@ module core (
 		end
 	end
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display("[PERF-CONTROL] branch=%0d jal=%0d jalr=%0d trap=%0d return=%0d satp=%0d sfence=%0d other=%0d",
@@ -1580,6 +1635,7 @@ module core (
 				perf_dbus_req_count);
 		end
 	end
+`endif
 
 	always_ff @(posedge clk)begin
 		if(wbs_valid && wbs_ctrl.rwb_en && (wbs_rd_addr != 5'd0) && !wbq_rdata.raise_trap)begin
@@ -1593,6 +1649,7 @@ module core (
 	end
 
 	always_ff @(posedge clk) begin
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_RETIRE") && architectural_retire) begin
 			$display(
 				"[RETIRE] cycle=%0d order=%0d pc=%016h inst=%08h priv=%0d rd_we=%0b rd=%0d rd_data=%016h mem_valid=%0b mem_write=%0b mem_addr=%016h mem_mask=%02h mem_data=%016h",
@@ -1611,6 +1668,8 @@ module core (
 				retire_mem_data
 			);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_HEARTBEAT") && wbs_valid && (minstret[19:0] == 20'h0)) begin
 			$display("[HEARTBEAT] minstret=%h pc=%h inst=%h mode=%0d satp=%h trap=%b",
 				minstret,
@@ -1620,6 +1679,8 @@ module core (
 				satp_fetch_value,
 				wbq_rdata.raise_trap);
 		end
+`endif
+`ifndef SYNTHESIS
 		if (($test$plusargs("TRACE_SYSCALL") || $test$plusargs("TRACE_ECALL")) &&
 			wbs_valid &&
 			wbs_inst_bits == 32'h00000073) begin
@@ -1643,6 +1704,8 @@ module core (
 				regfile[1],
 				satp_fetch_value);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_PIPE") && debug_cycle[19:0] == 20'h0) begin
 			$display("[PIPE] cycle=%h minstret=%h mode=%0d satp=%h id_v=%b id_pc=%h ex_v=%b ex_pc=%h ex_stall=%b mem_v=%b mem_pc=%h mem_stall=%b wb_v=%b wb_pc=%h i_rvalid=%b i_rready=%b d_v=%b d_rdy=%b d_rvalid=%b",
 				debug_cycle,
@@ -1665,6 +1728,8 @@ module core (
 				d_membus.ready,
 				d_membus.rvalid);
 		end
+`endif
+`ifndef SYNTHESIS
 		if (
 			$test$plusargs("TRACE_BRANCH_FRONTEND") &&
 			exs_valid &&
@@ -1684,6 +1749,8 @@ module core (
 				ex_early_branch_prediction_correct,
 				ex_early_branch_redirect);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_STRSIZE_LOOP") &&
 			wbs_valid &&
 			(wbs_pc >= Addr'(64'hffff_ffff_803d_e024)) &&
@@ -1704,6 +1771,8 @@ module core (
 				regfile[18],
 				wbq_rdata.raise_trap);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_STRSIZE_REDUCE") &&
 			wbs_valid &&
 			(wbs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1728,6 +1797,8 @@ module core (
 				regfile[23],
 				wbq_rdata.raise_trap);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_STRSIZE_MULDIV") &&
 			(exs_valid || exs_muldiv_rvalid) &&
 			(exs_pc >= Addr'(64'hffff_ffff_803d_dfee)) &&
@@ -1755,6 +1826,8 @@ module core (
 				exs_op2,
 				exs_muldiv_result);
 		end
+`endif
+`ifndef SYNTHESIS
 		if ($test$plusargs("TRACE_PAYLOAD") && wbs_valid && wbs_pc >= Addr'('h8020_0000)) begin
 			$display("[PAYLOAD] pc=%h inst=%h rd=%0d wdata=%h trap=%b expt=%b cause=%0d value=%h",
 				wbs_pc,
@@ -1766,10 +1839,21 @@ module core (
 				mems_expt.cause,
 				mems_expt.value);
 		end
+`endif
 	end
 
 
+`ifdef SVCPU_FPGA_DEBUG
+	// Observation only: MEM PC, pipeline/IRQ flags and retiring progress.
+	// The board snapshots this bus through a JTAG request/ack handshake.
+	assign led = {minstret[15:0], csru_priv_mode,
+		mems_valid, mems_is_new, memu_stall, csru_raise_trap,
+		external_seip, aclint.mtip,
+		csru_debug_irq_flags,
+		memu_debug_state, ids_valid, mems_pc[63], mems_pc[31:0]};
+`else
 	assign led = '0;
+`endif
 
 	/////////////DEBUG ////////////////
 ///////////////////////////////// DEBUG //////////////////////////////////
@@ -1922,7 +2006,7 @@ module core (
 
 	////////////////////////FIFO/////////////////////
 	fifo#(
-		.DATA_TYPE(exq_type),
+		.DATA_WIDTH($bits(exq_type)),
 		.WIDTH(1)
 	)id_ex_fifo(
 		.clk (clk),
@@ -1938,7 +2022,7 @@ module core (
 	);
 
 	fifo#(
-		.DATA_TYPE(memq_type),
+		.DATA_WIDTH($bits(memq_type)),
 		.WIDTH(1)
 	)ex_mem_fifo(
 		.clk (clk),
@@ -1955,7 +2039,7 @@ module core (
 
 
 	fifo#(
-		.DATA_TYPE(wbq_type),
+		.DATA_WIDTH($bits(wbq_type)),
 		.WIDTH(1)
 	)mem_wbq_fifo(
 		.clk (clk),

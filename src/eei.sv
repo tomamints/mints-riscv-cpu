@@ -20,6 +20,18 @@ package eei;
 		PMP_ACCESS_EXEC  = 2'b10
 	} PmpAccessType;
 
+	// One PMP entry decoded to lower/upper byte bounds by
+	// pmp_region_decode (once per core, shared by every pmp_checker).
+	// NAPOT uses an inclusive upper bound, TOR an exclusive one. `all` marks a
+	// NAPOT entry covering the whole address space; !valid = OFF or empty TOR.
+	typedef struct packed {
+		logic        valid;
+		logic        all;
+		logic [63:0] start;
+		logic [63:0] upper;
+		logic        upper_inclusive;
+	} PmpRegion;
+
 	typedef enum logic [4:0] {
 		SV39_FAULT_NONE              = 5'd0,
 		SV39_FAULT_ADDR_INVALID      = 5'd1,
@@ -39,69 +51,98 @@ package eei;
 	} Sv39Fault;
 
 	localparam UIntX MACHINE_IMPLEMENTATION_ID = 1;
-	localparam UIntX PMPCFG0_WMASK = UIntX'('h1f1f_1f1f_1f1f_1f1f);
-	localparam UIntX PMPADDR_WMASK = UIntX'('h003f_ffff_ffff_ffff);
+	localparam UIntX PMPCFG0_WMASK = UIntX'(64'h1f1f_1f1f_1f1f_1f1f);
+	localparam UIntX PMPADDR_WMASK = UIntX'(64'h003f_ffff_ffff_ffff);
 
-	localparam UInt64 MSTATUS_UXL = 2 << 32;
-	localparam UInt64 MSTATUS_SXL = 2 << 34;
+	localparam UInt64 MSTATUS_UXL = 64'd2 << 32;
+	localparam UInt64 MSTATUS_SXL = 64'd2 << 34;
 
 	// memory bus data
 	localparam int MEMBUS_DATA_WIDTH = 64;
 
 	//RAM
-	localparam int RAM_ADDR_WIDTH = 24;
+	// Capacity profile (C3 M3c). Without SVCPU_RAM_SIZE_BYTES the legacy
+	// simulation profile is kept bit-for-bit:
+	//   - RAM_ADDR_WIDTH = 24 (2^24 64-bit words = 128 MiB simulation array),
+	//   - every address >= MMAP_RAM_BEGIN decodes as RAM (no upper bound),
+	//   - the "normal memory" range used by the caches and memunit (cacheable,
+	//     misaligned-capable, fast store) ends at BEGIN + 2^24 bytes = 16 MiB,
+	//     the historical value of `(1 << RAM_ADDR_WIDTH)`.
+	// With SVCPU_RAM_SIZE_BYTES (board profile, e.g. 64 MiB) the size is the one
+	// source: array depth, a bounded RAM decode and the normal range all derive
+	// from it, so no address above the RAM can alias into it.
 	localparam int RAM_DATA_WIDTH = 64;
-	localparam Addr MMAP_RAM_BEGIN = Addr'('h8000_0000);
+	localparam Addr MMAP_RAM_BEGIN = Addr'(64'h8000_0000);
+// RAM_SIZE_VALID is checked at elaboration in src/top.sv (non-zero, a power of
+// two, a multiple of 8, and BEGIN + SIZE without 64-bit overflow).
+`ifdef SVCPU_RAM_SIZE_BYTES
+	localparam Addr RAM_SIZE_BYTES = Addr'(`SVCPU_RAM_SIZE_BYTES);
+	localparam int  RAM_ADDR_WIDTH = $clog2(RAM_SIZE_BYTES / 8);
+	localparam bit  RAM_DECODE_BOUNDED = 1'b1;
+	localparam bit  RAM_SIZE_VALID = RAM_SIZE_BYTES != 0 &&
+	                                 (RAM_SIZE_BYTES & (RAM_SIZE_BYTES - 1)) == 0 &&
+	                                 RAM_SIZE_BYTES[2:0] == 3'b000 &&
+	                                 RAM_SIZE_BYTES <= ~MMAP_RAM_BEGIN;
+	localparam Addr MMAP_RAM_LIMIT = MMAP_RAM_BEGIN + RAM_SIZE_BYTES;      // first byte above RAM
+	localparam Addr MMAP_RAM_NORMAL_END = MMAP_RAM_LIMIT;
+`else
+	localparam int  RAM_ADDR_WIDTH = 24;
+	localparam Addr RAM_SIZE_BYTES = Addr'(1) << (RAM_ADDR_WIDTH + 3);
+	localparam bit  RAM_DECODE_BOUNDED = 1'b0;
+	localparam bit  RAM_SIZE_VALID = 1'b1;
+	localparam Addr MMAP_RAM_LIMIT = MMAP_RAM_BEGIN + RAM_SIZE_BYTES;      // unused: decode unbounded
+	localparam Addr MMAP_RAM_NORMAL_END = MMAP_RAM_BEGIN + (Addr'(1) << RAM_ADDR_WIDTH);
+`endif
 
 	//ROM
 	localparam int ROM_ADDR_WIDTH = 9;
 	localparam int ROM_DATA_WIDTH = 64;
-	localparam Addr MMAP_ROM_BEGIN = Addr'('h1000);
-	localparam Addr MMAP_ROM_END   = Addr'(MMAP_ROM_BEGIN + 'h3ff);
+	localparam Addr MMAP_ROM_BEGIN = Addr'(64'h1000);
+	localparam Addr MMAP_ROM_END   = Addr'(MMAP_ROM_BEGIN + 64'h3ff);
 
 	//ACLINT
-	localparam Addr MMAP_ACLINT_BEGIN = Addr'('h200_0000);
+	localparam Addr MMAP_ACLINT_BEGIN = Addr'(64'h200_0000);
 	localparam Addr MMAP_ACLINT_MSIP = 0;
-	localparam Addr MMAP_ACLINT_MTIMECMP = Addr'('h4000);
-	localparam Addr MMAP_ACLINT_MTIME = Addr'('h7ff8);
-	localparam Addr MMAP_CLINT_MTIME = Addr'('hbff8);
-	localparam Addr MMAP_ACLINT_SETSSIP = Addr'('h8000);
-	localparam Addr MMAP_ACLINT_SETSTIP = Addr'('h8008);
-	localparam Addr MMAP_ACLINT_END = MMAP_ACLINT_BEGIN + Addr'('hbfff);
+	localparam Addr MMAP_ACLINT_MTIMECMP = Addr'(64'h4000);
+	localparam Addr MMAP_ACLINT_MTIME = Addr'(64'h7ff8);
+	localparam Addr MMAP_CLINT_MTIME = Addr'(64'hbff8);
+	localparam Addr MMAP_ACLINT_SETSSIP = Addr'(64'h8000);
+	localparam Addr MMAP_ACLINT_SETSTIP = Addr'(64'h8008);
+	localparam Addr MMAP_ACLINT_END = MMAP_ACLINT_BEGIN + Addr'(64'hbfff);
 
 	// PLIC (SiFive-compatible subset)
 	localparam int unsigned PLIC_NUM_SOURCES = 32;
 	localparam int unsigned PLIC_UART_IRQ = 10;
-	localparam Addr MMAP_PLIC_BEGIN = Addr'('h0c00_0000);
-	localparam Addr MMAP_PLIC_END   = MMAP_PLIC_BEGIN + Addr'('h03ff_ffff);
-	localparam Addr PLIC_PRIORITY_BASE = Addr'('h000000);
-	localparam Addr PLIC_PENDING_BASE = Addr'('h001000);
-	localparam Addr PLIC_ENABLE_BASE = Addr'('h002000);
-	localparam Addr PLIC_CONTEXT_BASE = Addr'('h200000);
-	localparam Addr PLIC_CONTEXT_STRIDE = Addr'('h001000);
+	localparam Addr MMAP_PLIC_BEGIN = Addr'(64'h0c00_0000);
+	localparam Addr MMAP_PLIC_END   = MMAP_PLIC_BEGIN + Addr'(64'h03ff_ffff);
+	localparam Addr PLIC_PRIORITY_BASE = Addr'(64'h000000);
+	localparam Addr PLIC_PENDING_BASE = Addr'(64'h001000);
+	localparam Addr PLIC_ENABLE_BASE = Addr'(64'h002000);
+	localparam Addr PLIC_CONTEXT_BASE = Addr'(64'h200000);
+	localparam Addr PLIC_CONTEXT_STRIDE = Addr'(64'h001000);
 	localparam int unsigned PLIC_CONTEXT_M = 0;
 	localparam int unsigned PLIC_CONTEXT_S = 1;
 
 	//DMA
-	localparam Addr MMAP_DMA_BEGIN  = Addr'('h3000_0000);
-	localparam Addr MMAP_DMA_CTRL   = Addr'('h00); // 32-bitでも64-bitでもOK
-	localparam Addr MMAP_DMA_STATUS = Addr'('h08); // ここから8バイト刻み
-	localparam Addr MMAP_DMA_SRC    = Addr'('h10); // 64-bit
-	localparam Addr MMAP_DMA_DST    = Addr'('h18); // 64-bit
-	localparam Addr MMAP_DMA_LEN    = Addr'('h20); // 32-bit (or 64)
-	localparam Addr MMAP_DMA_END    = MMAP_DMA_BEGIN + Addr'('h0FFF);
+	localparam Addr MMAP_DMA_BEGIN  = Addr'(64'h3000_0000);
+	localparam Addr MMAP_DMA_CTRL   = Addr'(64'h00); // 32-bitでも64-bitでもOK
+	localparam Addr MMAP_DMA_STATUS = Addr'(64'h08); // ここから8バイト刻み
+	localparam Addr MMAP_DMA_SRC    = Addr'(64'h10); // 64-bit
+	localparam Addr MMAP_DMA_DST    = Addr'(64'h18); // 64-bit
+	localparam Addr MMAP_DMA_LEN    = Addr'(64'h20); // 32-bit (or 64)
+	localparam Addr MMAP_DMA_END    = MMAP_DMA_BEGIN + Addr'(64'h0FFF);
 
 	// UART (NS16550A compatible, byte-spaced registers)
-	localparam Addr MMAP_UART_BEGIN = Addr'('h1000_0000);
-	localparam Addr MMAP_UART_END   = MMAP_UART_BEGIN + Addr'('h00ff);
-	localparam Addr UART_REG_RBR_THR_DLL = Addr'('h00);
-	localparam Addr UART_REG_IER_DLM     = Addr'('h01);
-	localparam Addr UART_REG_IIR_FCR     = Addr'('h02);
-	localparam Addr UART_REG_LCR         = Addr'('h03);
-	localparam Addr UART_REG_MCR         = Addr'('h04);
-	localparam Addr UART_REG_LSR         = Addr'('h05);
-	localparam Addr UART_REG_MSR         = Addr'('h06);
-	localparam Addr UART_REG_SCR         = Addr'('h07);
+	localparam Addr MMAP_UART_BEGIN = Addr'(64'h1000_0000);
+	localparam Addr MMAP_UART_END   = MMAP_UART_BEGIN + Addr'(64'h00ff);
+	localparam Addr UART_REG_RBR_THR_DLL = Addr'(64'h00);
+	localparam Addr UART_REG_IER_DLM     = Addr'(64'h01);
+	localparam Addr UART_REG_IIR_FCR     = Addr'(64'h02);
+	localparam Addr UART_REG_LCR         = Addr'(64'h03);
+	localparam Addr UART_REG_MCR         = Addr'(64'h04);
+	localparam Addr UART_REG_LSR         = Addr'(64'h05);
+	localparam Addr UART_REG_MSR         = Addr'(64'h06);
+	localparam Addr UART_REG_SCR         = Addr'(64'h07);
 
 
 	// reset vector
@@ -197,25 +238,27 @@ package eei;
 	} CsrAddr;
 
 	typedef enum UIntX{
-		INSTRUCTION_ADDRESS_MISALIGNED = 0,
-		INSTRUCTION_ACCESS_FAULT = 1,
-		ILLEGAL_INSTRUCTION = 2,
-		BREAKPOINT = 3,
-		LOAD_ADDRESS_MISALIGNED = 4,
-		LOAD_ACCESS_FAULT = 5,
-		STORE_AMO_ADDRESS_MISALIGNED = 6,
-		STORE_AMO_ACCESS_FAULT = 7,
-		ENVIRONMENT_CALL_FROM_U_MODE = 8,
-		ENVIRONMENT_CALL_FROM_M_MODE = 11,
-		INSTRUCTION_PAGE_FAULT = 12,
-		LOAD_PAGE_FAULT = 13,
-		STORE_AMO_PAGE_FAULT = 15,
-		SUPERVISOR_SOFTWARE_INTERRUPT = 'h8000_0000_0000_0001,
-        MACHINE_SOFTWARE_INTERRUPT = 'h8000_0000_0000_0003,
-        SUPERVISOR_TIMER_INTERRUPT = 'h8000_0000_0000_0005,
-        MACHINE_TIMER_INTERRUPT = 'h8000_0000_0000_0007,
-        SUPERVISOR_EXTERNAL_INTERRUPT = 'h8000_0000_0000_0009,
-        MACHINE_EXTERNAL_INTERRUPT = 'h8000_0000_0000_000b
+		// Explicit 64-bit literals (UIntX): Quartus requires the enum literal
+		// width to match the base type (Error 10355). Values are unchanged.
+		INSTRUCTION_ADDRESS_MISALIGNED = 64'd0,
+		INSTRUCTION_ACCESS_FAULT = 64'd1,
+		ILLEGAL_INSTRUCTION = 64'd2,
+		BREAKPOINT = 64'd3,
+		LOAD_ADDRESS_MISALIGNED = 64'd4,
+		LOAD_ACCESS_FAULT = 64'd5,
+		STORE_AMO_ADDRESS_MISALIGNED = 64'd6,
+		STORE_AMO_ACCESS_FAULT = 64'd7,
+		ENVIRONMENT_CALL_FROM_U_MODE = 64'd8,
+		ENVIRONMENT_CALL_FROM_M_MODE = 64'd11,
+		INSTRUCTION_PAGE_FAULT = 64'd12,
+		LOAD_PAGE_FAULT = 64'd13,
+		STORE_AMO_PAGE_FAULT = 64'd15,
+		SUPERVISOR_SOFTWARE_INTERRUPT = 64'h8000_0000_0000_0001,
+        MACHINE_SOFTWARE_INTERRUPT = 64'h8000_0000_0000_0003,
+        SUPERVISOR_TIMER_INTERRUPT = 64'h8000_0000_0000_0005,
+        MACHINE_TIMER_INTERRUPT = 64'h8000_0000_0000_0007,
+        SUPERVISOR_EXTERNAL_INTERRUPT = 64'h8000_0000_0000_0009,
+        MACHINE_EXTERNAL_INTERRUPT = 64'h8000_0000_0000_000b
 		} CsrCause;
 
 

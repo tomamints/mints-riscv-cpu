@@ -1,3 +1,10 @@
+// TLB size (I and D translation each): performance only. Default 8.
+`ifndef SVCPU_TLB_ENTRIES
+`define SVCPU_TLB_ENTRIES 8
+`endif
+`ifndef SVCPU_PMP_CARRY_COMPARE
+`define SVCPU_PMP_CARRY_COMPARE 0
+`endif
 import eei::*;
 
 module address_translation #(
@@ -17,14 +24,7 @@ module address_translation #(
 	input logic req_mxr,
 	input UIntX satp,
 	input UIntX pmpcfg0,
-	input UIntX pmpaddr0,
-	input UIntX pmpaddr1,
-	input UIntX pmpaddr2,
-	input UIntX pmpaddr3,
-	input UIntX pmpaddr4,
-	input UIntX pmpaddr5,
-	input UIntX pmpaddr6,
-	input UIntX pmpaddr7,
+	input PmpRegion [7:0] pmp_regions,
 
 	output logic rsp_valid,
 	input logic rsp_ready,
@@ -303,7 +303,7 @@ module address_translation #(
 	endfunction
 
 	tlb #(
-		.ENTRY_COUNT(8),
+		.ENTRY_COUNT(`SVCPU_TLB_ENTRIES),
 		.VPN_WIDTH(27),
 		.PPN_WIDTH(44),
 		.ASID_WIDTH(16)
@@ -339,20 +339,13 @@ module address_translation #(
 		.refill_d(refill_leaf_pte[7])
 	);
 
-	pmp_checker ptw_pmp_checker (
+	pmp_checker #(.CARRY_COMPARE(`SVCPU_PMP_CARRY_COMPARE)) ptw_pmp_checker (
 		.priv_mode(S),
 		.access_start(ptw_mem_addr),
 		.access_size(UIntX'(8)),
 		.access_type(PMP_ACCESS_READ),
 		.pmpcfg0(pmpcfg0),
-		.pmpaddr0(pmpaddr0),
-		.pmpaddr1(pmpaddr1),
-		.pmpaddr2(pmpaddr2),
-		.pmpaddr3(pmpaddr3),
-		.pmpaddr4(pmpaddr4),
-		.pmpaddr5(pmpaddr5),
-		.pmpaddr6(pmpaddr6),
-		.pmpaddr7(pmpaddr7),
+		.pmp_regions(pmp_regions),
 		.allow(ptw_mem_pmp_allow)
 	);
 
@@ -390,7 +383,9 @@ module address_translation #(
 	);
 
 	always_ff @(posedge clk or negedge rst) begin
-		if (!rst || flush) begin
+		if (!rst) begin
+			ptw_pmp_fault_pending <= 1'b0;
+		end else if (flush) begin
 			ptw_pmp_fault_pending <= 1'b0;
 		end else begin
 			ptw_pmp_fault_pending <= 1'b0;
@@ -635,6 +630,7 @@ module address_translation #(
 	end
 `endif
 
+`ifndef SYNTHESIS
 	final begin
 		if ($test$plusargs("PERF_SUMMARY")) begin
 			$display(
@@ -697,9 +693,28 @@ module address_translation #(
 			);
 		end
 	end
+`endif
 
 	always_ff @(posedge clk or negedge rst) begin
-		if (!rst || flush) begin
+		if (!rst) begin
+			state <= Idle;
+			pending_va <= '0;
+			pending_priv_mode <= M;
+			pending_access_type <= PMP_ACCESS_READ;
+			pending_sum <= 1'b0;
+			pending_mxr <= 1'b0;
+			pending_satp <= '0;
+			ptw_started <= 1'b0;
+			result_pa <= '0;
+			result_fault <= 1'b0;
+			result_fault_detail <= SV39_FAULT_NONE;
+			result_fault_cause <= CsrCause'(0);
+			result_fault_value <= '0;
+			refill_pa <= '0;
+			refill_leaf_pte <= '0;
+			refill_leaf_level <= 2'd0;
+			refill_leaf_valid <= 1'b0;
+		end else if (flush) begin
 			state <= Idle;
 			pending_va <= '0;
 			pending_priv_mode <= M;

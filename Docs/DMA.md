@@ -1,6 +1,7 @@
 # DMA Engine
 
-Last updated: 2026-08-14
+Scope: optional simulator peripheral (`src/dma.sv`). This is not the JTAG
+loader and is not part of the validated DE0-CV Linux memory path.
 
 This document describes the optional MMIO DMA engine in MiNTs-CPU.
 
@@ -97,9 +98,7 @@ while (DMA_STATUS & 1) {
 }
 ```
 
-## Future Work
+## Validation boundary
 
-- range checking against the RAM window
-- DMA interrupt output through PLIC
-- byte-mask support for non-8-byte transfers
-- dedicated DMA regression tests
+This interface description is not a claim of board DMA operation or Linux DMA
+driver support. See [platform scope](ROADMAP.md) for the physical configuration.

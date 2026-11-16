@@ -47,9 +47,11 @@ module aclint_memory (
         end else begin
             //count up mtime
             mtime += 1;
+`ifndef SYNTHESIS
             if (($test$plusargs("TRACE_TIMER") || $test$plusargs("TRACE_TIMER_ACLINT")) && aclint.mtip != mtip_q) begin
                 $display("[TIMER-MTIP] mtip=%b mtime=%h mtimecmp=%h", aclint.mtip, mtime, mtimecmp0);
             end
+`endif
             mtip_q <= aclint.mtip;
             membus.rvalid <= membus.valid;
             if (membus.valid) begin
@@ -57,6 +59,7 @@ module aclint_memory (
                 if (membus.wen) begin
                     M = membus.wmask_expand(membus.wmask);
                     D = membus.wdata & M;
+`ifndef SYNTHESIS
                     if ($test$plusargs("TRACE_TIMER") ||
                         ($test$plusargs("TRACE_TIMER_ACLINT") &&
                          (addr == MMAP_ACLINT_MTIMECMP || addr == MMAP_ACLINT_SETSTIP))) begin
@@ -81,6 +84,7 @@ module aclint_memory (
                             default: ;
                         endcase
                     end
+`endif
                     case(addr)
                         MMAP_ACLINT_MSIP : msip0 <= D[0] | (msip0 & ~M[0]);
                         MMAP_ACLINT_MTIME,

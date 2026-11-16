@@ -1,0 +1,20 @@
+# Analysis-only RAM inference probe. All data ports are VIRTUAL_PIN; this
+# project is never assembled or programmed to the board. Per-configuration
+# set_parameter lines are appended by tools/build-mem-probe.sh.
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CEBA4F23C7
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
+set_global_assignment -name TOP_LEVEL_ENTITY mem_probe_top
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ram_1r1w_be64.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ram_1r1w_be64_async.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/mem_probe_top.sv
+set_global_assignment -name SDC_FILE mem_probe.sdc
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+# QSF names use the Quartus-native unbraced form.
+set_instance_assignment -name VIRTUAL_PIN ON -to we[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to waddr[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to wbe[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to wdata[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to re[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to raddr[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to rdata[*]

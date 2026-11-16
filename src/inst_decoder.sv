@@ -8,21 +8,36 @@ module inst_decoder(
 	output InstCtrl ctrl,
 	output UIntX    imm
 	);
-	logic [11:0] imm_i_g = bits[31:20];
-	logic [11:0] imm_s_g = {bits[31:25],bits[11:7]};
-	logic [11:0] imm_b_g = {bits[31],bits[7],bits[30:25],bits[11:8]};
-	logic [19:0] imm_u_g = bits[31:12];
-	logic [19:0] imm_j_g = {bits[31],bits[19:12],bits[20],bits[30:21]};
+	logic [11:0] imm_i_g;
+	assign imm_i_g = bits[31:20];
+	logic [11:0] imm_s_g;
+	assign imm_s_g = {bits[31:25],bits[11:7]};
+	logic [11:0] imm_b_g;
+	assign imm_b_g = {bits[31],bits[7],bits[30:25],bits[11:8]};
+	logic [19:0] imm_u_g;
+	assign imm_u_g = bits[31:12];
+	logic [19:0] imm_j_g;
+	assign imm_j_g = {bits[31],bits[19:12],bits[20],bits[30:21]};
 
-	UIntX imm_i = {{(XLEN - $bits(imm_i_g)){bits[31]}}, imm_i_g};
-	UIntX imm_s = {{(XLEN - $bits(imm_s_g)){bits[31]}}, imm_s_g};
-	UIntX imm_b = {{(XLEN - $bits(imm_b_g) - 1){bits[31]}},  imm_b_g,1'b0};
-	UIntX imm_u = {{(XLEN - $bits(imm_u_g) - 12){bits[31]}} , imm_u_g, 12'b0};
-	UIntX imm_j = {{(XLEN - $bits(imm_j_g) - 1){bits[31]}} , imm_j_g, 1'b0};
+	UIntX imm_i;
 
-	logic[6:0] op = bits[6:0]; // assign op = bits[6:0]と同じ理解
-	logic[6:0] f7 = bits[31:25];
-	logic[2:0] f3 = bits[14:12];
+	assign imm_i = {{(XLEN - $bits(imm_i_g)){bits[31]}}, imm_i_g};
+	UIntX imm_s;
+	assign imm_s = {{(XLEN - $bits(imm_s_g)){bits[31]}}, imm_s_g};
+	UIntX imm_b;
+	assign imm_b = {{(XLEN - $bits(imm_b_g) - 1){bits[31]}},  imm_b_g,1'b0};
+	UIntX imm_u;
+	assign imm_u = {{(XLEN - $bits(imm_u_g) - 12){bits[31]}} , imm_u_g, 12'b0};
+	UIntX imm_j;
+	assign imm_j = {{(XLEN - $bits(imm_j_g) - 1){bits[31]}} , imm_j_g, 1'b0};
+
+	logic[6:0] op;
+
+	assign op = bits[6:0]; // assign op = bits[6:0]と同じ理解
+	logic[6:0] f7;
+	assign f7 = bits[31:25];
+	logic[2:0] f3;
+	assign f3 = bits[14:12];
 	//bitsで送られてきた内容をそれぞれ判定用の変数に割り当てる
 
 	localparam T = 1'b1;

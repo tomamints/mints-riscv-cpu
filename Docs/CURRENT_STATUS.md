@@ -1,291 +1,126 @@
 # Current Status
 
-Last updated: 2026-08-20
+As of 2026-11-13, MiNTs-CPU boots OpenSBI v1.3.1, Linux 6.12 and BusyBox 1.36.1
+on a physical DE0-CV, with an interactive UART shell and the normal hardware
+clocksource. The M1 Mac build workflow and the smaller board profile are
+specified in the [board guide](../fpga/de0-cv/soc/README.md).
 
-This document is the current high-level status of **MiNTs-CPU**.
+## Validated targets
 
+| Target | Configuration | End-to-end result |
+|---|---|---|
+| Verilator on Apple M1 through Docker | Legacy simulated platform, 128 MiB RAM | Linux boot and `BUSYBOX-TEST-PASS` |
+| DE0-CV physical FPGA | 20 MHz, 64 MiB SDRAM, 100 Hz periodic Linux ticks | BusyBox shell, repeated UART commands, CPU/file/zero-data load, sleep and idle recovery |
+| Whisper reference comparison | Historical simulation configurations | Over 61 million compared architectural instructions through BusyBox autotest; not rerun for the final board profile |
 
-## One-Line Status
+The standard kernel rebuild also embeds [MiNTs Life](../examples/life/README.md),
+a static RV64IMAC/LP64 C application. Its UART demo, self-test and deterministic
+benchmark checksums have passed on the board, with shell operation after exit.
+Benchmark time is application wall time, not hardware CPI.
 
-MiNTs-CPU is now a Linux-capable RV64IMAC in-order CPU/SoC prototype with
-Sv39, PMP, ACLINT, PLIC, NS16550A UART, ITLB/DTLB, I-cache, D-cache, store
-buffer, performance counters, and Whisper lockstep validation through a
-BusyBox autotest.
+A shell prompt alone is not the board test criterion. Continued command
+responses, timer interrupts and time progression were also checked.
 
-## End-To-End Checkpoint
+## Configuration comparison
 
-The strongest validated path is:
-
-```text
-MiNTs-CPU RTL
-  -> OpenSBI v1.3.1 fw_jump
-  -> Linux 6.12.x
-  -> initramfs
-  -> rv64imac/lp64 static BusyBox
-  -> /init autotest
-  -> BUSYBOX-TEST-PASS
-```
-
-The autotest covers proc/sysfs/devtmpfs/tmpfs mount, `uname -a`, `ls /`,
-`pwd`, tmpfs file write/read, and cleanup.
-
-Recent lockstep checkpoint:
-
-```text
-[LOCKSTEP] BusyBox autotest pass detected compared_order=61610274
-[LOCKSTEP] PASS: 61610275 instructions compared (BusyBox autotest passed)
-```
-
-This means the RTL and Whisper reference stayed synchronized through roughly
-61.6M compared architectural instructions, including Linux boot, user-mode
-execution, syscalls, timer/external interrupts, and BusyBox autotest commands.
-
-## Architecture
-
-| Item | Current state |
-|---|---|
-| XLEN | 64-bit |
-| Claimed ISA | RV64IMAC |
-| Privilege modes | M, S, U |
-| Address translation | Sv39 |
-| Page sizes | 4KiB, 2MiB, 1GiB leaves |
-| PMP | 8 entries |
-| Timer / software interrupt | ACLINT MSWI / MTIMER |
-| External interrupt controller | PLIC-compatible minimal controller |
-| UART | NS16550A-compatible minimal UART |
-| Main memory | 128MiB RAM at `0x80000000` |
-| Linux image address | `0x80200000` |
-| DTB address | `0x87f00000` |
-| UART base | `0x10000000` |
-| PLIC base | `0x0c000000` |
-| Debug MMIO | `0x40000000` |
-| Timer frequency | 50MHz in DTB |
-
-## Microarchitecture
-
-Current design level:
-
-```text
-small in-order pipeline
-  -> frontend with ITLB and I-cache
-  -> backend with DTLB, D-cache, AMO path, store buffer
-  -> single memory path arbitrated between I-side and D-side
-```
-
-Implemented performance structures:
-
-| Block | Current state |
-|---|---|
-| ITLB | 8-entry fully associative, round-robin, Sv39 refill |
-| DTLB | 8-entry fully associative, round-robin, Sv39 refill |
-| I-cache | 4KiB, 128 lines, 32B line, direct-mapped |
-| I-cache refill | 4 x 8B, critical-word-first, early restart |
-| D-cache | 4KiB, 128 lines, 32B line, direct-mapped |
-| D-cache policy | write-through, no-write-allocate |
-| Store buffer | 4 entries |
-| Store buffer behavior | background drain, unrelated cache-hit load bypass |
-| Arbiter | distinguishes I-side, D-side high priority, D-side low priority drain |
-| Control redirect | JAL, conditional branch, and JALR early redirect |
-| Branch predictor | 128-entry 2-bit PHT, BTFNT fallback for cold entries |
-| BTB | 32-entry BTB used for fetch-side conditional branch targets and JALR targets |
-| RAS | 8-entry non-speculative return address stack |
-
-Not yet implemented:
-
-```text
-speculative RAS recovery
-larger BTB
-write-back D-cache
-non-blocking caches
-store-to-load forwarding with byte merge
-dual-port/banked RAM
-SMP/cache coherence
-FPGA timing closure
-```
-
-## Software Stack
-
-Validated components:
-
-| Component | Current state |
-|---|---|
-| OpenSBI | v1.3.1 `fw_jump` |
-| Linux | 6.12.x RISC-V kernel image |
-| BusyBox | static `rv64imac/lp64`, soft-float ABI |
-| Initramfs modes | `cmdloop-ttyS0`, `autotest`, and bring-up variants |
-| Lockstep reference | Tenstorrent Whisper integration |
-
-The important ABI constraint is that userland must be built for
-`rv64imac/lp64` without F/D instructions. Prebuilt riscv64 Linux userland
-often uses a double-float ABI and is not suitable for this CPU configuration.
-
-## Verification Status
-
-Passed categories:
-
-```text
-riscv-tests RV32/RV64 ui/um/ua/uc/mi/si -p suites
-custom MMIO/debug tests
-UART polling/input/interrupt tests
-PLIC M-mode and S-mode interrupt tests
-ACLINT MSWI/MTIMER tests
-PMP load/store/fetch protection tests
-Sv39 data/fetch/page-fault/permission tests
-OpenSBI platform boot
-Linux kernel boot to /init
-BusyBox autotest
-Whisper lockstep to BUSYBOX-TEST-PASS
-```
-
-Recent correctness bugs fixed during Linux/lockstep bring-up:
-
-```text
-UART THRE interrupt not cleared/reissued correctly
-PLIC/CSR SEIP writable-bit latch issue
-sstatus SPIE/SIE return behavior
-SEPC write mask
-instruction fetch STVAL using block base instead of architectural fault PC
-lockstep non-retiring exception synchronization
-lockstep MTIMER/SEIP one-shot injection
-WFI interrupt EPC mismatch against Whisper
-```
-
-## Performance Status
-
-The CPU is no longer in the pure bring-up phase. It is now in the
-measure-and-optimize phase.
-
-Historical 300M-cycle Linux measurements:
-
-| Stage | Retired | CPI | IPC |
+| Item | Plain Makefile defaults | Linux simulator rebuild profile | DE0-CV build defaults |
 |---|---:|---:|---:|
-| No TLB/cache baseline | 43,361,299 | 6.918 | 0.144 |
-| ITLB superpage refill fixed | 53,176,454 | 5.641 | 0.177 |
-| I-cache 4KiB 32B early restart | 56,871,866 | 5.275 | 0.189 |
-| ITLB + I-cache + DTLB | 72,705,508 | 4.126 | 0.242 |
-| D-cache 4KiB write-through | 72,689,380 | 4.127 | 0.242 |
-| Store buffer initial | 72,632,625 | 4.130 | 0.242 |
+| RAM | 128 MiB | 128 MiB | 64 MiB |
+| I-cache | 4 KiB | 4 KiB | 1 KiB |
+| D-cache | 4 KiB | 16 KiB | 1 KiB |
+| Store buffer | 4 | 8 | 4 |
+| ITLB / DTLB entries | 8 each | 8 each | 2 each |
+| Branch prediction | Enabled | Enabled | Disabled |
+| D-cache policy | Write-through | Write-through | Write-through |
+| DTB timebase | 50 MHz | 50 MHz | 20 MHz |
 
-Recent 100M-cycle checkpoints:
+These are selected profiles, not size limits. Caches use 32-byte lines. The
+board cache data arrays use synchronous M10K RAM. The board also enables
+read-only JTAG CPU snapshots. Its 100 Hz kernel setting changes interrupt
+frequency, not CPU frequency or the `riscv_clocksource` timebase.
 
-| Phase | Main change | Retired | CPI | IPC | Correctness |
-|---|---|---:|---:|---:|---|
-| 8.3 | JALR early redirect | 33,557,400 | 2.979 | 0.335 | Linux run |
-| 9.1 | Static branch predictor | 34,725,769 | 2.879 | 0.347 | Linux run |
-| 9.2 | 2-bit PHT predictor | 35,561,702 | 2.812 | 0.355 | Whisper pass |
-| 9.3 | JALR BTB | 36,163,117 | 2.765 | 0.361 | Whisper pass |
-| 9.4 | RAS | 36,690,014 | 2.725 | 0.366 | Linux run |
-| 10.1 | MEM translation->access fast path | 38,038,242 | 2.628 | 0.380 | Linux run |
-| 10.2 | D-cache hit-load fast sideband | 38,719,295 | 2.582 | 0.387 | Whisper pass |
-| 10.4 | 512-line D-cache + 8-entry store buffer | 39,534,138 | 2.529 | 0.395 | Stable |
-| 10.5 | Experimental write-back D-cache | 39,508,553 | 2.531 | 0.395 | Experimental |
-| 11.1 | Fetch-side conditional branch BTB | 40,260,939 | 2.483 | 0.402 | rv64ui pass |
-| 11.2 | Fetch FIFO bypass + I-cache follow-on request | 41,780,831 | 2.393 | 0.417 | Whisper pass |
+## Board GPIO
 
-Recent improvement summary:
+The board-only `SVCPU_BOARD_GPIO=1` build exposes a small MMIO peripheral at
+`0x40000000` through Linux UIO. Switch/key inputs use two-stage synchronization;
+applications can temporarily replace the diagnostic LED display. Fault bits
+remain visible. The simulator's debug/exit window is retained in generic builds.
 
-| Range | Main effect |
-|---|---|
-| Phase 8.3 -> 9.4 | Control speculation reduced frontend/control waste: early redirect, PHT, BTB, and RAS moved CPI from 2.979 to 2.725. |
-| Phase 9.4 -> 10.2 | MEM/LSU fixed latency was reduced: translation-to-access bypass and D-cache hit-load sideband moved CPI from 2.725 to 2.582. |
-| Phase 10.2 -> 10.4 | D-cache capacity and store buffer depth improved load-miss behavior, reaching the current stable CPI 2.529 point. |
-| Phase 10.5 | Write-back reduced write traffic and arbiter pressure, but did not beat the selected write-through stable point. |
-| Phase 11.1 | Fetch-side conditional branch BTB removed about one cycle per trained loop-back branch in a common assembly benchmark and improved the Linux 100M checkpoint from CPI 2.529 to 2.483. |
-| Phase 11.2 | Fetch FIFO/issue FIFO bypass plus I-cache response-to-next-request handoff removed the remaining common assembly branch-loop gap versus Rocket and improved the Linux 100M checkpoint from CPI 2.483 to 2.393. |
+Physical tests passed GPIO register read/write self-test, LED ownership switching,
+Life GPIO-mode generation/checksum and restoration on exit. Initial switch/key
+readings were zero. Manual input transitions and optical LED observation were
+not performed; native tests cover pause/resume, button reset and signal cleanup.
+See [GPIO API](../examples/boardctl/README.md).
 
-Key evidence by phase:
+## VGA application display
 
-| Phase | Evidence |
-|---|---|
-| 9.1 | `[PERF-BPRED] pred=4329566 hit=3093544 miss=1236022 hit_rate_x1000=714` |
-| 9.2 | `[PERF-BPRED] pred=4473131 hit=3803100 miss=670031 hit_rate_x1000=850` |
-| 9.3 | `[PERF-BTB] jalr=416164 hit=168874 miss=247290 hit_rate_x1000=405 entries=32` |
-| 9.4 | `[PERF-RAS] return=349378 hit=325546 miss=23832 fallback_btb=771 hit_rate_x1000=931 depth=8` |
-| 10.1 | `[PERF-MEMU-FIXED] translation_done=8454789 access_accept=2258666 response_done=6421060` |
-| 10.2 | `[PERF-DCACHE-FAST] hit_load=4986113`, `response_done=1567104` |
-| 10.4 | `[PERF-DCACHE-MIX] load_miss=228196 store_miss=1398369`, `[PERF-DSTALL] load_miss=2937174` |
-| 10.5 | `[PERF-DCACHE-WB] enabled=1 store_hit=1854144 evict=50650 words=202600 req_wait=440515` |
-| 11.1 | `[PERF-BPRED] pred=5292133 hit=4463782 miss=828351 hit_rate_x1000=843`, `[PERF] retired=40260939 cpi_x1000=2483 ipc_x1000=402` |
-| 11.2 | `[PERF] retired=41780831 cpi_x1000=2393 ipc_x1000=417`, `[PERF] primary ... ifetch=16160494 ...` |
+The board build enables `SVCPU_BOARD_VGA=1`: an 80 × 30 text screen with
+640 × 480 active pixels, driven from CLOCK_50 with a 25 MHz pixel enable.
+The CPU/timer/SDRAM remain at 20 MHz. Double-buffered text RAM and font ROM
+use nine additional M10K blocks. UART remains the Linux console.
 
-Current stable configuration:
+Physical tests passed `vgactl self-test`, demo command acknowledgement, Life
+four-generation checksum `401a90e3423e2d3c`, LED ownership restoration and
+continued benchmark/shell operation using `riscv_clocksource`. The acknowledged
+page count advanced from 0 to 9 through these display tests. No monitor image
+was observed; command acknowledgements do not prove optical output.
+See [VGA details](../fpga/de0-cv/vga/README.md).
 
-```text
-DCACHE_LINE_COUNT=512
-DCACHE_STORE_BUFFER_DEPTH=8
-DCACHE_WRITE_BACK=0
-```
+## microSD storage
 
-Current representative checkpoint with fetch-side branch BTB and fetch
-fall-through handoff:
+`SVCPU_BOARD_SD=1` adds a mode-0, eight-bit, 400 kHz SPI host at `0x40000040`.
+The board kernel includes MMC block, VFAT/exFAT/ext4 and partition support.
+Physical validation covers an SDHC card, whole-device and partition sector
+reads with consistent hashes, FAT32 read-only mount/list/unmount, and continued
+GPIO/VGA, Life and normal-clock operation. Existing card data was preserved.
+Only FAT32 was physically mounted; exFAT/ext4 are built but not card-tested.
+A new 64 KiB patterned file passed create/fsync, unmount, read-only remount and
+full byte verification (checksum `215916bff0e06476`). Existing files were not
+overwritten and the card was left unmounted.
 
-```text
-[PERF] cycles=100000000 retired=41780831 cpi_x1000=2393 ipc_x1000=417
-[PERF] primary commit=41780831 no_commit=58219169 mem=13905496 muldiv=3334258 data_hazard=699897 ifetch=16160494 other=24119024
-```
+The board-only Linux source view adds a direct MMIO polling loop to the Altera
+SPI driver for eight-bit standalone MMIO transfers. IRQ, wider-word and subdevice
+paths retain upstream code. The first sector-check command took 85.279777 s
+before and 5.679393 s after this change in the tested setup; buffering/read-ahead
+are included, so these are not raw SPI bandwidth results. There is no FIFO or
+DMA, and the storage path remains slow. Read-ahead can be disabled for small
+inspections. See [SD support](../fpga/de0-cv/sd/README.md).
 
-The previous stable write-through checkpoint before Phase 11 frontend work was:
+The root filesystem remains the RAM initramfs. SD boot and
+power-cycle/power-loss durability have not been verified. `sdverify` also passes
+host failure tests and a physical CPU/RAM-file check.
 
-```text
-[PERF] cycles=100000000 retired=39534138 cpi_x1000=2529 ipc_x1000=395
-```
+## Physical implementation
 
-The Phase 11 frontend work also required correctness fixes:
+| Metric | Validated DE0-CV build |
+|---|---:|
+| Device | Cyclone V 5CEBA4F23C7N |
+| ALMs | 17,269 / 18,480 (93%) |
+| Registers | 13,928 |
+| RAM blocks | 64 / 308 |
+| RAM bits | 230,052 / 3,153,920 |
+| Pins checked | 84 |
+| CPU / SDRAM controller / timer clock | 20 MHz |
+| Worst setup slack | +2.168 ns |
+| Estimated average / peak interconnect usage | 47% / 67% |
+| Timing checks | Setup/hold/recovery/removal pass at all four corners |
 
-```text
-- fence.i invalidates frontend prediction state
-- I-cache response completion is gated by rsp_valid && rsp_ready
-- late branch prediction is disabled while a cross-block 32-bit instruction is
-  being assembled
-```
+This is a passing 20 MHz implementation, not an Fmax measurement. Rebuilt
+artifacts need their own signoff. The loader writes volatile SRAM/SDRAM and
+verifies all image words before releasing the CPU.
 
-`rv64ui-p-fence_i`, the full `rv64ui-p` suite, and Whisper lockstep pass after
-these fixes.
+## Architecture and software boundaries
 
-See [FRONTEND_BRANCH_BTB.md](FRONTEND_BRANCH_BTB.md) for the benchmark and
-correctness details.
+The CPU implements an RV64IMAC Linux boot path with M/S/U privilege modes,
+Sv39 address translation, eight PMP entries, ACLINT, a PLIC-compatible controller
+and an NS16550-compatible UART. Userspace is statically linked for RV64IMAC/LP64.
 
-Experimental write-back conclusion:
+No F/D floating point, vector extension, SMP/cache coherence, complete RVA23
+certification, persistent root filesystem or graphical board console is claimed.
+Experimental write-back cache support is outside the validated board profile.
 
-```text
-write-back reduces write traffic and arbiter pressure,
-but does not beat the selected write-through stable configuration yet.
-Keep it as a research/experimental branch target.
-```
-
-Current bottleneck view:
-
-```text
-large:
-  MEM-side translation/access/response latency
-  control recovery
-  D-cache misses and uncached accesses
-
-medium:
-  I-cache demand miss
-  data hazards
-
-small:
-  TLB miss PTW time
-  store buffer full stall
-```
-
-Next performance work should be driven by measured stall counters, not by
-adding features blindly.
-
-## Current Development Direction
-
-Recommended next steps:
-
-```text
-1. Keep the BusyBox lockstep PASS as the correctness gate.
-2. Keep using 100M-cycle +PERF_SUMMARY runs for iteration.
-3. Treat Phase 10 stable configuration as complete:
-   `DCACHE_LINE_COUNT=512 DCACHE_STORE_BUFFER_DEPTH=8 DCACHE_WRITE_BACK=0`.
-4. Treat fetch-side branch BTB plus fetch FIFO/I-cache handoff as the current
-   mainline frontend improvement, with `fence.i` invalidating branch prediction
-   state.
-5. Keep write-back D-cache as an experimental path, not the stable baseline.
-6. For the next mainline phase, measure the stable baseline first, then choose the next bottleneck.
-7. Run Whisper lockstep after any frontend, LSU, cache, or privilege/MMU change.
-```
+The 100 Hz board profile works with `riscv_clocksource`. Tested 250 Hz
+configurations still lost responsiveness; long-duration stability remains
+unverified. Historical simulator CPI figures
+cannot be applied to the board's smaller caches and disabled predictor.
+See [test status](TEST_STATUS.md) and [Linux baseline](LINUX_BASELINE.md).
