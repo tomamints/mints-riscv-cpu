@@ -49,6 +49,19 @@ table below for the settings used by the two Linux environments.
 These are prototype results, not a claim of complete RISC-V certification or
 production readiness. See [verification results and limitations](Docs/TEST_STATUS.md).
 
+## Performance checkpoint
+
+A historical Verilator run of the Linux BusyBox command-loop workload measured
+**CPI 2.376** (IPC approximately 0.420): 42,079,566 instructions retired over
+100 million simulated cycles. This window includes Linux boot and uses a 16 KiB
+write-through D-cache with an 8-entry store buffer. An earlier checkpoint under
+the same workload recorded CPI 2.393. These are simulation measurements for
+comparing changes, not results for the DE0-CV FPGA configuration.
+
+See [Linux performance baseline](Docs/LINUX_BASELINE.md) for the workload,
+configuration and measurement limits, and [performance counters](Docs/PERFORMANCE_COUNTERS.md)
+for simulator instrumentation.
+
 ## Simulator and FPGA profiles
 
 The table compares the Linux simulator rebuild profile with the validated board
