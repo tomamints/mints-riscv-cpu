@@ -33,7 +33,11 @@ PY
 cp "$QUARTUS_DOWNLOAD_DIR/$installer" local/quartus-installers/
 cp "$QUARTUS_DOWNLOAD_DIR/$device" local/quartus-installers/
 chmod +x "local/quartus-installers/$installer"
-docker build --platform linux/amd64 -f Dockerfile.quartus -t "$QUARTUS_IMAGE" .
+# Keep an existing image (for example one restored with docker load);
+# DOCKER_REBUILD=1 forces a rebuild.
+if [[ ${DOCKER_REBUILD:-0} == 1 ]] || ! docker image inspect "$QUARTUS_IMAGE" >/dev/null 2>&1; then
+  docker build --platform linux/amd64 -f Dockerfile.quartus -t "$QUARTUS_IMAGE" .
+fi
 docker_args=(--rm --init --platform linux/amd64
   -v "$PWD/local/quartus-installers:/installers:ro"
   -v "$QUARTUS_VOLUME:/opt/intelFPGA_lite"

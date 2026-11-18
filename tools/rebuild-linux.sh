@@ -10,7 +10,11 @@ fi
 : "${SOURCES_VOLUME:=mints-linux-sources}"
 : "${JOBS:=4}"
 : "${PLATFORM_PROFILE:=legacy}"
-docker build -f Dockerfile.linux -t "$DOCKER_IMAGE" .
+# Keep an existing image (for example one restored with docker load) so the
+# exact recorded toolchain is used; DOCKER_REBUILD=1 forces a rebuild.
+if [[ ${DOCKER_REBUILD:-0} == 1 ]] || ! docker image inspect "$DOCKER_IMAGE" >/dev/null 2>&1; then
+  docker build -f Dockerfile.linux -t "$DOCKER_IMAGE" .
+fi
 docker run --rm --init -v "$PWD:/repo" -v "$SOURCES_VOLUME:/sources" \
   -e JOBS="$JOBS" -e PLATFORM_PROFILE="$PLATFORM_PROFILE" \
   -e KERNEL_INIT_MODE="${KERNEL_INIT_MODE:-}" "$DOCKER_IMAGE" bash tools/rebuild-linux-container.sh "${1:-all}"

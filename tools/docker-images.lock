@@ -1,0 +1,35 @@
+# Docker images and volumes used by the build and test scripts, recorded
+# 2026-11-19. The exact images are stored as release assets of the private
+# repository mints-tech/mints-riscv-ft-local, tag docker-images-20261119:
+#   gunzip -c <file>.tar.gz | docker load
+# Restore them before running tools/rebuild-linux.sh or tools/setup-quartus.sh;
+# both keep an existing image (DOCKER_REBUILD=1 forces a rebuild, which may
+# install newer Ubuntu packages than recorded here).
+
+image mints-linux-verilator:5.046
+  id            sha256:abc816e8eda4398fc1dbabd91f1cab8031a729027e2e05c52420632134ec015b
+  arch          arm64
+  base          ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+  apt           2026-11-09T08:16:39Z (ports.ubuntu.com, no snapshot service for arm64)
+  verilator     5.046 (rev v5.046)
+  gcc           riscv64-unknown-elf-gcc 13.2.0-11ubuntu1+12
+                riscv64-linux-gnu-gcc 13.3.0-6ubuntu2~24.04.1, host gcc 13.3.0-6ubuntu2~24.04.1
+  asset         mints-linux-verilator-5.046.tar.gz sha256 c235032b38f390d2dc224891e78579acbda712ca065a7e71ae9703b8e2f1d93f
+  packages      mints-riscv-ft-local: docker/mints-linux-verilator-5.046.packages.txt
+
+image mints-quartus:20.1
+  id            sha256:4fe58abcc111eb8edd2337acce9419c430932d5af19aac1e98b711c1cd860a37
+  arch          amd64
+  base          Dockerfile.quartus (ubuntu:20.04 pinned by digest)
+  asset         mints-quartus-20.1.tar.gz sha256 9901266c087a295f8404a2222f04a60210d662def2a2e9b72ee83f66938f0252
+
+volume mints-quartus-20.1 (10.6 GB, not stored)
+  rebuilt by tools/setup-quartus.sh from the official installers checked by SHA-1:
+  QuartusLiteSetup-20.1.0.711-linux.run, cyclonev-20.1.0.711.qdz
+  Version 20.1.0 Build 711 06/05/2020 SJ Lite Edition
+
+volume mints-linux-sources (5.2 GB, not stored)
+  refilled by tools/rebuild-linux-container.sh (downloads checked by SHA-256):
+  linux-6.12.tar.xz      b1a2562be56e42afb3f8489d4c2a7ac472ac23098f1ef1c1e40da601f54625eb
+  busybox-1.36.1.tar.bz2 b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314
+  musl-cross-make 5e8042e63de29f8473fc3b0b831a587ba284e1a8 (gcc 13.3.0, musl 1.2.5, binutils 2.44)
