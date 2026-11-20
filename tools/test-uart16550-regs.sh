@@ -34,7 +34,9 @@ docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-ver
       oth=$(grep -E "^%(Warning|Error)" "$out/lint_$prof.log" | grep -vE ": (rtl/peripheral/uart16550_regs.sv|src/eei.sv|src/membus_if.sv)" | grep -vc "^%Error: Exiting due to" || true)
       grep -E "^%Warning" "$out/lint_$prof.log" | grep -E "src/(eei|membus_if).sv" | sed -E "s/^(%Warning-[A-Z]+): ([^:]+).*/\1 \2/" | sort | uniq -c > "$out/lint_${prof}_external_summary.txt"
       errors=$(grep -E "^%Error" "$out/lint_$prof.log" | grep -vc "^%Error: Exiting due to [0-9]* warning" || true)
-      if [[ $own -eq 0 && $oth -eq 0 && $errors -eq 0 && $ext -eq 66 && $lrc -eq 1 ]]; then
+      # The RAM capacity profile added four unused package constants here and
+      # made two older ones internally referenced: net +2 vs the original 66.
+      if [[ $own -eq 0 && $oth -eq 0 && $errors -eq 0 && $ext -eq 68 && $lrc -eq 1 ]]; then
         echo "lint $prof: OK (uart16550_regs.sv: 0 warnings; pre-existing shared files: $ext warnings, verilator exit=$lrc)"
       else
         echo "lint $prof: FAIL (uart16550_regs.sv: $own, other: $oth)"; status=1
@@ -44,7 +46,7 @@ docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-ver
     done
 
     echo "== functional TB =="
-    if verilator --binary --timing --assert --timescale 1ns/1ps \
+    if verilator --binary --timing --assert -j 4 -CFLAGS -O2 --timescale 1ns/1ps \
          -f tb/unit/uart/uart16550_regs_tb.f --top-module tb_uart16550_regs \
          --Mdir "$out/obj" -o tb_uart16550_regs > "$out/build.log" 2>&1; then
       echo "build: OK"
@@ -63,7 +65,7 @@ docker run --rm --init -v "$PWD:/repo" -w /repo "${DOCKER_IMAGE:-mints-linux-ver
     fi
 
     echo "== sim-error profile (non-zero exit expected) =="
-    if verilator --binary --timing --assert --timescale 1ns/1ps +define+MINTS_SIM +define+TB_SIM_ERROR_PROFILE \
+    if verilator --binary --timing --assert -j 4 -CFLAGS -O2 --timescale 1ns/1ps +define+MINTS_SIM +define+TB_SIM_ERROR_PROFILE \
          -f tb/unit/uart/uart16550_regs_tb.f --top-module tb_uart16550_regs \
          --Mdir "$out/obj_simerr" -o tb_uart16550_regs_simerr > "$out/build_simerr.log" 2>&1; then
       echo "build simerr: OK"
