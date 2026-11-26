@@ -1,0 +1,8 @@
+name: mints-rv64
+compiler_exe: riscv64-unknown-elf-gcc
+objdump_exe: riscv64-unknown-elf-objdump
+ref_model_exe: sail_riscv_sim
+udb_config: mints-rv64.yaml
+linker_script: link.ld
+dut_include_dir: .
+include_priv_tests: true

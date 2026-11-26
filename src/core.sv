@@ -86,7 +86,7 @@ module core (
 	output logic sstatus_mxr_fetch_value,
 	input  logic dcache_flush_busy,
 	input  logic dmem_quiescent,
-	output logic fence_i_drain,
+	output logic fence_drain,
 	input  logic external_meip,
 	input  logic external_seip,
 	aclint_if.slave aclint
@@ -138,6 +138,7 @@ module core (
 		UIntX mem_rdata;
 		UIntX csr_rdata;
 		logic raise_trap;
+		logic writes_minstret;
 
 		// Architectural memory access information.
 		logic        mem_valid;
@@ -708,7 +709,8 @@ module core (
 	logic mems_satp_access;
 	logic mems_sfence_vma;
 	logic mems_fence_i;
-	logic mems_fence_i_wait;   // fence.i in MEM, older stores not yet performed
+	logic mems_fence;
+	logic mems_fence_wait;
 	logic mems_fence_i_fire;   // fence.i completes this cycle (exactly once)
 `ifdef SVCPU_FPGA_DEBUG
 	logic [2:0] csru_debug_irq_flags;
@@ -725,6 +727,9 @@ module core (
 	assign mems_fence_i =
 		(mems_inst_bits[6:0] == OP_MISC_MEM) &&
 		(mems_inst_bits[14:12] == 3'b001);
+	assign mems_fence =
+		(mems_inst_bits[6:0] == OP_MISC_MEM) &&
+		(mems_inst_bits[14:12] == 3'b000);
 	assign mems_translation_hazard = mems_satp_access || mems_sfence_vma;
 	assign mems_translation_flush_wait =
 		mems_valid &&
@@ -943,12 +948,11 @@ module core (
 		);
 
 
-	// fence.i waits in MEM until every older store is performed (WB0), then
-	// redirects and invalidates the I-cache in the single cycle it leaves MEM.
-	// A trap or exception on the fence.i itself is not delayed.
-	assign mems_fence_i_wait =
+	// FENCE orders all memory and I/O in every mode, including U-mode FIOM.
+	// FENCE.I also redirects and invalidates the I-cache when it leaves MEM.
+	assign mems_fence_wait =
 		mems_valid &&
-		mems_fence_i &&
+		(mems_fence || mems_fence_i) &&
 		!dmem_quiescent &&
 		!csru_raise_trap &&
 		!mems_expt.valid;
@@ -960,12 +964,12 @@ module core (
 		!memu_stall &&
 		!csru_raise_trap &&
 		!mems_expt.valid;
-	assign fence_i_drain = mems_fence_i_wait;
+	assign fence_drain = mems_fence_wait;
 
 	always_comb begin
 		//MEM -> WB
-		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait && !mems_fence_i_wait;
-		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait && !mems_fence_i_wait;
+		memq_rready = wbq_wready && !memu_stall && !mems_translation_flush_wait && !mems_fence_wait;
+		wbq_wvalid = memq_rvalid && !memu_stall && !mems_translation_flush_wait && !mems_fence_wait;
 		wbq_wdata.addr = memq_rdata.addr;
 		wbq_wdata.bits = memq_rdata.bits;
 		wbq_wdata.ctrl = memq_rdata.ctrl;
@@ -974,6 +978,7 @@ module core (
 		wbq_wdata.mem_rdata = memu_rdata;
 		wbq_wdata.csr_rdata = csru_rdata;
 		wbq_wdata.raise_trap = csru_raise_trap && !csru_trap_return;
+		wbq_wdata.writes_minstret = minstret_wen;
 
 		wbq_wdata.mem_valid =
 			inst_is_memop(mems_ctrl) &&
@@ -1035,7 +1040,6 @@ module core (
 
 	assign wbs_rd_addr = wbs_inst_bits[11:7];
 	UIntX wbs_wb_data;
-	logic wbs_writes_minstret;
 	logic architectural_retire;
 	logic minstret_auto_increment;
 
@@ -1081,9 +1085,8 @@ module core (
 	logic perf_trap_flush_event;
 	logic perf_load_event;
 	logic perf_store_event;
-	assign wbs_writes_minstret = wbs_ctrl.is_csr && (wbs_inst_bits[31:20] == MINSTRET) && (wbs_inst_bits[13:12] != 2'b00);
 	assign architectural_retire = wbq_rvalid && wbq_rready && !wbq_rdata.raise_trap;
-	assign minstret_auto_increment = architectural_retire && !wbs_writes_minstret;
+	assign minstret_auto_increment = architectural_retire && !wbq_rdata.writes_minstret;
 
 	assign retire_rd_we =
 		architectural_retire &&

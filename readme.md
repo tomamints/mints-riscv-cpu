@@ -44,7 +44,8 @@ Verilator also boots Linux through `BUSYBOX-TEST-PASS`. Separate historical
 Whisper lockstep runs compared over 61 million architectural instructions
 through that autotest. Those results belong to their simulation configuration;
 lockstep was not rerun for the final FPGA configuration.
-See [test scope and limitations](Docs/TEST_STATUS.md).
+The simulator also has [ACT4 and seeded Sail checks](Docs/TEST_STATUS.md#rv64-act4-and-sail)
+for the RV64 architecture. See [test scope and limitations](Docs/TEST_STATUS.md).
 
 ## Simulator and FPGA configurations
 

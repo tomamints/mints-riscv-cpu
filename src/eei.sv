@@ -190,6 +190,7 @@ package eei;
         SIE = 12'h104,
         STVEC = 12'h105,
         SCOUNTEREN = 12'h106,
+        SENVCFG = 12'h10a,
         // Supervisor Trap Handling
         SSCRATCH = 12'h140,
         SEPC = 12'h141,
@@ -203,6 +204,7 @@ package eei;
 		MARCHID  = 12'hf12,
 		MIMPID  = 12'hf13,
 		MHARTID = 12'hf14,
+		MCONFIGPTR = 12'hf15,
 		//Machine Trap Setup
 		MSTATUS = 12'h300,
 		MISA    = 12'h301,

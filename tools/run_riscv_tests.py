@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import os
 import subprocess
 
@@ -172,8 +173,12 @@ def run_test(args, dbg_addr, rom_hex, ram_hex):
             success = False
         finally:
             if p.poll() is None:
-                p.terminate()
                 p.kill()
+                p.wait()
+
+    if success and args.require_pass_marker:
+        with open(result_file_path, encoding="utf-8", errors="replace") as f:
+            success = any(line.strip() == "test success!" for line in f)
 
     print(("PASS" if success else "FAIL") + " : " + ram_hex)
     return ram_hex, success
@@ -192,6 +197,8 @@ def parse_args():
     parser.add_argument("--rom", default="build/test/bootrom.hex", help="ROM hex file")
     parser.add_argument("--ram_base", type=lambda value: int(value, 0), default=0x80000000, help="RAM base address")
     parser.add_argument("--sim-arg", dest="sim_arg", action="append", default=[], help="extra simulator argument (e.g. +PLUSARG=value); repeatable")
+    parser.add_argument("--jobs", type=int, default=1, help="parallel simulator processes")
+    parser.add_argument("--require-pass-marker", action="store_true", help="require an explicit test success indication")
     return parser.parse_args()
 
 
@@ -199,16 +206,18 @@ def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    results = []
-    for elf_path in iter_tests(args.dir, args.files, args.recursive):
+    def run_elf(elf_path):
         ram_hex = elf_path + args.extension
         if not os.path.exists(ram_hex):
             print("SKIP : " + elf_path)
-            continue
+            return None
 
         dbg_addr = get_debug_address(elf_path, args.debug_label, args.ram_base)
-        result = run_test(args, dbg_addr, os.path.abspath(args.rom), os.path.abspath(ram_hex))
-        results.append(result)
+        return run_test(args, dbg_addr, os.path.abspath(args.rom), os.path.abspath(ram_hex))
+
+    tests = iter_tests(args.dir, args.files, args.recursive)
+    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+        results = [result for result in executor.map(run_elf, tests) if result is not None]
 
     result_lines = sorted(("PASS" if status else "FAIL") + " : " + file_path for file_path, status in results)
     pass_count = sum(status for _, status in results)

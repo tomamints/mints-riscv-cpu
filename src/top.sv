@@ -275,12 +275,12 @@ module core_top #(
     logic dcache_debug_flush_active;
     logic [3:0] amou_debug_state;
     logic amou_idle;
-    // fence.i completion (WB0): every older store has been performed at RAM.
+    // FENCE and FENCE.I completion (WB0): every older store has been performed.
     // mmio_controller releases only on the device response and a write
     // response means "performed", so an idle amounit with an empty store
     // buffer and an idle D-cache leaves nothing outstanding below the core.
     logic dmem_quiescent;
-    logic fence_i_drain;   // core: fence.i waiting in MEM for dmem_quiescent
+    logic fence_drain;
     logic amou_debug_slave_valid;
     logic amou_debug_slave_ready;
     logic amou_debug_slave_rvalid;
@@ -436,7 +436,7 @@ module core_top #(
     always_comb begin
         // While fence.i waits for the drain, D low priority is ignored so that
         // instruction prefetch cannot starve the store-buffer drain.
-        memarb_select_d = d_membus.valid && !(d_membus_low_priority && i_membus.valid && !fence_i_drain);
+        memarb_select_d = d_membus.valid && !(d_membus_low_priority && i_membus.valid && !fence_drain);
         memarb_issue_is_i = i_membus.valid && !memarb_select_d;
 
         i_membus.ready  = mmio_membus.ready && !memarb_select_d;
@@ -715,7 +715,7 @@ module core_top #(
                             amou_idle;
 `ifndef SYNTHESIS
     initial if (DCACHE_WRITE_BACK)
-        $warning("fence.i completion covers WRITE_BACK=0 only (no dirty-line clean)");
+        $warning("FENCE/FENCE.I completion covers WRITE_BACK=0 only (no dirty-line clean)");
 `endif
 
     dma u_dma(
@@ -852,7 +852,7 @@ module core_top #(
         .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
         .dcache_flush_busy(dcache_flush_busy),
         .dmem_quiescent(dmem_quiescent),
-        .fence_i_drain(fence_i_drain),
+        .fence_drain(fence_drain),
         .external_meip(plic_meip),
         .external_seip(plic_seip),
         .aclint   (aclint_core_bus)

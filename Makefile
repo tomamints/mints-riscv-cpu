@@ -295,6 +295,19 @@ test-rv32mi: test-suite
 test-rv32si: SUITE=rv32si-p
 test-rv32si: test-suite
 
+.PHONY: test-rv64-directed
+test-rv64-directed: $(SIM) bootrom-build
+	mkdir -p $(TEST_BUILD_DIR)/rv64-directed
+	set -e; for name in mconfigptr hpm_s hpm_u minstret compressed_mtval fence_i stvec; do \
+		elf=$(TEST_BUILD_DIR)/rv64-directed/$$name.elf; \
+		$(RISCV_GCC) -march=rv64imac_zicsr_zifencei -mabi=lp64 -nostdlib -mno-relax \
+			-T tb/sw/directed/rv64_arch.ld -DTEST_$$name tb/sw/directed/rv64_arch.S -o "$$elf"; \
+		$(RISCV_OBJCOPY) -O binary "$$elf" "$$elf.bin"; \
+		$(PYTHON) tools/bin2hex.py 8 "$$elf.bin" > "$$elf.bin.hex"; \
+	done
+	$(PYTHON) $(TEST_RUNNER) $(SIM) $(TEST_BUILD_DIR)/rv64-directed --rom $(BOOTROM) \
+		-o $(TEST_OUT)/rv64-directed -t $(TEST_TIMEOUT) --require-pass-marker $(TEST_ARGS)
+
 test-rv64ui: SUITE=rv64ui-p
 test-rv64ui: test-suite
 

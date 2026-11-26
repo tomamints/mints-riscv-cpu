@@ -26,7 +26,10 @@ all regressions on the latest commit.
 | 64-bit timer probe | Pass on board | High bits, low-word rollover, monotonic reads and timer-compare expiry/clear |
 | Verilator Linux autotest on M1 | Pass | `BUSYBOX-TEST-PASS` in the legacy simulator profile |
 | Historical Whisper lockstep | Pass | BusyBox autotest reached after over 61 million architectural comparisons; not rerun for final FPGA profile |
-| Reported ISA regression | 110/111 | Known `rv64mi-p-breakpoint` failure; not a claim that every ISA test passes |
+| RV64 riscv-tests | 110/111 | `rv64mi-p-breakpoint` remains the only failure in the six RV64 suites |
+| Directed RV64 regression | 7/7 | Machine configuration pointer, HPM access, retired-instruction counting, compressed trap value, `FENCE.I`, and supervisor trap-vector update |
+| RV64 ACT4 | 225/357 | Verilator 5.046, with 131/132 unprivileged and 94/225 privileged tests passing |
+| Seeded Sail comparison | 653/653 retire events across two workloads | M-mode retire PC and integer register writeback, including CSR readback and exception handling |
 | JTAG mailbox / board-path simulation | Recorded passes | Request/acknowledgement, frozen snapshots, image verification/release and board self-test; configuration-specific |
 | Delayed-memory `fence.i` regression | Recorded pass after store-drain fix | Directed posted-store/latency tests, distinct from ordinary zero/short-latency ISA tests |
 
@@ -64,6 +67,13 @@ The simulator autotest and physical interactive shell use different profiles.
 
 ## ISA and directed tests
 
+The RV64 RTL implements `mconfigptr` as read-only zero, denies lower-privilege
+HPM reads when the corresponding counter enable is clear, and counts
+read-only `minstret` accesses as retired instructions. The `senvcfg` CSR
+implements the FIOM bit. In the write-through configuration used in these tests,
+`FENCE` waits for outstanding data transactions to finish, including
+buffered stores. `FENCE.I` also invalidates the instruction cache.
+
 After preparing the Linux Docker build image:
 
 ```sh
@@ -71,6 +81,15 @@ bash tools/setup-riscv-tests.sh
 docker run --rm --init -v "$PWD:/repo" -w /repo mints-linux-verilator:5.046 \
   make test-rv64ui TEST_DIR=build/riscv-tests/isa TEST_OUT=build/test/isa
 bash tools/test-fence-i-posted-store.sh
+```
+
+Run the directed RV64 CSR, compressed exception, trap-vector, and `FENCE.I`
+checks in the same toolchain image.
+
+```sh
+docker run --rm --init -v "$PWD:/repo" -w /repo mints-linux-verilator:5.046 \
+  make test-rv64-directed OBJ_DIR=build/rv64-directed/obj \
+  TEST_BUILD_DIR=build/rv64-directed TEST_OUT=build/rv64-directed/results
 ```
 
 The directed `fence.i` script uses a controlled memory-latency shim. It can also
@@ -95,6 +114,40 @@ bash tools/test-sdram-native16.sh
 bash tools/test-sdram-bridge64.sh
 ```
 
+## RV64 ACT4 and Sail
+
+The runner uses upstream riscv-arch-test commit
+`98a1ec7b0ae0373e25b015cb0f4bf8b0dd5f9924` and Sail 0.16 to generate
+self-checking ELFs for the RV64IMAC simulator. The configuration covers M/S/U
+mode and Sv39. The harness can stimulate software and timer interrupts.
+External interrupt injection is outside the harness scope.
+[riscv-arch-test](https://github.com/riscv/riscv-arch-test)
+
+The outstanding unprivileged case is `M-remw-00`. The PMP suite passed 2 of
+80 tests and accounts for most of the outstanding privileged cases.
+
+```sh
+bash tools/run-act4.sh
+```
+
+Set `ACT4_SUITES=Exceptions` to select just the exception suite. The generated
+configuration, ELF hashes, and individual results are kept under
+`build/act4/run.*/`. The runner reports reference generation and MiNTs
+simulation exit codes independently.
+
+For a short seeded M-mode comparison, replace the example path with the ACT4
+output directory printed by the runner.
+
+```sh
+bash tools/test-rv64-differential.sh build/act4/run.ABC123
+```
+
+The comparison checks the order of retired PCs and integer register writes
+through arithmetic, compressed instructions, loads/stores, CSR operations,
+and exception return. The recorded workloads used seeds `20261126` and
+`12345`. An optional second argument selects the seed. The assembly, ELF,
+and traces are kept under `build/act4/differential.*/`.
+
 ## Historical architectural reference checks
 
 Recorded simulator passes include 61,610,275 and 61,282,110 compared instructions
@@ -111,7 +164,8 @@ artifacts. It is not installed by the ordinary Linux rebuild. See
 ## Not established by these tests
 
 - General architectural certification or complete RVA23 compliance.
-- Passing every privileged ISA test; the breakpoint failure remains known.
+- Passing every RV64 architectural test. The legacy `rv64mi-p-breakpoint`
+  failure and the remaining ACT4 failures are tracked in their respective suites.
 - Long-duration board stability, 250 Hz board operation or a higher CPU clock.
 - F/D/vector execution, SMP/coherence or a production Linux distribution.
 - SD boot, power-cycle/power-loss durability, networking or a Linux graphical console on the board.
