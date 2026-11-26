@@ -50,6 +50,9 @@ table below for the settings used by the two Linux environments.
 
 - **Linux simulation:** Verilator boots OpenSBI, Linux and BusyBox through
   `BUSYBOX-TEST-PASS`.
+- **RV64 architectural tests:** ACT4 and seeded Sail comparisons run in Verilator.
+  The tested configuration, pass counts, and reproduction steps are documented
+  in [test status](Docs/TEST_STATUS.md#rv64-act4-and-sail).
 - **Architectural comparison:** historical Whisper lockstep runs compared over
   61 million committed instructions through the BusyBox autotest. This was a
   simulation configuration, not the final FPGA profile.

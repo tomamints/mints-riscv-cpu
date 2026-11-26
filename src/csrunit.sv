@@ -63,6 +63,7 @@ module csrunit (
 	localparam UIntX SIP_WMASK      = UIntX'(64'h0000_0000_0000_0022);
 	localparam UIntX SIE_WMASK      = UIntX'(64'h0000_0000_0000_0222);
 	localparam UIntX SCOUNTEREN_WMASK  = UIntX'(64'h0000_0000_0000_0007);
+	localparam UIntX SENVCFG_WMASK = UIntX'(1); // FIOM
 	localparam UIntX STVEC_WMASK  = 64'hffff_ffff_ffff_fffd;
 	localparam UIntX SSCRATCH_WMASK = 64'hffff_ffff_ffff_ffff;
 	localparam UIntX SEPC_WMASK   = 64'hffff_ffff_ffff_fffe;
@@ -72,9 +73,8 @@ module csrunit (
 	localparam logic [3:0] SATP_MODE_BARE = 4'd0;
 	localparam logic [3:0] SATP_MODE_SV39 = 4'd8;
 
-	// Optional hardware-performance-monitor CSR ranges.
-	// Whisper is configured with zero active HPM counters, but these CSRs
-	// remain architecturally accessible and read as zero.
+	// Implement the HPM CSR address ranges with zero active counters.
+	// The read-only counter view is gated by privilege and counter enables.
 	localparam logic [11:0] MENVCFG_ADDR         = 12'h30a;
 	localparam logic [11:0] MCOUNTINHIBIT_ADDR   = 12'h320;
 	localparam logic [11:0] MHPMEVENT_FIRST_ADDR = 12'h323;
@@ -149,7 +149,7 @@ module csrunit (
 	// expt_write_readonly_csr: 書き込み系で、書き込み禁止CSRにアクセスしたとき
 	logic expt_write_readonly_csr;
 	assign expt_write_readonly_csr =
-		(is_wsc && !will_not_write_csr && (csr_addr[11:10] == 2'b11));
+		csr_write_en && (csr_addr[11:10] == 2'b11);
 
 	logic expt_csr_priv_violation;
 	assign expt_csr_priv_violation = is_wsc && (csr_addr[9:8] > mode);
@@ -160,7 +160,8 @@ module csrunit (
 		(csr_addr == CYCLE)   ? !mcounteren[0] :
 		(csr_addr == TIME)    ? !mcounteren[1] :
 		(csr_addr == INSTRET) ? !mcounteren[2] :
-										1'b0;
+		// The HPM enable bits in mcounteren are hardwired to zero.
+		csr_is_hpmcounter;
 
 	logic zicntr_denied_U;
 	assign zicntr_denied_U =
@@ -274,6 +275,7 @@ module csrunit (
 	UIntX  sstatus , stvec, sscratch, sip, sie, sepc, scause, stval;
 	assign sstatus = mstatus & SSTATUS_RMASK;
 	UInt32 scounteren;
+	logic senvcfg_fiom;
 
 	assign sip = mip & mideleg;
 
@@ -416,6 +418,7 @@ module csrunit (
 			MISA    : rdata = misa;
 			MIMPID  : rdata = MACHINE_IMPLEMENTATION_ID;
 			MHARTID : rdata = mhartid;
+			MCONFIGPTR: rdata = '0; // No machine configuration data structure.
 			MSTATUS : rdata = mstatus;
 			MTVEC   : rdata = mtvec;
 			MEDELEG   : rdata = medeleg;
@@ -441,6 +444,7 @@ module csrunit (
 			MTVAL   : rdata = mtval;
 			SSTATUS   : rdata = sstatus;
 			SCOUNTEREN : rdata = {{(XLEN - 32){1'b0}}, scounteren};
+			SENVCFG   : rdata = UIntX'(senvcfg_fiom);
 			STVEC   : rdata = stvec;
 			SSCRATCH : rdata = sscratch;
 			SEPC    : rdata = sepc;
@@ -491,6 +495,7 @@ module csrunit (
 			MTVAL    : wmask = MTVAL_WMASK;
 			SSTATUS  : wmask = SSTATUS_WMASK;
 			SCOUNTEREN : wmask = SCOUNTEREN_WMASK;
+			SENVCFG  : wmask = SENVCFG_WMASK;
 			STVEC : wmask = STVEC_WMASK;
 			SSCRATCH : wmask = SSCRATCH_WMASK;
 			SEPC : wmask = SEPC_WMASK;
@@ -584,6 +589,7 @@ module csrunit (
 			mcause   <= '0;
 			mtval    <= '0;
 			scounteren <= '0;
+			senvcfg_fiom <= 1'b0;
 			stvec <= '0;
 			sscratch <= '0;
 			sepc <= '0;
@@ -808,6 +814,7 @@ module csrunit (
 							MTVAL    : mtval    <= wdata;
 							SSTATUS  : mstatus  <= validate_mstatus(mstatus, wdata | mstatus & ~SSTATUS_WMASK);
 							SCOUNTEREN : scounteren <= wdata[31:0];
+							SENVCFG : senvcfg_fiom <= wdata[0];
 							STVEC : stvec <= wdata;
 							SSCRATCH : sscratch <= wdata;
 							SEPC : sepc <= wdata;
@@ -858,6 +865,7 @@ module csrunit (
 					MARCHID,
 					MIMPID,
 					MHARTID,
+					MCONFIGPTR,
 					MSTATUS,
 					MISA,
 					MEDELEG,
@@ -885,6 +893,7 @@ module csrunit (
 					SIE,
 					STVEC,
 					SCOUNTEREN,
+					SENVCFG,
 					SSCRATCH,
 					SEPC,
 					SCAUSE,

@@ -153,7 +153,7 @@ module cpu_probe_top #(
         .sstatus_mxr_fetch_value(sstatus_mxr_fetch_value),
         .dcache_flush_busy(dcache_flush_busy),
         .dmem_quiescent(dmem_quiescent),
-        .fence_i_drain(fence_i_drain),
+        .fence_drain(fence_i_drain),
         .external_meip(v_meip),
         .external_seip(v_seip),
         .aclint(aclint_core_bus)
